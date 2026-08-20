@@ -1,0 +1,31 @@
+python
+import gdb
+import time
+
+gdb.execute("set confirm off")
+gdb.execute("set pagination off")
+gdb.execute("target remote localhost:1025")
+gdb.execute("file tests/case_pure_i3c_6m25/build/target/zephyr/zephyr.elf")
+
+# 复位后核会立即运行 RAM 里的旧镜像；先打断停机再加载
+gdb.execute("reset")
+gdb.execute("continue &")
+time.sleep(0.5)
+gdb.execute("interrupt")
+halted = False
+for i in range(60):
+    try:
+        gdb.execute("p $pc", to_string=True)
+        halted = True
+        break
+    except gdb.error:
+        time.sleep(0.3)
+if not halted:
+    print("FLASHSEQ: target did not halt!")
+else:
+    gdb.execute("load")
+    gdb.execute("restore tests/case_pure_i3c_6m25/build/controller/zephyr/zephyr.bin binary 0x10020000")
+    gdb.execute("set $pc=0x100c0000")
+    print("FLASHSEQ: load done, pc set, continuing")
+    gdb.execute("continue")
+end

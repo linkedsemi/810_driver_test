@@ -1,0 +1,976 @@
+diff --git a/drivers/i3c/i3c_linkedsemi.c b/drivers/i3c/i3c_linkedsemi.c
+index f44d9492ea4..440c0a74de8 100644
+--- a/drivers/i3c/i3c_linkedsemi.c
++++ b/drivers/i3c/i3c_linkedsemi.c
+@@ -35,8 +35,43 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
+ #include "HAL_def.h"
+ #include <zephyr/sys/util.h>
+ #include "core_rv32.h"
++#include "ls_soc_gpio.h"
++
++/* 调试：I3C7 未用时把 PJ07 当示波器标记脚。
++ * PJ07(I3C7_SDA)：调用用户 callback 期间拉高（分析应用层耗时）。
++ * PJ06(I3C7_SCL) 已移交给 __soc_handle_all_irqs 做分发级监视。 */
++#define I3C_DBG_PIN_CB   PJ07
++
++/* 回调耗时标记：进入用户 callback 前拉高，返回后拉低 */
++#define I3C_DBG_CB_ENTER()
++#define I3C_DBG_CB_EXIT()
++// io_set_pin(I3C_DBG_PIN_CB)
++// io_clr_pin(I3C_DBG_PIN_CB)
++
++/* 实验（排查 IBI 后 8ms 死窗）：1 = 临时屏蔽驱动内所有关中断点
++ * （ISR 入口 __disable_irq、tx_write 的 irq_lock/irq_unlock），
++ * 验证死窗是否由关中断路径导致。排查完改回 0。
++ * 结论（NOIRQLK 烧录实测）：屏蔽后 8ms 死窗依旧，关中断假设排除。 */
++#define I3C_DBG_MASK_IRQ_OFF 0
++/* ISR 内不打印（时序敏感）：调试计数器，由外部读取 */
++volatile uint32_t rxp_stuck_cnt;
++volatile uint32_t i3c_isr_enter_cnt;	/* target ISR 进入次数（投递探针用） */
++volatile uint32_t i3c_event_isr_t;	/* EVENT 终态处理时刻（k_cycle 快照） */
++/* SERRWARN 记账：错误路径的 ls_i3c_log_slave_serrwarn 会在 ISR 里打多条
++ * LOG_ERR，shell 串口后端队列满时每条最多阻塞 100ms（实测 ~13ms/条），
++ * 直接造成 20ms+ 的 ISR 滞留。ISR 里只记账，由线程上下文打印。 */
++volatile uint32_t i3c_serrwarn_last;
++volatile uint32_t i3c_serrwarn_cnt;
++volatile uint32_t i3c_serrwarn_t;
+ // #include "field_manipulate.h"
+ 
++/* ISR 入口快照环形记录：识别 IBI 附近各次中断的来源（SSTATUS 原始位）。
++ * 由 app 在测试开始时清零 i3c_isr_log_n，TEST_END 时倒出。 */
++#define I3C_ISR_LOG_MAX 32
++volatile uint32_t i3c_isr_log_t[I3C_ISR_LOG_MAX];
++volatile uint32_t i3c_isr_log_st[I3C_ISR_LOG_MAX];
++volatile uint32_t i3c_isr_log_n;
++
+ #define DT_DRV_COMPAT linkedsemi_i3c
+ 
+ #define PINCTRL_STATE_PINMUX_I2C PINCTRL_STATE_PRIV_START
+@@ -71,6 +106,10 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
+ #define STATUS_EVDET_REQ_SENT_NACKED 2
+ #define STATUS_EVDET_REQ_SENT_ACKED  3
+ 
++/* IBI 完成等待超时：正常 IBI 仲裁+传输为 us 级，100ms 足够宽裕；
++ * 超时兜底保证主机不存在/总线异常时 ibi_raise 不会永久阻塞 */
++#define I3C_IBI_COMPLETE_TIMEOUT   K_MSEC(100)
++
+ /* Private define for CCC command */
+ #define I3C_BROADCAST_RSTDAA          (0x00000006U)
+ #define I3C_BROADCAST_ENTDAA          (0x00000007U)
+@@ -190,11 +229,12 @@ struct ls_i3c_data {
+ 	struct i3c_target_config *target_config;
+ 	struct i3c_config_target config_target;
+ 	struct i3c_fifo_info fifo_info;
+-	enum ls_i3c_target_oper_state state;
++	volatile enum ls_i3c_target_oper_state state;
+ 	enum i3c_role cur_role;
+ 	/** Mutex to serialize access */
+ 	struct k_mutex lock;
+-	struct k_sem target_event_lock_sem; /* Semaphore used for i3c target ibi_raise() */	
++	struct k_sem target_event_lock_sem; /* IBI 完成通知信号量：ibi_raise 发起后等待，ISR 终态 give */
++	volatile int ibi_status; /* IBI 结果：0=ACKed, -EIO=NACKed；ISR 先写本字段再 give */
+ 	struct k_sem device_sync_sem; /* controller :Sync between device communication messages */
+ 
+ 	struct ls_i3c_msg curr_msg;
+@@ -234,59 +274,70 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
+ 	LOG_DBG("i2c hz= %d ,i3c hz= %d \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
+ 
+ 	// if(data->common.ctrl_config.scl.i2c > 0 && config->common.dev_list.num_i2c > 0)
+-	if(data->common.ctrl_config.scl.i2c)
+-	{
++	if (data->common.ctrl_config.scl.i2c) {
+ #ifdef CONFIG_SOC_SERIES_LSQSH
+-		__ASSERT(data->common.ctrl_config.scl.i2c >= 1000000,
+-			 "I2C SCL frequency must be >= 1 MHz, got %u Hz",
+-			 data->common.ctrl_config.scl.i2c);
+-#endif
+-		if(data->common.ctrl_config.scl.i2c >= 400000)
+-		{
++		if (data->common.ctrl_config.scl.i2c >= 1000000) {
++			/* LSQSH: force FM+ 1 MHz for best mixed-bus SDR throughput */
++			scll_od = 49;
++			sclh_i2c = 49;
++		} else if (data->common.ctrl_config.scl.i2c >= 400000) {
++			/* LSQSH: allow FM 400 kHz, but warn that SDR will be slow */
++			LOG_WRN("I2C SCL %u Hz below 1 MHz on LSQSH; "
++				 "SDR throughput will be significantly reduced",
++				 data->common.ctrl_config.scl.i2c);
++			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FM_NS * config->clock_frequency,
++					      1000000000ull) - 1;
++			sclh_i2c = DIV_ROUND_UP(config->clock_frequency,
++					      data->common.ctrl_config.scl.i2c) - scll_od - 2;
++			if (sclh_i2c <
++			    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FM_NS * config->clock_frequency,
++					 1000000000ull) - 1) {
++				LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at current I3C "
++					"clock "
++					"frequency for FM I2C bus");
++				return -EINVAL;
++			}
++		} else {
++			LOG_ERR("LSQSH I3C does not support I2C SCL below 400 kHz, got %u Hz",
++				data->common.ctrl_config.scl.i2c);
++			return -EINVAL;
++		}
++#else
++		if (data->common.ctrl_config.scl.i2c > 400000) {
+ 			/* I2C bus is FM+ */
+-			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FMP_NS * config->clock_frequency,1000000000ull) - 1;
++			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FMP_NS * config->clock_frequency, 1000000000ull) - 1;
+ 			sclh_i2c = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i2c) - scll_od - 2;
+ 			if (sclh_i2c <
+-			DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FMP_NS * config->clock_frequency, 1000000000ull) - 1) {
++			    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FMP_NS * config->clock_frequency, 1000000000ull) - 1) {
+ 				LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at "
+ 					"current I3C clock "
+ 					"frequency for FM+ I2C bus");
+ 				return -EINVAL;
+ 			}
+-		}
+-		else
+-		{
++		} else {
+ 			/* I2C bus is FM */
+-			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FM_NS * config->clock_frequency,1000000000ull) - 1;
++			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FM_NS * config->clock_frequency, 1000000000ull) - 1;
+ 			sclh_i2c = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i2c) - scll_od - 2;
+ 			if (sclh_i2c <
+-		    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FM_NS * config->clock_frequency, 1000000000ull) - 1) {
+-			LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at current I3C "
+-				"clock "
+-				"frequency for FM I2C bus");
+-			return -EINVAL;
++			    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FM_NS * config->clock_frequency, 1000000000ull) - 1) {
++				LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at current I3C "
++					"clock "
++					"frequency for FM I2C bus");
++				return -EINVAL;
+ 			}
+ 		}
+-#ifdef CONFIG_SOC_SERIES_LSQSH
+-		// 1Mhz i2c
+-		scll_od = 49;
+-		sclh_i2c = 49;
+ #endif
+-	}else
+-	{
+-		if(config->common.dev_list.num_i2c > 0)
+-		{
+-			__ASSERT(0, "have i2c device on bus,but not set frequence\n");
++	} else {
++		if (config->common.dev_list.num_i2c > 0) {
++			LOG_ERR("I2C devices on bus but no I2C SCL frequency configured");
+ 			return -EINVAL;
+-		}else
+-		{
+-			/* Assume no I2C devices on the bus */
+-			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_I3C_NS * config->clock_frequency,
+-						1000000000ull) -
+-				   1;
+-			sclh_i2c = 0;	
+ 		}
+ 
++		/* Pure I3C bus: shorten open-drain to ~4 MHz while meeting I3C minimums */
++		scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_I3C_NS * config->clock_frequency,
++				      1000000000ull) - 1;
++		sclh_i2c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency,
++				      1000000000ull) - 1;
+ 	}
+ 
+ 	sclh_i3c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency, 1000000000ull) - 1;
+@@ -438,6 +489,10 @@ static void ls_i3c_enable_target_interrupt(const struct device *dev, bool enable
+ 	if (enable) {
+ 		base->SINTSET = I3C_TGT_INTSET_MASK;
+ 	}
++	else
++	{
++		while(1);
++	}
+ }
+ 
+ static void ls_i3c_dev_init(const struct device *dev)
+@@ -456,6 +511,12 @@ static void ls_i3c_dev_init(const struct device *dev)
+ 	REG_FIELD_WR(base->CFGR,I3C_CFGR_RSTPTRN,1);
+ 	REG_FIELD_WR(base->CFGR,I3C_CFGR_SMODE,0);
+ 	// REG_FIELD_WR(base->CFGR,I3C_CFGR_STOP_MODE,1);
++#if defined(CONFIG_I3C_USE_IBI)
++	/* 允许应答 Hot-Join：HJACK=0 时 controller 会 NACK 总线上所有 HJ 请求，
++	 * target 拉起的 HJ 波形无人应答（最终 target 侧 100ms 超时）。
++	 * HJ 事件经 HJF 中断进 IBI workqueue 处理，故随 CONFIG_I3C_USE_IBI 使能。 */
++	REG_FIELD_WR(base->CFGR,I3C_CFGR_HJACK,1);
++#endif
+ 	
+ 	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_TARGET_CLOCK_EN,1);
+ 	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_CCRCCC_EN,0);	
+@@ -596,14 +657,17 @@ static int ls_i3c_init(const struct device *dev)
+ 	data->fifo_info.TargetRxFifoSize = 8;
+ 
+ #if defined(CONFIG_I3C_USE_IBI)
+-	base->IER = I3C_IER_IBIIE_MASK;
++	/* IBIIE：target IBI；HJIE：Hot-Join（controller 侧 ACK 由 CFGR.HJACK 控制，
++	 * 两者需同时使能 HJ 才能完整闭环：ACK → HJF 中断 → workqueue 重 DAA） */
++	base->IER = I3C_IER_IBIIE_MASK | I3C_IER_HJIE_MASK;
+ #else
+ 	base->IER = 0;
+ #endif
+ 	/* Initial I3C device as controller or target */
+ 	ls_i3c_dev_init(dev);
+ 
+-	k_sem_init(&data->target_event_lock_sem, 1, 1);
++	k_sem_init(&data->target_event_lock_sem, 0, 1);
++	data->ibi_status = 0;
+ 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
+     k_mutex_init(&data->lock);
+ 
+@@ -1059,9 +1123,13 @@ static int ls_i3c_do_daa(const struct device *dev)
+ 			/* ... and combine into one Provisioned ID */
+ 			pid = (uint64_t)vendor_id << 32U | (uint64_t)part_no;
+ 
++			/* assigned_okay=true：能应答 ENTDAA 的一定是已丢失动态地址的
++			 * 设备（如 RSTDAA 后的 HJ 重连），其 desc 里可能还留着旧地址；
++			 * 允许直接复用原地址，既避免 helper 误报 -EINVAL 中断 DAA，
++			 * 也让重连后地址保持不变，上层无需重新发现设备 */
+ 			ret = i3c_dev_list_daa_addr_helper(&data->common.attached_dev.addr_slots,
+ 							   &config->common.dev_list, pid,
+-							   false, false,
++							   false, true,
+ 							   &target, &dyn_addr);
+ 			if (ret != 0) {
+ 				LOG_ERR("TARGET device address dose not match");
+@@ -1569,7 +1637,10 @@ static void ls_i3c_log_slave_serrwarn(const struct device *dev, I3C_TypeDef *bas
+ 		return;
+ 	}
+ 
+-	LOG_ERR("%s: SERRWARN raw=0x%08x, state=%d", dev->name, err, data->state);
++	LOG_ERR("%s: SERRWARN raw=0x%08x, state=%d, txcount=%lu, rxcount=%lu",
++		dev->name, err, data->state,
++		(base->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) >> I3C_SDATACTRL_TXCOUNT_POS,
++		(base->SDATACTRL & I3C_SDATACTRL_RXCOUNT_MASK) >> I3C_SDATACTRL_RXCOUNT_POS);
+ 
+ 	if (err & I3C_SERRWARN_OWRITE_MASK) {
+ 		LOG_ERR("  OWRITE: SWDATAB written when TX FIFO full / not in read phase");
+@@ -1617,10 +1688,37 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 	const struct ls_i3c_config *config = dev->config;
+ 	I3C_TypeDef *base = config->base;
+ 
++	/* 实验：本 ISR 全程禁止嵌套。中断分发循环 __soc_handle_all_irqs 在
++	 * 调用 ISR 前会 __enable_irq()，而本 ISR 含 busy-wait 等字节的超长
++	 * 临界区，期间若被嵌套会触发 E906 CLIC 的 MPIL 恢复问题（mil 卡在
++	 * >=7 后 I3C(7) 因 level>mil 不满足而永久失去投递资格）。
++	 * 入口立即关中断，返回前由分发循环的 __disable_irq() 统一收尾。
++	 * （I3C_DBG_MASK_IRQ_OFF=1 实验期间屏蔽此关中断点） */
++#if !I3C_DBG_MASK_IRQ_OFF
++	__disable_irq();
++#endif
++
++	/* 示波器标记：PJ06 标志本 ISR 执行区间 */
++	static bool dbg_pin_inited;
++	if (!dbg_pin_inited) {
++		dbg_pin_inited = true;
++		io_cfg_output(PJ06);
++	}
++	io_set_pin(PJ06);
++	i3c_isr_enter_cnt++;
++
++	/* 入口快照：记录本次中断时刻与 SSTATUS 原始状态（识别中断来源） */
++	if (i3c_isr_log_n < I3C_ISR_LOG_MAX) {
++		i3c_isr_log_t[i3c_isr_log_n] = k_cycle_get_32();
++		i3c_isr_log_st[i3c_isr_log_n] = base->SSTATUS;
++		i3c_isr_log_n++;
++	}
++
+ 	if(data->target_config == NULL)
+ 	{
+ 		LOG_ERR("%s: targer not register", __func__);
+ 		ls_i3c_enable_target_interrupt(dev,false);
++		io_clr_pin(PJ06);
+ 		return;
+ 	}
+ 
+@@ -1628,24 +1726,69 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 	struct i3c_target_config *target_config = data->target_config;
+ 	const struct i3c_target_callbacks *target_cb = data->target_config->callbacks;
+ 
++	/* 排空循环实验已否决：若某事件标志位在当前分支结构下无法清除
++	 * （如 TXSEND 电平持续有效），电平触发会让 ISR 反复重入形成
++	 * 中断风暴，拖死整个核。保持单次通过。 */
+ 	if (base->SINTMASKED) {
+ 
++		/* 先交付 RX FIFO 中尚未取走的字节：字节中断与 STOP 常在同一次
++		 * ISR 中同时挂起（最后一字节紧随 STOP），若先跑 STOP 分支，
++		 * stop_cb 会把状态机/索引复位，尾字节就会被误当成下一笔消息的
++		 * 开头。 */
++		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SSTATUS_RXPEND_MASK))
++		{
++			uint8_t rx_data;
++			/* 以 RXCOUNT 为上限排空：非写相位读 SRDATAB 不会弹出 FIFO
++			 * （OREAD），若只盯 RXPEND 标志会死循环占住 ISR（示波器
++			 * 实测 20ms+，直到总线状态改变才退出）。 */
++			uint32_t budget = ((base->SDATACTRL & I3C_SDATACTRL_RXCOUNT_MASK) >>
++					   I3C_SDATACTRL_RXCOUNT_POS) + 2U;
++			while((base->SSTATUS & I3C_SSTATUS_RXPEND_MASK) && (budget-- != 0U))
++			{
++				rx_data = (uint8_t)base->SRDATAB;
++				I3C_DBG_CB_ENTER();
++				target_cb->write_received_cb(data->target_config, rx_data);
++				I3C_DBG_CB_EXIT();
++			}
++			if (base->SSTATUS & I3C_SSTATUS_RXPEND_MASK) {
++				/* 非写相位读 SRDATAB 不弹出导致 budget 耗尽仍有剩字节：
++				 * 只记计数（ISR 内不打印，避免影响时序），由外部观察 */
++				rxp_stuck_cnt++;
++			}
++			if(I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_STREQRD_MASK))
++			{
++				base->SINTSET = I3C_SINTSET_TXSEND_MASK;
++			}
++		}
++
+ 		/* Check error or warning has occurred */
+-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_ERRWARN_MASK) || I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_STOP_MASK)) {
+-			base->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
++		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_STOP_MASK) || I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_ERRWARN_MASK)) {
++			/* 实验：屏蔽 STOP 分支的 FLUSHTB。STOP 事件刚置位时硬件可能
++			 * 尚未完全退出消息状态，此时 FLUSHTB 疑似会导致后续传输的
++			 * MATCHED/STOP 中断不再产生（实测：开机预填（无前置 flush）
++			 * 后 MATCHED 正常；'S'-stop（flush+预填）后中断全死）。
++			 * FIFO 内容靠 TXCOUNT 续写模型维持（恒为 buf 前缀）。 */
++			// io_set_pin(I3C_DBG_PIN_CB);
+ 			base->SSTATUS = I3C_SSTATUS_MATCHED_MASK;
+ 			base->SINTSET = I3C_SINTSET_MATCHED_MASK;
+ 			base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
+ 			base->SSTATUS = I3C_SSTATUS_STOP_MASK;
+ 			if(base->SERRWARN)
+ 			{
+-				ls_i3c_log_slave_serrwarn(dev, base);
++				/* 不在 ISR 里调 ls_i3c_log_slave_serrwarn（多条 LOG_ERR
++				 * 走 shell 后端会阻塞 10ms+/条）。记账，线程侧打印。 */
++				i3c_serrwarn_last = base->SERRWARN;
++				i3c_serrwarn_cnt++;
++				i3c_serrwarn_t = k_cycle_get_32();
+ 				base->SERRWARN = base->SERRWARN;
+ 			}
++			// io_clr_pin(I3C_DBG_PIN_CB);
+ 			data->state = LS_I3C_OP_STATE_IDLE;
+ 			/* Notify upper layer a STOP condition received */
+ 			if ((target_cb != NULL) && (target_cb->stop_cb != NULL)) {
++				I3C_DBG_CB_ENTER();
+ 				target_cb->stop_cb(data->target_config);
++				I3C_DBG_CB_EXIT();
+ 			}
+ 		}
+ 
+@@ -1660,21 +1803,41 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 			{
+ 				if((data->state != LS_I3C_OP_STATE_WR) && I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_STREQWR_MASK))
+ 				{
+-					// LOG_DBG("MATCHED write branch, state=%d, SSTATUS=0x%x",
+-						// data->state, base->SSTATUS);
+-					uint8_t rx_data; 
++					uint8_t rx_data;
+ 					data->state = LS_I3C_OP_STATE_WR;
+ 					/*controller write quest*/
+ 					if ((target_cb != NULL) &&
+ 						(target_cb->write_requested_cb != 0))
+ 					{
++						I3C_DBG_CB_ENTER();
+ 						target_cb->write_requested_cb(data->target_config);
++						I3C_DBG_CB_EXIT();
++					}
++					/* 带超时的首字节等待：让从机尽早拿到写数据（为后续
++					 * 读做准备），但首字节可能已被上方 RXPEND 块收走
++					 * （MATCHED 与 RXPEND 同一次挂起），此时死等会一直
++					 * 占用 ISR 直到下一笔传输（实测 24ms），STOP 无法处理。
++					 * 100us 覆盖最慢速率档的地址→字节间隔，超时后字节改由
++					 * RXPEND 中断交付。 */
++					uint32_t wait_start = k_cycle_get_32();
++					uint32_t wait_budget = k_us_to_cyc_ceil32(100);
++					while(!(base->SSTATUS & I3C_SSTATUS_RXPEND_MASK)) {
++						if ((k_cycle_get_32() - wait_start) > wait_budget) {
++							break;
++						}
+ 					}
+-					while(!(base->SSTATUS & I3C_SSTATUS_RXPEND_MASK));
+-					while(base->SSTATUS & I3C_SSTATUS_RXPEND_MASK)
+ 					{
+-						rx_data = (uint8_t)base->SRDATAB;
+-						target_cb->write_received_cb(data->target_config, rx_data);
++						/* 同顶部 RXPEND 块：按 RXCOUNT 上限排空，防非写相位
++						 * 读 SRDATAB 不弹出导致的死循环 */
++						uint32_t budget = ((base->SDATACTRL & I3C_SDATACTRL_RXCOUNT_MASK) >>
++								   I3C_SDATACTRL_RXCOUNT_POS) + 2U;
++						while((base->SSTATUS & I3C_SSTATUS_RXPEND_MASK) && (budget-- != 0U))
++						{
++							rx_data = (uint8_t)base->SRDATAB;
++							I3C_DBG_CB_ENTER();
++							target_cb->write_received_cb(data->target_config, rx_data);
++							I3C_DBG_CB_EXIT();
++						}
+ 					}
+ 				}
+ 				else if((data->state != LS_I3C_OP_STATE_RD) && I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_STREQRD_MASK))
+@@ -1690,7 +1853,9 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 					{
+ 						if(I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_TXNOTFULL_MASK))
+ 						{
++							I3C_DBG_CB_ENTER();
+ 							status = target_cb->read_requested_cb(data->target_config,&tx_data);
++							I3C_DBG_CB_EXIT();
+ 							if(status == 0)
+ 							{
+ 								base->SWDATAB = tx_data;
+@@ -1707,27 +1872,15 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 			base->SINTCLR = I3C_SSTATUS_MATCHED_MASK;
+ 		}
+ 
+-		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SSTATUS_RXPEND_MASK))
+-		{
+-			uint8_t rx_data; 
+-			while(base->SSTATUS & I3C_SSTATUS_RXPEND_MASK)
+-			{
+-				rx_data = (uint8_t)base->SRDATAB;
+-				target_cb->write_received_cb(data->target_config, rx_data);
+-			}
+-			if(I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_STREQRD_MASK))
+-			{
+-				base->SINTSET = I3C_SINTSET_TXSEND_MASK;
+-			}
+-		}
+-
+ 		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SINTMASK_TXSEND_MASK))
+ 		{
+ 			uint8_t byte;
+ 			if(data->state == LS_I3C_OP_STATE_WR)
+ 			{
+ 				data->state = LS_I3C_OP_STATE_RD;
++				I3C_DBG_CB_ENTER();
+ 				status = target_cb->read_requested_cb(data->target_config, &byte);
++				I3C_DBG_CB_EXIT();
+ 				if(status == 0)
+ 				{
+ 					base->SWDATAB = byte;
+@@ -1740,7 +1893,9 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 			while((base->SSTATUS & I3C_SSTATUS_STREQRD_MASK) &&
+ 								(base->SSTATUS & I3C_SSTATUS_TXNOTFULL_MASK))
+ 			{
++				I3C_DBG_CB_ENTER();
+ 				status = target_cb->read_processed_cb(data->target_config, &byte);
++				I3C_DBG_CB_EXIT();
+ 				if(status == 0)
+ 				{
+ 					base->SWDATAB = byte;
+@@ -1787,8 +1942,10 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 					    target_cb->read_requested_cb) {
+ 						if (I3C_CHECK_FLAG(base->SSTATUS,
+ 							I3C_SSTATUS_TXNOTFULL_MASK)) {
++							I3C_DBG_CB_ENTER();
+ 							status = target_cb->read_requested_cb(
+ 								data->target_config, &tx_data);
++							I3C_DBG_CB_EXIT();
+ 							if (status == 0) {
+ 								base->SWDATAB = tx_data;
+ 							} else if (status == 1) {
+@@ -1805,8 +1962,10 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 					data->state = LS_I3C_OP_STATE_WR;
+ 					if ((target_cb != NULL) &&
+ 					    (target_cb->write_requested_cb != 0)) {
++						I3C_DBG_CB_ENTER();
+ 						target_cb->write_requested_cb(
+ 							data->target_config);
++						I3C_DBG_CB_EXIT();
+ 					}
+ 				}
+ 			}
+@@ -1824,25 +1983,41 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 			base->SSTATUS = I3C_SSTATUS_CHANDLED_MASK;
+ 		}
+ 
+-		/* Event requested. IBI, hot-join, bus control */
++		/* Event requested. IBI, hot-join, bus control.
++		 * IBI/HJ 请求的统一终态处理：先写结果、恢复状态机，最后 give 唤醒
++		 * ibi_raise 中等待的线程（顺序保证 take 返回时 ibi_status 已生效）。 */
+ 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_EVENT_MASK)) {
++			uint32_t evdet = (base->SSTATUS & I3C_SSTATUS_EVDET_MASK) >>
++					 I3C_SSTATUS_EVDET_POS;
++
+ 			base->SSTATUS = I3C_SSTATUS_EVENT_MASK;
+ 
+-			if (((base->SSTATUS & I3C_SSTATUS_EVDET_MASK) >> I3C_SSTATUS_EVDET_POS)  ==
+-				STATUS_EVDET_REQ_SENT_ACKED) {
++			if (evdet == STATUS_EVDET_REQ_SENT_ACKED) {
++				data->ibi_status = 0;
++				data->state = LS_I3C_OP_STATE_IDLE;
++				i3c_event_isr_t = k_cycle_get_32();
++				k_sem_give(&data->target_event_lock_sem);
++			} else if (evdet == STATUS_EVDET_REQ_SENT_NACKED) {
++				data->ibi_status = -EIO;
++				data->state = LS_I3C_OP_STATE_IDLE;
++				i3c_event_isr_t = k_cycle_get_32();
+ 				k_sem_give(&data->target_event_lock_sem);
+ 			}
++			/* STATUS_EVDET_REQ_NOT_SENT 为中间态（请求等待总线仲裁），继续
++			 * 等待终态事件；ibi_raise 的 take 带超时兜底，不会永久阻塞 */
+ 		}
+ 
+ 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_DACHG_MASK)) {
+ 			base->SSTATUS = I3C_SSTATUS_DACHG_MASK;
+-			if(base->SDYNADDR & I3C_SDYNADDR_DAVALID_MASK)
+-			{
+-				if(target_config != NULL)
+-				{
++			if (base->SDYNADDR & I3C_SDYNADDR_DAVALID_MASK) {
++				if (target_config != NULL) {
+ 					config_tgt->dynamic_addr =
+ 						(base->SDYNADDR&I3C_SDYNADDR_DADDR_MASK) >> I3C_SDYNADDR_DADDR_POS;
+ 				}
++			} else if (target_config != NULL) {
++				/* RSTDAA 等导致动态地址丢失：同步清掉软件记账，
++				 * 避免残留陈旧地址被应用误用 */
++				config_tgt->dynamic_addr = 0;
+ 			}
+ 		}
+ 
+@@ -1851,19 +2026,7 @@ static void ls_i3c_target_isr(const struct device *dev)
+ 			base->SSTATUS = I3C_SSTATUS_NOWCNTLR_MASK;
+ 			// base->SCONFIG &= ~I3C_SCONFIG_SLVENA_MASK;
+ 		}
+-	
+-		/* Event requested. IBI, hot-join, bus control */
+-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_EVENT_MASK)) {
+-			base->SSTATUS = I3C_SSTATUS_EVENT_MASK;
+-
+-			if ((base->SSTATUS & I3C_SSTATUS_EVDET_MASK) ==
+-			    I3C_SSTATUS_EVDET_MASK) {
+-				k_sem_give(&data->target_event_lock_sem);
+-				data->state = LS_I3C_OP_STATE_IDLE;
+-			}
+-		}
+ 	}
+-	
+ }
+ 
+ static void ls_i3c_log_err_type(const struct device *dev)
+@@ -2012,9 +2175,13 @@ static void ls_i3c_isr(const struct device *dev)
+ 
+ 		/*将 ibi 的信息抛送给对应的从机设备*/
+ 		target = i3c_dev_list_i3c_addr_find(dev, (uint8_t)IBICRTgtAddr);
+-		ret = i3c_ibi_work_enqueue_target_irq(target,(uint8_t *)&IBITgtPayload,IBITgtNbPayload);
+-		if (ret < 0) {
+-			LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
++		if (target != NULL) {
++			ret = i3c_ibi_work_enqueue_target_irq(target,(uint8_t *)&IBITgtPayload,IBITgtNbPayload);
++			if (ret < 0) {
++				LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
++			}
++		} else {
++			LOG_ERR("IBI from unknown device addr 0x%x", IBICRTgtAddr);
+ 		}
+ 	}
+ 	if (I3C_CHECK_FLAG(it_masks, I3C_EVR_CRF) != RESET)
+@@ -2034,6 +2201,7 @@ static void ls_i3c_isr(const struct device *dev)
+ 	}
+ 
+ #endif
++	io_clr_pin(PJ06);
+ }
+ 
+ #ifdef CONFIG_I3C_USE_IBI
+@@ -2144,6 +2312,7 @@ static int ls_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *req
+ 	struct ls_i3c_data *data = dev->data;
+ 	I3C_TypeDef *base = config->base;
+ 	uint32_t ctrlValue = 0;
++	int ret;
+ 	/* the request or the payload were not specific */
+ 	if ((request == NULL) || ((request->payload_len) && (request->payload == NULL))) {
+ 		return -EINVAL;
+@@ -2160,7 +2329,16 @@ static int ls_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *req
+ 				request->payload_len);
+ 			return -EINVAL;
+ 		}
+-		k_sem_take(&data->target_event_lock_sem, K_FOREVER);
++		/* DISEC 会在硬件锁存 IBIDIS，期间 SCTRL.EVENT 请求被直接忽略，
++		 * 总线上不会有任何波形。提前检查，fail-fast 代替 100ms 超时。 */
++		if (base->SSTATUS & I3C_SSTATUS_IBIDIS_MASK) {
++			LOG_ERR("%s: IBI disabled by DISEC, need ENEC first", __func__);
++			return -EACCES;
++		}
++		/* mutex 串行化 IBI 发起；完成信号量 init=0，仅用于等待终态 */
++		k_mutex_lock(&data->lock, K_FOREVER);
++		k_sem_reset(&data->target_event_lock_sem);
++		data->ibi_status = -EINPROGRESS;
+ 		data->state = LS_I3C_OP_STATE_IBI;
+ 
+ 		ctrlValue = base->SCTRL;
+@@ -2171,7 +2349,7 @@ static int ls_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *req
+ 
+ 		base->IBIEXTIDATA |= I3C_SIBIEXTIDATA_CLR_MASK;
+ 		uint16_t remain_num = request->payload_len - 1;
+-		if(remain_num > 1)
++		if(remain_num > 0)
+ 		{
+ 			ctrlValue |= I3C_SCTRL_EXTDATA_MASK;
+ 			ibi_payload++;
+@@ -2190,18 +2368,49 @@ static int ls_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *req
+ 		}
+ 		if(remain_num > 0)
+ 		{
++			/* 发起前失败：尚未占用信号量，恢复状态后直接返回 */
+ 			base->IBIEXTIDATA |= I3C_SIBIEXTIDATA_CLR_MASK;
+ 			LOG_ERR("%s : ibi paload too long , the ibi fifo is full", __func__);
++			data->state = LS_I3C_OP_STATE_IDLE;
++			k_mutex_unlock(&data->lock);
+ 			return -EINVAL;
+ 		}
++
++		/* 发起 IBI，等待 ISR 上报终态（ACK/NACK），超时兜底防死锁 */
+ 		base->SCTRL = ctrlValue;
+-		break;
++		if (k_sem_take(&data->target_event_lock_sem, I3C_IBI_COMPLETE_TIMEOUT) != 0) {
++			ctrlValue = base->SCTRL;
++			ctrlValue &= ~I3C_SCTRL_EVENT_MASK;
++			base->SCTRL = ctrlValue;
++			data->state = LS_I3C_OP_STATE_IDLE;
++			k_mutex_unlock(&data->lock);
++			LOG_ERR("%s: IBI complete timeout", __func__);
++			return -ETIMEDOUT;
++		}
++		ret = data->ibi_status;
++		k_mutex_unlock(&data->lock);
++		return ret;
+ 	case I3C_IBI_CONTROLLER_ROLE_REQUEST:
+ 		LOG_ERR("not supported crr");
+ 		return -ENOTSUP;
+ 		break;
+ 	case I3C_IBI_HOTJOIN:
+-		k_sem_take(&data->target_event_lock_sem, K_FOREVER);
++		/* 同 IBIDIS：HJDIS 锁存期间请求不会上到总线 */
++		if (base->SSTATUS & I3C_SSTATUS_HJDIS_MASK) {
++			LOG_ERR("%s: Hot-Join disabled by DISEC, need ENEC first", __func__);
++			return -EACCES;
++		}
++		/* HJ 仅供无动态地址的设备使用：DAVALID=1 时硬件会直接抑制
++		 * HJ 请求，总线上不会出现任何波形（最终 100ms 超时）。
++		 * 提前检查，提示调用方先让 controller 广播 RSTDAA。 */
++		if (base->SDYNADDR & I3C_SDYNADDR_DAVALID_MASK) {
++			LOG_ERR("%s: dynamic address still valid, need RSTDAA before Hot-Join",
++				__func__);
++			return -EACCES;
++		}
++		k_mutex_lock(&data->lock, K_FOREVER);
++		k_sem_reset(&data->target_event_lock_sem);
++		data->ibi_status = -EINPROGRESS;
+ 		data->state = LS_I3C_OP_STATE_IBI;
+ 
+ 		ctrlValue = base->SCTRL;
+@@ -2209,7 +2418,18 @@ static int ls_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *req
+ 		ctrlValue |= (CTRL_EVENT_HJ << I3C_SCTRL_EVENT_POS) & I3C_SCTRL_EVENT_MASK;
+ 
+ 		base->SCTRL = ctrlValue;
+-		break;
++		if (k_sem_take(&data->target_event_lock_sem, I3C_IBI_COMPLETE_TIMEOUT) != 0) {
++			ctrlValue = base->SCTRL;
++			ctrlValue &= ~I3C_SCTRL_EVENT_MASK;
++			base->SCTRL = ctrlValue;
++			data->state = LS_I3C_OP_STATE_IDLE;
++			k_mutex_unlock(&data->lock);
++			LOG_ERR("%s: hotjoin complete timeout", __func__);
++			return -ETIMEDOUT;
++		}
++		ret = data->ibi_status;
++		k_mutex_unlock(&data->lock);
++		return ret;
+ 	default:
+ 		break;
+ 	}
+@@ -2275,31 +2495,64 @@ static int ls_i3c_target_tx_write(const struct device *dev, uint8_t *buf, uint16
+ 		return -EINVAL;
+ 	}
+ 
+-	base->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
+-	/* The data want to send is less than the fifo length , So the last data is configured in end mode*/
++	/* 临界区：关中断保证 state 检查、清 TXSEND、flush、预填不被 I3C ISR 打断。
++	 * 否则判断通过后若 master 恰好发起读，MATCHED/TXSEND 分支会与本函数
++	 * 交错写 SWDATAB，且 FLUSHTB 会抹掉 ISR 已写入的字节。临界区很短。
++	 * （I3C_DBG_MASK_IRQ_OFF=1 实验期间退化为空操作） */
++#if !I3C_DBG_MASK_IRQ_OFF
++	unsigned int key = irq_lock();
++#else
++	unsigned int key = 0;
++	(void)key;
++#endif
+ 
+-	if(len <= data->fifo_info.TargetTxFifoSize)
+-	{
+-		for(i = 0; i< len-1;)
+-		{
+-			base->SWDATAB = tx_buf[i++];
+-		}
+-		base->SWDATAB = tx_buf[i++] | I3C_SWDATAB_END0_MASK;
+-	}else
+-	{
+-		while((base->SDATACTRL & I3C_SDATACTRL_TXFULL_MASK) != I3C_SDATACTRL_TXFULL_MASK)
+-		{
+-			base->SWDATAB = tx_buf[i++];
+-			// if(data->state != LS_I3C_OP_STATE_IDLE)
+-			// {
+-			// 	return i;
+-			// }
+-		}
+-		if(i < len)
+-		{
+-			base->SINTSET = I3C_SINTSET_TXSEND_MASK;
++	/* RD 态（master 正在读）拒绝填充：TX FIFO 正被硬件排空，
++	 * 此时 FLUSHTB+重填会破坏进行中的读。 */
++	if (data->state == LS_I3C_OP_STATE_RD) {
++#if !I3C_DBG_MASK_IRQ_OFF
++		irq_unlock(key);
++#endif
++		return 0;
++	}
++
++	/* 填充期间关闭 TXSEND：防止残留使能态在 FIFO 非满时触发 ISR，
++	 * 导致 read_requested/read_processed 回调与本函数的写交错 */
++	base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
++
++	if (data->state == LS_I3C_OP_STATE_IDLE) {
++		/* 实验（原厂指引）：传输中应避免写 FLUSHTB。ISR 的 STOP 分支
++		 * 已在每笔传输结束时 FLUSHTB，此处重复 flush 属于双重操作，
++		 * 疑似导致后续 MATCHED/STOP 中断丢失。屏蔽后靠 TXCOUNT 续写
++		 * 模型维持 FIFO 内容 = buf 前缀。 */
++	}
++
++	/* 以 FIFO 现存字节数（TXCOUNT）为起点续写 buf：
++	 * - IDLE：flush 后 TXCOUNT=0，从 buf[0] 开始装；
++	 * - WR（master 正在写本机、为随后的 restart+读备数据）：FLUSHTB 无效，
++	 *   FIFO 中可能残留上次预填的字节。本驱动的预填模型里 FIFO 内容始终
++	 *   是同一 buf 的前缀，因此从 TXCOUNT 处续写不会产生重复或错位；
++	 *   若 TXCOUNT >= len（FIFO 中已有的前缀已覆盖本次长度），不写任何
++	 *   字节，仅按需要开 TXSEND。
++	 * 仅当整个 buf 写完时在末字节标 END0；装不下的部分由 TXSEND 中断
++	 * 经 read_processed_cb 续发（ISR 为最后字节标 END0）。
++	 * 返回 FIFO 中本 buf 的字节总数，调用方用它做续发记账（tx_idx）。 */
++	i = (base->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) >>
++	    I3C_SDATACTRL_TXCOUNT_POS;
++
++	while ((i < len) && ((base->SDATACTRL & I3C_SDATACTRL_TXFULL_MASK) == 0)) {
++		uint32_t byte = tx_buf[i++];
++		if (i == len) {
++			byte |= I3C_SWDATAB_END0_MASK;
+ 		}
++		base->SWDATAB = byte;
+ 	}
++	if (i < len) {
++		base->SINTSET = I3C_SINTSET_TXSEND_MASK;
++	}
++
++#if !I3C_DBG_MASK_IRQ_OFF
++	irq_unlock(key);
++#endif
+ 	return i;
+ }
+ 
+diff --git a/subsys/logging/log_core.c b/subsys/logging/log_core.c
+index f2e5363e094..b6525087355 100644
+--- a/subsys/logging/log_core.c
++++ b/subsys/logging/log_core.c
+@@ -149,6 +149,25 @@ static char tag[CONFIG_LOG_TAG_MAX_LEN + 1] =
+ 
+ static void msg_process(union log_msg_generic *msg);
+ 
++/* 调试（I3C 8ms 死窗定位）：LOG_INF 内部各阶段耗时打点。 */
++volatile uint32_t log_dbg_alloc_us, log_dbg_commit_us,
++		  log_dbg_postfin_us, log_dbg_tmr_us, log_dbg_cnt;
++volatile uint32_t log_dbg_atomic_us, log_dbg_mpsc_us, log_dbg_ts_us;
++volatile uint32_t log_dbg_ld1_us, log_dbg_ld2_us, log_dbg_ld3_us;
++volatile uint32_t log_dbg_gap_us[8];
++volatile uint32_t log_dbg_mtime_us, log_dbg_mcycle_us;
++volatile uint32_t log_dbg_freeze = 1;
++
++#define LOG_DBG_MTIME_REG (*(volatile uint32_t *)0xE000BFF8)
++
++static ALWAYS_INLINE uint32_t log_dbg_cycle(void)
++{
++	uint32_t r;
++
++	__asm__ volatile("csrr %0, mcycle" : "=r"(r) :: "memory");
++	return r;
++}
++
+ static log_timestamp_t dummy_timestamp(void)
+ {
+ 	return 0;
+@@ -159,34 +178,101 @@ log_timestamp_t z_log_timestamp(void)
+ 	return timestamp_func();
+ }
+ 
+-static void z_log_msg_post_finalize(void)
++/* 仿真标记：idx=2 -> PJ07 异常触发 LOG 前后翻转 */
++__attribute__((weak)) void log_dbg_gpio_mark(int idx, int val)
+ {
++	ARG_UNUSED(idx);
++	ARG_UNUSED(val);
++}
++
++__ramfunc static void z_log_msg_post_finalize(void)
++{
++	log_dbg_gpio_mark(2, 0);
++	uint32_t pf_t0_mtime = LOG_DBG_MTIME_REG;
++	uint32_t pf_t0 = log_dbg_cycle();
+ 	atomic_val_t cnt = atomic_inc(&buffered_cnt);
++	uint32_t pf_t1 = log_dbg_cycle();
++	uint32_t b_t0 = log_dbg_cycle();
++	uint32_t frozen = log_dbg_freeze;
++	uint32_t b_t1 = log_dbg_cycle();
++	bool pm = panic_mode;
++	uint32_t b_t2 = log_dbg_cycle();
++	const void *pt = proc_tid;
++	uint32_t b_t3 = log_dbg_cycle();
++	uint32_t b_t4 = log_dbg_cycle();
++
++	if (!frozen) {
++		log_dbg_ld1_us = k_cyc_to_us_floor32(b_t1 - b_t0);
++		log_dbg_ld2_us = k_cyc_to_us_floor32(b_t2 - b_t1);
++		log_dbg_ld3_us = k_cyc_to_us_floor32(b_t3 - b_t2);
++	}
++	if (pm) {
++		uint32_t b_t5 = log_dbg_cycle();
+ 
+-	if (panic_mode) {
++		if (!frozen) {
++			log_dbg_gap_us[0] = k_cyc_to_us_floor32(b_t4 - b_t3);
++			log_dbg_gap_us[1] = k_cyc_to_us_floor32(b_t5 - b_t4);
++		}
+ 		k_spinlock_key_t key = k_spin_lock(&process_lock);
+ 		(void)log_process();
+ 
+ 		k_spin_unlock(&process_lock, key);
+-	} else if (proc_tid != NULL) {
++	} else if (pt != NULL) {
++		uint32_t b_t5 = log_dbg_cycle();
++		uint32_t b_t6 = log_dbg_cycle();
++
++		if (!frozen) {
++			log_dbg_gap_us[0] = k_cyc_to_us_floor32(b_t4 - b_t3);
++			log_dbg_gap_us[1] = k_cyc_to_us_floor32(b_t5 - b_t4);
++			log_dbg_gap_us[2] = k_cyc_to_us_floor32(b_t6 - b_t5);
++		}
+ 		/*
+ 		 * If CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD == 1,
+ 		 * timer is never needed. We release the processing
+ 		 * thread after every message is posted.
+ 		 */
+ 		if (CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD == 1) {
++			uint32_t b_t7 = log_dbg_cycle();
++
++			if (!frozen) {
++				log_dbg_gap_us[3] = k_cyc_to_us_floor32(b_t7 - b_t6);
++			}
+ 			if (cnt == 0) {
++				uint32_t b_t8 = log_dbg_cycle();
++
+ 				k_sem_give(&log_process_thread_sem);
++				if (!frozen) {
++					log_dbg_gap_us[4] = k_cyc_to_us_floor32(log_dbg_cycle() - b_t8);
++				}
+ 			}
+ 		} else {
++			uint32_t b_t7 = log_dbg_cycle();
++
++			if (!frozen) {
++				log_dbg_gap_us[3] = k_cyc_to_us_floor32(b_t7 - b_t6);
++			}
+ 			if (cnt == 0) {
++				uint32_t b_t8 = log_dbg_cycle();
++
++				if (!frozen) {
++					log_dbg_gap_us[4] = k_cyc_to_us_floor32(b_t8 - b_t7);
++				}
+ 				k_timer_start(&log_process_thread_timer,
+ 					      K_MSEC(CONFIG_LOG_PROCESS_THREAD_SLEEP_MS),
+ 					      K_NO_WAIT);
++				if (!frozen) {
++					log_dbg_tmr_us =
++						k_cyc_to_us_floor32(log_dbg_cycle() - b_t8);
++				}
+ 			} else if (CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD &&
+ 				   (cnt + 1) == CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD) {
++				uint32_t b_t8 = log_dbg_cycle();
++
+ 				k_timer_stop(&log_process_thread_timer);
+ 				k_sem_give(&log_process_thread_sem);
++				if (!frozen) {
++					log_dbg_gap_us[4] = k_cyc_to_us_floor32(log_dbg_cycle() - b_t8);
++				}
+ 			} else {
+ 				/* No action needed. Message processing will be triggered by the
+ 				 * timeout or when number of upcoming messages exceeds the
+@@ -194,7 +280,26 @@ static void z_log_msg_post_finalize(void)
+ 				 */
+ 			}
+ 		}
++	} else {
++		uint32_t b_t5 = log_dbg_cycle();
++
++		if (!frozen) {
++			log_dbg_gap_us[0] = k_cyc_to_us_floor32(b_t4 - b_t3);
++			log_dbg_gap_us[1] = k_cyc_to_us_floor32(b_t5 - b_t4);
++		}
+ 	}
++	if (!frozen) {
++		uint32_t pf_t1_inner = log_dbg_cycle();
++		uint32_t pf_t1_mtime = LOG_DBG_MTIME_REG;
++
++		log_dbg_cnt = (uint32_t)cnt;
++		log_dbg_atomic_us = k_cyc_to_us_floor32(pf_t1 - pf_t0);
++		log_dbg_postfin_us = k_cyc_to_us_floor32(pf_t1_inner - pf_t0);
++		log_dbg_mcycle_us = k_cyc_to_us_floor32(pf_t1_inner - pf_t0);
++		log_dbg_mtime_us = k_cyc_to_us_floor32(pf_t1_mtime - pf_t0_mtime);
++		log_dbg_freeze = 1;
++	}
++	log_dbg_gpio_mark(2, 0);
+ }
+ 
+ const struct log_backend *log_format_set_all_active_backends(size_t log_type)
+@@ -656,7 +761,13 @@ static struct log_msg *msg_alloc(struct mpsc_pbuf_buffer *buffer, uint32_t wlen)
+ 
+ struct log_msg *z_log_msg_alloc(uint32_t wlen)
+ {
+-	return msg_alloc(&log_buffer, wlen);
++	uint32_t a_t0 = k_cycle_get_32();
++	struct log_msg *m = msg_alloc(&log_buffer, wlen);
++
++	if (!log_dbg_freeze) {
++		log_dbg_alloc_us = k_cyc_to_us_floor32(k_cycle_get_32() - a_t0);
++	}
++	return m;
+ }
+ 
+ static void msg_commit(struct mpsc_pbuf_buffer *buffer, struct log_msg *msg)
+@@ -680,14 +791,26 @@ static void msg_commit(struct mpsc_pbuf_buffer *buffer, struct log_msg *msg)
+ 	}
+ 
+ #ifdef CONFIG_MPSC_PBUF
+-	mpsc_pbuf_commit(buffer, &m->buf);
++	{
++		uint32_t mc_t0 = log_dbg_cycle();
++
++		mpsc_pbuf_commit(buffer, &m->buf);
++		if (!log_dbg_freeze) {
++			log_dbg_mpsc_us = k_cyc_to_us_floor32(log_dbg_cycle() - mc_t0);
++		}
++	}
+ #endif
+ 	z_log_msg_post_finalize();
+ }
+ 
+ void z_log_msg_commit(struct log_msg *msg)
+ {
++	uint32_t c_t0 = log_dbg_cycle();
++
+ 	msg->hdr.timestamp = timestamp_func();
++	if (!log_dbg_freeze) {
++		log_dbg_ts_us = k_cyc_to_us_floor32(log_dbg_cycle() - c_t0);
++	}
+ 	msg_commit(&log_buffer, msg);
+ }
+ 

@@ -1,0 +1,6 @@
+#include "app.overlay"
+
+&i3c5 {
+    i3c-scl-hz = <6250000>;
+    i2c-scl-hz = <400000>;
+};

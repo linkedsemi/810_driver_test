@@ -1,0 +1,14 @@
+&i3c6 {
+    status = "okay";
+    is-secondary;
+    interrupts = <I3C6_IRQN 7>;
+    tgt-pid = <0x0208 0x13811000>;
+    dcr = <0x4>;
+    bcr = <0x06>;
+
+    pinctrl-0 = <
+        &i3c6_scl_pj08
+        &i3c6_sda_pj09
+    >;
+    pinctrl-names = "default";
+};

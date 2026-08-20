@@ -1,0 +1,6 @@
+#include "../../cpu0_i3c_controller/app.overlay"
+
+&i3c5 {
+    i3c-scl-hz = <6250000>;
+    /* No i2c-scl-hz: pure I3C bus, open-drain ~4 MHz. */
+};

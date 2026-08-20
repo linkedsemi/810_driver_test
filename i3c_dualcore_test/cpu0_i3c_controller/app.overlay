@@ -1,0 +1,62 @@
+/*
+ * I3C 双核测试：controller（cpu2）侧总线配置。
+ *
+ * 控制台串口（uart5, PN14/PN13）由 810_driver_test 通用配置提供：
+ *   ../common/cpu2_console_uart5.overlay
+ * 通过 cpu0_i3c_controller/CMakeLists.txt 的 EXTRA_DTC_OVERLAY_FILE 引入，
+ * 各 timing case 的 overlay 只需关注 I3C 时序差异。
+ */
+
+&i3c5_scl_pj10 {
+    drive-strength = <1>;
+    bias-pull-up2;
+};
+
+&i3c5_sda_pj11 {
+    drive-strength = <1>;
+    bias-pull-up2;
+};
+
+&i3c5 {
+    status = "okay";
+    i3c-scl-hz = <12500000>;
+    // i2c-scl-hz = <400000>;
+    interrupts = <I3C5_IRQN 6>;
+
+    tgt-pid = <0x5 0x55>;
+    dcr = <0x4>;
+    bcr = <0x42>;
+
+    pinctrl-0 = <
+        &i3c5_scl_pj10
+        &i3c5_sda_pj11
+    >;
+    pinctrl-names = "default";
+
+    i3ctarget6: i3ctarget@20813811000 {
+        compatible = "vnd,i3c-device";
+        reg = <0 0x0208 0x13811000>;
+        assigned-address = <0x32>;
+        status = "okay";
+    };
+};
+
+
+
+#if 1
+#undef SRAM_TOTAL_SIZE
+#undef SRAM_RO_SIZE
+#undef SRAM_RW_SIZE
+
+#define SRAM_TOTAL_SIZE DT_SIZE_K(512 - 128)
+#define SRAM_RO_SIZE    DT_SIZE_K(256 - 128)
+#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
+
+&sram_ro {
+    reg = <0x10020000 SRAM_RO_SIZE>;
+};
+
+&sram {
+    reg = <(0x10020000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+};
+#endif

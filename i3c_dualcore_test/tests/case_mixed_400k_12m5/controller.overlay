@@ -1,0 +1,6 @@
+#include "../../cpu0_i3c_controller/app.overlay"
+
+&i3c5 {
+    i3c-scl-hz = <12500000>;
+    i2c-scl-hz = <400000>;
+};

@@ -1,0 +1,46 @@
+/*
+ * Copyright (c) 2025 LinkedSemi
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * 810_driver_test 通用配置：cpu2（应用核）控制台串口。
+ *
+ * 810_driver_test 下所有 cpu2 侧测试工程共用同一块 LSQSH EVB 和同一路
+ * 调试串口：uart5，TX=PN14，RX=PN13，115200 8N1。
+ *
+ * 用法（在 cpu2 侧工程的 CMakeLists.txt 中，find_package(Zephyr) 之前）：
+ *
+ *   set(EXTRA_DTC_OVERLAY_FILE
+ *       ${CMAKE_CURRENT_SOURCE_DIR}/../common/cpu2_console_uart5.overlay)
+ *
+ * 注意：
+ * - PN14 同时是 cap11 的可选输入脚，启用 cap 外设的工程不能复用本配置。
+ * - cpu1（安全核）控制台使用板级默认 uart1（PN04/PN03），无需额外配置。
+ */
+
+&chosen {
+    zephyr,console = &uart5;
+    zephyr,shell-uart = &uart5;
+};
+
+&pinctrl {
+    uart5_tx_pn14: uart5_tx_pn14 {
+        pinmux = <UART5_TXD_FUNC4_PN14_PINMUX>;
+    };
+
+    uart5_rx_pn13: uart5_rx_pn13 {
+        pinmux = <UART5_RXD_FUNC4_PN13_PINMUX>;
+        input-enable;
+    };
+};
+
+&uart4 {
+    status = "disabled";
+};
+
+&uart5 {
+    status = "okay";
+    current-speed = <115200>;
+    pinctrl-0 = <&uart5_tx_pn14 &uart5_rx_pn13>;
+    pinctrl-names = "default";
+};
