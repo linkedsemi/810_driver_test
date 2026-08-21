@@ -126,18 +126,16 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 
 ## 3. 硬件/串口/GDB 固定约定（勿在工程内重复定义）
 
-- 板卡 `lsqsh_evb@2os`；cpu1 = target（安全核），cpu2 = controller（应用核）。
-- 串口：cpu1 用 uart1（板级默认，PN04/PN03），cpu2 用 **uart5**（PN14/PN13，
-  经 `common/cpu2_console_uart5.overlay` 注入，不直接改 chosen/pinctrl）。115200 8N1。
+- 串口：cpu1 用 uart1（板级默认），cpu2 用 **uart5**（经
+  `common/cpu2_console_uart5.overlay` 注入，不直接改 chosen/pinctrl）。115200 8N1。
 - GDB：**`127.0.0.1:1025`**（端口由 PC 端 DebugServer 进程提供，见 §0）；cpu1 `load` ELF
   入口 `0x100c0000`；cpu2 `restore <zephyr.bin> binary <CONTROLLER_LOAD_ADDR>` 后
   `set $pc=0x100c0000`。CPU2 加载地址变更时需同步修改：overlay `sram_ro` 基址、
   `CONFIG_CPU2_BOOT_ADDR`、`scripts/test_common.sh` / `tests/scripts/dbg_run.py` /
   `tests/scripts/*.gdbcmd` 的 `CONTROLLER_LOAD_ADDR` 四处。
-- 所有环境参数走环境变量（`GDB_SERVER_HOST/PORT`、`*_UART`、超时等），脚本内不硬编码。
-- 接线变更必须登记到顶层 `README.md`「外设接线记录」表。
-- COM 口号以设备管理器为准，一律靠 banner 动态识别角色（见 §0），脚本排除 CKLink 自身口
-  （VID 32BF:B210）。
+- 环境参数走环境变量（`GDB_SERVER_HOST/PORT`、`*_UART` 等），脚本内不硬编码；
+  接线变更登记到顶层 `README.md`「外设接线记录」表；COM 口号靠 banner 动态
+  识别角色（§0），脚本排除 CKLink 自身口（VID 32BF:B210）。
 
 ## 4. 固件编写规范（血泪教训，违反会出诡异问题）
 
@@ -148,9 +146,8 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
   k_thread_create(&dispatcher_thread, ..., K_NO_WAIT);
   k_thread_join(&dispatcher_thread, K_FOREVER);   /* 必须！ */
   ```
-- 原因：`test_main()` 一旦返回，ztest main() 立即执行 `LOG_PANIC()` → log_core 的
-  `panic_mode=true` **永不复位** → 之后所有日志走 `k_spin_lock + log_process()` 同步
-  全量输出 → UART 阻塞造成 8ms 级死窗。实测修复前后：logspan 8115us → 11us。
+- 原因：返回后 ztest 执行 `LOG_PANIC()` → `panic_mode` 永不复位 → 同步日志
+  UART 阻塞造成 8ms 级死窗（实测 logspan 8115us → 11us）。
   详见 `tests/ZTEST_PANIC_LOG_8MS_DEADWINDOW.md`。
 
 ### 4.2 ISR 内禁止打日志
@@ -196,8 +193,7 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 
 - 每个 case 独立 `build/` 目录；共享同一份源码，case 差异只体现在
   overlay/prj.conf/test.sh。新 case = 新建目录 + 三件套，不改 C 代码。
-- `west build` 优先 `-p auto`；**修改 overlay（SRAM 地址类）后必须
-  `rm -rf build/controller build/target` 全量重建**（Kconfig 会缓存旧地址）。
+- `west build` 优先 `-p auto`；改 overlay（SRAM 地址类）后必须删 build 全量重建（§10.9）。
 - 每 case 的 `test.sh` 必须包含头注释模板：What is tested / CPU0/CPU1 行为 /
   Normal behavior / Abnormal behavior / Feedback / Hardware IO connections /
   Build artifacts / Usage。
@@ -217,18 +213,13 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
   <PREFIX>:<CTRL|TGT>:SUMMARY:END:<passed>/<ran> PASS
   <PREFIX>:DONE:<PASS|FAIL>
   ```
-  - **INFO token**（§13）：携带数值型实测结果（monobit 占比、吞吐、通信字节数
-    等），供报告"实际"列与预期值对比。key 用小写下划线，多值逗号分隔；
-    在对应测试的 PASS/FAIL 之前打。
-  - **FAIL reason 格式**（§13）：`<断言位置>:<期望>=X,实际=Y[; 更多]`，
-    机器可归因。如 `byte[3]:0x12!=0x34`。
+  - INFO token 与 FAIL reason 格式规范见 §13.4 / §13.5。
 - 双核各自记账到 **§4.5 公共模块** `test_results[]`（-1 未跑/0 PASS/1 FAIL +
   reason），controller 在测试全部结束后先发 `'P'`（打印总结）命令，sleep 200ms
   等 target 总结先出，再打 CTRL 总结，最后 `DONE`。
-- agent 输出 Markdown 报告 + JSON，**写入 `reports/<YYYY-MM-DD>/` 归档**
-  （§12），同时更新当天 `summary.md` 本工程行；超时用 Python
-  `subprocess.run(timeout=...)`，不用 bash `timeout`（Windows Git Bash 不可用）。
-- 烧录用**两遍烧录法**（同一文件烧两遍，第二遍抓取）规避 GDB I-cache 残留旧镜像。
+- agent 回归输出报告并归档 `reports/<date>/` + 更新 summary.md（§12）；
+  超时用 Python `subprocess.run(timeout=...)`，不用 bash `timeout`（Git Bash 无）。
+- 烧录用两遍烧录法规避 I-cache 残留旧镜像（§10.4）。
 
 ### 6.1 串口不可用时：GDB 读内存取结果（dump_results.py）
 - 结果数组是全局符号（链接地址=加载地址），连 DebugServer 后 `x/Ndb` 直接读，
@@ -239,22 +230,18 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
   python dump_results.py --case ... --run 35                    # 先两遍烧录跑 35s 再读
   python dump_results.py --case ... --raw                       # 打印 gdb 原始输出
   ```
-- 实现要点（gdb 无 Python，全用 `-ex` 命令链）：`riscv64-unknown-elf-nm` 解析
-  符号地址 → `target remote` + `interrupt` + `x/<count>db` → detach 干净退出。
 - 适用场景：串口 token 被刷掉/串口忙/远程无串口；**串口可用时仍以 token 为准**
   （§6 判定标准），内存结果用于兜底与交叉验证。
 
 ## 7. 问题记录规范
 
-- 定位闭环的问题写一份独立 `<BUG>_<SUMMARY>.md` 总结（现象/根因/证据/修复/验证/
-  通用教训），保留存档供后续工程避坑；调试中的状态记 `<NAME>_STATUS.md` 并维护
-  状态表（已完成/进行中/待开始）。
-- 新建工程时先读样板 `projects/i3c_dualcore_test/tests/` 下已有的问题总结，确认不会重犯。
-- **沉淀准则（用户要求）**：只沉淀"会反复遇到"的坑——环境/工具链/方法学层面
-  的通用问题（如连接残留、I-cache、ISR 禁 LOG）进 §10 已知坑或对应 skill；
-  **一次性问题**（本次修复后不会再遇到的具体 bug/现象）只写问题总结存档
-  （.md），**不加入** §10/skill 备份。判断标准：换台机器/换条测试/换个驱动
-  会不会再踩？不会再踩的就不沉淀。
+- 定位闭环的问题写 `<BUG>_<SUMMARY>.md` 总结（现象/根因/证据/修复/验证/通用教训）
+  存档供后续避坑；调试中的状态记 `<NAME>_STATUS.md` 并维护状态表。
+- 新建工程先读样板 `projects/i3c_dualcore_test/tests/` 下已有问题总结，确认不会重犯。
+- **沉淀准则（用户要求）**：只沉淀"会反复遇到"的坑（环境/工具链/方法学，如连接
+  残留、I-cache、ISR 禁 LOG）进 §10 已知坑或对应 skill；**一次性问题**（修复后
+  不再遇到的具体 bug）只写 .md 存档，不加入 §10/skill。判断标准：换机器/测试/
+  驱动会不会再踩？不会再踩就不沉淀。
 
 ## 8. 新工程生成 checklist
 
@@ -269,8 +256,7 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
    不得拍脑袋；确定性测试标注预期数据来源）。
 5. 顶层 README.md「外设接线记录」登记接线；`run_<driver>_tests.py` 必须
    实现 §12 报告归档（reports/<date>/ + summary.md 索引 + INFO 解析 + 内存兜底合并）。
-6. 先 `./test.sh -g` 手动验证一个 case 双核 PASS，再跑 agent 全量回归
-   （回归后检查归档报告与 summary.md 是否生成）。
+6. 先 `./test.sh -g` 验证一个 case 双核 PASS，再跑全量回归并核对归档（§11）。
 7. 单 case 实测通过前，不声明自动化回归 PASS。
 8. 新工程可用 `qsh-test-gen` skill 自动生成（见 §9）。
 
@@ -287,22 +273,11 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 | ③ 自动化测试 | **qsh-test-run** | dbg_run.py / test.sh / run_*_tests.py 用法、token 解析、回归执行、报告归档到 reports/（§12） | 构建、烧录、跑某个 case 或全量回归 |
 | ③ 自动化测试 | **qsh-test-compare** | 结果解析、PASS/FAIL 判定、报告生成、回归差异对比、串口不可用时 GDB 读内存取结果（dump_results.py，§6.1）并**按 §12.3 兜底合并**进归档报告 | 分析测试结果、写报告、对比多次回归（含 reports/ 历史归档）、串口无输出时取结果 |
 
-调用关系（新 agent 按类走）：
-
-```text
-qsh-driver-test (总入口，读它决定下一步)
- ├─ ① 驱动有问题（调试）  → qsh-debug（环境链路 → 断点抓现场 → 分层定位）
- ├─ ② 新建工程/case     → qsh-test-gen（生成后回 qsh-debug 调试验证）
- └─ ③ 跑测试/分析结果    → qsh-test-run（执行）→ qsh-test-compare（结果/报告）
-```
-
-分工边界（避免走错 skill）：
-- **qsh-debug** 管"为什么错"：环境链路、断点、寄存器、驱动源码定位。
-  测试跑起来正常、只是要看结果的，不进 debug。
-- **qsh-test-run** 管"怎么跑"：构建、烧录、采集 token、回归执行。
-  碰到跑不起来的问题，回 qsh-debug。
-- **qsh-test-gen** 管"怎么建"：新工程/case 的模板生成。生成后的验证用
-  qsh-debug + qsh-test-run。
+调用关系与分工边界（详见 qsh-driver-test skill）：
+- 驱动有问题/定位根因 → **qsh-debug**；新建工程/case → **qsh-test-gen**；
+  构建/烧录/跑回归 → **qsh-test-run**；结果判定/报告/对比 → **qsh-test-compare**。
+- 分工：debug 管"为什么错"，run 管"怎么跑"，gen 管"怎么建"；生成后的验证
+  用 debug + run，跑不起来的问题回 debug。
 
 ## 10. 已知坑清单（实测，逐条沉淀）
 
@@ -344,14 +319,13 @@ qsh-driver-test (总入口，读它决定下一步)
 
 ## 11. 新建驱动测试工程时的验收标准
 
-1. `./test.sh` 双核编译零警告失败；launch.json 片段地址正确。
-2. `./test.sh -g` 单 case 手动跑：双核各自输出 `PASS` token（含 target 侧）。
-3. `dbg_run.py` 角色识别正确（CTRL/TGT 无 `?`）。
-4. `run_<driver>_tests.py` 全量回归：报告表格完整、`DONE:PASS`，
-   报告已归档到 `reports/<日期>/` 且 summary.md 有本工程行。
-5. `tests/COVERAGE.md` 存在，每个测试项至少覆盖一个维度，确定性测试
-   标注了预期数据来源（§13）。
-6. 期间遇到的所有坑已沉淀进 §10 / 对应 skill。
+1. `./test.sh` 双核编译零失败；launch.json 片段地址正确。
+2. `./test.sh -g` 单 case 双核各自输出 `PASS` token（含 target 侧）；
+   `dbg_run.py` 角色识别正确（CTRL/TGT 无 `?`）。
+3. `run_<driver>_tests.py` 全量回归 `DONE:PASS`，报告归档 `reports/<日期>/`
+   且 summary.md 有本工程行（§12.4）。
+4. `tests/COVERAGE.md` 存在，测试项覆盖 §13.1 维度、确定性测试标注预期来源。
+5. 期间遇到的坑已沉淀进 §10 / 对应 skill。
 
 ## 12. 测试报告归档规范（★ 所有 run_*_tests.py 必须实现）
 
