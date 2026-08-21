@@ -262,25 +262,21 @@ def evaluate_case(case, lines, test_names, mem_data):
 
 
 def write_markdown_report(case, results, infos, reasons, notes, expected, date_dir, env_line):
+    """§12.1 覆盖写：同一天多次回归只保留 latest（对比历史用其他日期）。"""
     base = date_dir / f"{REPORT_BASE}.md"
-    # 追加新 run 到同一天报告（首次运行创建）
-    mode = "a" if base.exists() else "w"
-    lines = []
-    if mode == "w":
-        lines += [
-            "# TRNG 驱动测试报告",
-            "",
-            f"- 工程: {DRIVER_NAME}",
-            f"- 日期: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"- 板级: {BOARD}",
-            f"- 环境: {env_line}",
-            "",
-            "## 测试项结果",
-            "",
-            "| 测试项 | 结果 | 预期(COVERAGE) | 实际(INFO) | 失败原因 | 来源 |",
-            "|---|---|---|---|---|---|",
-        ]
-    lines.append(f"- Run @ {datetime.now().strftime('%H:%M:%S')} (case {case})")
+    lines = [
+        "# TRNG 驱动测试报告",
+        "",
+        f"- 工程: {DRIVER_NAME}",
+        f"- 日期: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"- 板级: {BOARD}",
+        f"- 环境: {env_line}",
+        "",
+        "## 测试项结果",
+        "",
+        "| 测试项 | 结果 | 预期(COVERAGE) | 实际(INFO) | 失败原因 | 来源 |",
+        "|---|---|---|---|---|---|",
+    ]
     for name in results:
         st = results[name]
         if st == PASS:
@@ -296,11 +292,12 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
         lines.append(f"| {name} | {st_txt} | {exp} | {info} | {reason} | {notes.get(name, '')} |")
     lines.append("")
     base.parent.mkdir(parents=True, exist_ok=True)
-    with open(base, "a" if mode == "a" else "w", encoding="utf-8") as f:
+    with open(base, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
 
 def write_json_report(case, results, infos, reasons, notes, date_dir, env_line):
+    """§12.1 覆盖写：同一天多次回归只保留 latest run。"""
     base = date_dir / f"{REPORT_BASE}.json"
     data = {
         "driver": DRIVER_NAME, "case": case, "board": BOARD,
@@ -308,16 +305,7 @@ def write_json_report(case, results, infos, reasons, notes, date_dir, env_line):
         "results": {name: st for name, st in results.items()},
         "infos": infos, "reasons": reasons, "notes": notes,
     }
-    old = []
-    if base.exists():
-        try:
-            old = json.loads(base.read_text(encoding="utf-8"))
-            if not isinstance(old, list):
-                old = []
-        except json.JSONDecodeError:
-            old = []
-    old.append(data)
-    base.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
+    base.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def update_summary(date_dir, results, env_line, case):

@@ -1,0 +1,9 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * RTC 单核测试 overlay：使能 rtc@4006fc00（soc dtsi 默认 disabled）。
+ */
+
+&rtc {
+	status = "okay";
+};
