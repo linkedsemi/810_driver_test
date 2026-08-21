@@ -1,6 +1,0 @@
-#include "app.overlay"
-
-&i3c5 {
-    i3c-scl-hz = <6250000>;
-    /* no i2c-scl-hz: pure I3C bus, open-drain ~4 MHz */
-};

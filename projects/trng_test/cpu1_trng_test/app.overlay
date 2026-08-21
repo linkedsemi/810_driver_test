@@ -1,0 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * TRNG 单核测试 overlay：指定 zephyr,entropy = trng1 并使能。
+ * （熵源选择必须显式 chosen，否则随机子系统可能落到其他熵设备）
+ */
+
+/ {
+	chosen {
+		zephyr,entropy = &trng1;
+	};
+};
+
+&trng1 {
+	status = "okay";
+};

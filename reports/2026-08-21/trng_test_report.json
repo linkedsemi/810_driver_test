@@ -1,0 +1,109 @@
+[
+  {
+    "driver": "trng_test",
+    "case": "case_default",
+    "board": "lsqsh_evb@2os/lsqsh/cpu1",
+    "env": "tgt_uart=auto, timeout=30s",
+    "timestamp": "2026-08-21T20:16:46",
+    "results": {
+      "basic_16": "PASS",
+      "not_all_zero": "PASS",
+      "not_all_ff": "PASS",
+      "isr_busywait": "PASS",
+      "large_1024": "PASS",
+      "invalid_args": "PASS",
+      "monobit_8k": "PASS",
+      "distinct_32": "PASS",
+      "throughput_64k": "PASS"
+    },
+    "infos": {
+      "monobit_8k": {
+        "value": "ones=32727,percent=49.94"
+      },
+      "throughput_64k": {
+        "value": "bytes=65536,us=11077,mbps=47.33"
+      }
+    },
+    "reasons": {},
+    "notes": {
+      "basic_16": "src=token",
+      "not_all_zero": "src=token",
+      "not_all_ff": "src=token",
+      "isr_busywait": "src=token",
+      "large_1024": "src=token",
+      "invalid_args": "src=token",
+      "monobit_8k": "src=token",
+      "distinct_32": "src=token",
+      "throughput_64k": "src=token"
+    }
+  },
+  {
+    "driver": "trng_test",
+    "case": "case_default",
+    "board": "lsqsh_evb@2os/lsqsh/cpu1",
+    "env": "tgt_uart=auto, timeout=30s",
+    "timestamp": "2026-08-21T20:31:05",
+    "results": {
+      "basic_16": "MISSING",
+      "not_all_zero": "MISSING",
+      "not_all_ff": "MISSING",
+      "isr_busywait": "MISSING",
+      "large_1024": "MISSING",
+      "invalid_args": "MISSING",
+      "monobit_8k": "MISSING",
+      "distinct_32": "MISSING",
+      "throughput_64k": "MISSING"
+    },
+    "infos": {},
+    "reasons": {},
+    "notes": {
+      "basic_16": "mem-unavailable",
+      "not_all_zero": "mem-unavailable",
+      "not_all_ff": "mem-unavailable",
+      "isr_busywait": "mem-unavailable",
+      "large_1024": "mem-unavailable",
+      "invalid_args": "mem-unavailable",
+      "monobit_8k": "mem-unavailable",
+      "distinct_32": "mem-unavailable",
+      "throughput_64k": "mem-unavailable"
+    }
+  },
+  {
+    "driver": "trng_test",
+    "case": "case_default",
+    "board": "lsqsh_evb@2os/lsqsh/cpu1",
+    "env": "tgt_uart=auto, timeout=30s",
+    "timestamp": "2026-08-21T20:34:15",
+    "results": {
+      "basic_16": "PASS",
+      "not_all_zero": "PASS",
+      "not_all_ff": "PASS",
+      "isr_busywait": "PASS",
+      "large_1024": "PASS",
+      "invalid_args": "PASS",
+      "monobit_8k": "PASS",
+      "distinct_32": "PASS",
+      "throughput_64k": "PASS"
+    },
+    "infos": {
+      "monobit_8k": {
+        "value": "ones=32662,percent=49.84"
+      },
+      "throughput_64k": {
+        "value": "bytes=65536,us=11079,mbps=47.32"
+      }
+    },
+    "reasons": {},
+    "notes": {
+      "basic_16": "src=token",
+      "not_all_zero": "src=token",
+      "not_all_ff": "src=token",
+      "isr_busywait": "src=token",
+      "large_1024": "src=token",
+      "invalid_args": "src=token",
+      "monobit_8k": "src=token",
+      "distinct_32": "src=token",
+      "throughput_64k": "src=token"
+    }
+  }
+]

@@ -1,0 +1,22 @@
+/*
+ * cpu2（controller 核）内存布局 —— 统一管理入口。
+ *
+ * 所有 810_driver_test 工程的 cpu2 固件必须注入本 overlay
+ * （EXTRA_DTC_OVERLAY_FILE 追加本文件），内存布局只在此处修改：
+ *   - CPU2 启动地址（sram_ro 基址，也是 flash/XIP 区）
+ *   - sram_ro（XIP 代码区）/ sram（数据区）大小划分
+ * 后续如需把测试项挪到 flash 或其他地址，只改这里 + 板级
+ * CONFIG_CPU2_BOOT_ADDR + 脚本 CONTROLLER_LOAD_ADDR 即可。
+ */
+
+#define SRAM_TOTAL_SIZE DT_SIZE_K(768)
+#define SRAM_RO_SIZE    DT_SIZE_K(384)
+#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE - DT_SIZE_K(4) - DT_SIZE_K(4))
+
+&sram_ro {
+    reg = <0x10000000 SRAM_RO_SIZE>;
+};
+
+&sram {
+    reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+};
