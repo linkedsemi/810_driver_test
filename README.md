@@ -77,6 +77,21 @@
 
 参考实现：`scripts/test_common.sh` 的 `load_and_run()`。
 
+### Flash 烧录约定（XIP 固件固化，详见本目录 CLAUDE.md §15）
+
+| 项 | 值 |
+|---|---|
+| CLI | 工程内打包副本优先 `tools/flash_program/CSKYFlashProgramerConsole.exe`（自包含），回退 `C:\user_file\EC_FLASH_PROGRAM\FlashProgrammer\Bins\CSKYFlashProgramerConsole.exe`（注意拼写 "Programer"；GUI 是 "Programmer"） |
+| 算法文件 | 工程内 `tools/flash_program/qsh_flash_algo.elf`（QSH）/ `leo_flash_algo.elf`（LE501x）；回退 `C:\user_file\EC_FLASH_PROGRAM\` 同名文件 |
+| 封装脚本 | `scripts/flash_program.py`（烧/读/校验；`FP_EXE`/`FP_ALGO`/`FP_LOG` 可覆盖路径） |
+| 地址约定 | cpu1 @ `0x08000000`、cpu2 @ `0x08100000`（2os）；1os 只用 cpu1 地址 |
+| 互斥 | 与 DebugServer **互斥占用 CKLink**：烧 flash 时 DebugServer 必须退出；烧完要 GDB 再启 |
+| 用法 | `python scripts/flash_program.py --bin zephyr_flash_xxx.bin@0x08000000 --verify`；双核必须一次会话传两个 `--bin`（全片擦会擦掉另一核） |
+| 启动测试 | `dbg_run.py --xip --bins <file>@<addr>[,<file>@<addr>] --timeout <sec>`（烧录→启动→采集，无两遍烧录法） |
+| 默认测试 | 单核/双核 = **全 RAM**（现有 GDB load 流程，不烧 flash） |
+| XIP 标准组合 | **cpu1 XIP + cpu2 RAM**：cpu1 用 `lsqsh_evb@2os_xip/lsqsh/cpu1` 构建（烧 `0x08000000`，XIP 执行 + boot 引导）；cpu2 用标准 `lsqsh_evb@2os/lsqsh/cpu2` 构建（RAM 固件，产物 `zephyr_flash_*.bin` 烧 `0x08100000`，由 cpu1 boot 搬运启动）；两个 bin 一次会话烧录 |
+| 核心机制 | **只要任一核是 XIP，所有核固件都必须烧进 flash**（另一核即使 RAM 固件也先烧 flash 对应区，由 XIP boot 引导）；**只有单核或双核全 RAM 才直接 CKLink load RAM**（详见本目录 CLAUDE.md §15.6） |
+
 ### 外设接线记录
 
 | 测试工程 | 接线 |

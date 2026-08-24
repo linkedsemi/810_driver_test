@@ -22,6 +22,9 @@
 #   TARGET_BOARD          (default: lsqsh_evb@2os/lsqsh/cpu1)
 #   CONTROLLER_LOAD_ADDR  (default: 0x10000000)
 #   TARGET_ROM_START      (default: 0x100c0000)
+#   CPU1_XIP_ADDR         (default: 0x08000000, XIP flash base, cpu1; CLAUDE.md §15)
+#   CPU2_XIP_ADDR         (default: 0x08100000, XIP flash base, cpu2)
+#   FP_EXE / FP_ALGO      (flash programmer exe / algorithm ELF, §15; scripts/flash_program.py)
 #   I3C_CTRL_UART         (controller UART port, e.g. COM3, used by agent)
 #   I3C_TGT_UART          (target UART port, e.g. COM4, used by agent)
 #   AGENT_RUN             (set to "y" by test.sh -r; load/run only for agent)
@@ -47,6 +50,10 @@ CONTROLLER_BOARD="${CONTROLLER_BOARD:-lsqsh_evb@2os/lsqsh/cpu2}"
 TARGET_BOARD="${TARGET_BOARD:-lsqsh_evb@2os/lsqsh/cpu1}"
 CONTROLLER_LOAD_ADDR="${CONTROLLER_LOAD_ADDR:-0x10000000}"
 TARGET_ROM_START="${TARGET_ROM_START:-0x100c0000}"
+# XIP flash 固化（CLAUDE.md §15）：地址信息集中在此掌握，test.sh 直接引用
+CPU1_XIP_ADDR="${CPU1_XIP_ADDR:-0x08000000}"
+CPU2_XIP_ADDR="${CPU2_XIP_ADDR:-0x08100000}"
+# FP_EXE/FP_ALGO 默认值依赖 win_path()（第 77 行），定义在其后（见下）
 
 DEFAULT_CONTROLLER_SRC="${I3C_TEST_ROOT}/cpu0_i3c_controller"
 DEFAULT_TARGET_SRC="${I3C_TEST_ROOT}/cpu1_i3c_target"
@@ -73,6 +80,26 @@ win_path() {
         printf '%s' "$1" | sed 's/\\/\//g'
     fi
 }
+
+# Flash 烧录工具默认值（CLAUDE.md §15）：工程内打包副本优先
+# （tools/flash_program/，自包含可拷贝），外部 C:\user_file\... 回退。
+# 依赖 win_path()，须定义在其后；用户可用 FP_EXE/FP_ALGO 覆盖。
+if [ -z "${FP_EXE:-}" ]; then
+    _FP_TOOLS="${WORKSPACE_ROOT}/tools/flash_program"
+    if [ -f "${_FP_TOOLS}/CSKYFlashProgramerConsole.exe" ]; then
+        FP_EXE="$(win_path "${_FP_TOOLS}/CSKYFlashProgramerConsole.exe")"
+    else
+        FP_EXE="C:/user_file/EC_FLASH_PROGRAM/FlashProgrammer/Bins/CSKYFlashProgramerConsole.exe"
+    fi
+fi
+if [ -z "${FP_ALGO:-}" ]; then
+    _FP_TOOLS="${WORKSPACE_ROOT}/tools/flash_program"
+    if [ -f "${_FP_TOOLS}/qsh_flash_algo.elf" ]; then
+        FP_ALGO="$(win_path "${_FP_TOOLS}/qsh_flash_algo.elf")"
+    else
+        FP_ALGO="C:/user_file/EC_FLASH_PROGRAM/qsh_flash_algo.elf"
+    fi
+fi
 
 # Escape a string for JSON output.
 json_escape() {

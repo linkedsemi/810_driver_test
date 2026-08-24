@@ -21,17 +21,22 @@
 | COM 映射 | COM14=CKLink Serial（VID 32BF:B210，**必须排除**）、COM15=MCP2200（04D8:00DD）=controller uart5、COM16/17=CH342（1A86:55D2）=target uart1+备用 | **口号以设备管理器为准**，脚本靠 banner 动态识别角色，不硬编码 |
 | 角色 banner | "CPU2 MASTER"/"i3c_master_test" → CTRL；"CPU1 SLAVE"/"i3c_slave_test" → TGT | 烧录后从串口实际输出判定 |
 | 串口参数 | 115200 8N1，pyserial | 两个核各一路，不要混用 |
+| Flash 烧录 | `tools/flash_program/CSKYFlashProgramerConsole.exe`（工程内打包副本，回退 `C:\user_file\EC_FLASH_PROGRAM\...`）+ 算法 `tools/flash_program/qsh_flash_algo.elf` | 烧 XIP 固件用（§15），经 `scripts/flash_program.py` 封装；与 DebugServer **互斥占用 CKLink**，烧录时 DebugServer 必须退出 |
 
-DebugServer 启动/清理（先于一切烧录操作）：
+DebugServer 启动/清理（先于一切 **RAM load** 烧录操作）：
 
 ```bash
 # 启动（首次或被杀后）
 cd C:/uaer_app/debug_server/bin && ./DebugServerConsole.exe &
-# 启动失败且报 CKLINK used by other program：
-tasklist | grep -i cskyflash     # 找到占用进程
+# 启动失败且报 CKLINK used by other program：FlashProgrammer（GUI/CLI）正在占用
+tasklist | grep -i -E "cskyflash|debugserver"   # 找占用进程
 taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 # 验证在线：直接 GDB 连一次（能进 "Remote debugging" 即通），勿用 netstat 判离线
 ```
+
+> **CKLink 互斥（双向）**：DebugServer（GDB RAM load 调试）与 FlashProgrammer（XIP flash 烧录，§15）
+> 在同一时刻只能有一个持有 CKLink。烧 flash 前确保 DebugServer 已退出（`flash_program.py`
+> 会检测并警告，`--kill-debugserver` 可强制杀）；烧完需要 GDB 时再启动 DebugServer。
 
 ## 1. 工程模板（生成新工程时按此骨架）
 
@@ -123,6 +128,7 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 | GDB 会话脚本 | `tests/scripts/flash_and_run.gdbcmd`、`check_panic_mode.gdb`、`pc_sample.gdb` | 调试辅助 |
 | 内存布局 | `common/cpu2_mem_layout.overlay` | sram_ro/sram 划分（384K RO + 376K RW @0x10000000），所有 cpu2 工程必须注入 |
 | 控制台串口 | `common/cpu2_console_uart5.overlay` | cpu2 用 uart5，所有 cpu2 工程必须注入 |
+| Flash 烧录封装 | `scripts/flash_program.py` | 调 CSKYFlashProgramerConsole.exe 烧/读 XIP flash（§15）；`dbg_run.py --xip` 的烧录后端 |
 
 ## 3. 硬件/串口/GDB 固定约定（勿在工程内重复定义）
 
@@ -291,8 +297,10 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
    还不行就重启 DebugServerConsole.exe。判断"目标真的在跑"：串口出现角色 banner
    （"CPU2 MASTER"/"CPU1 SLAVE"）。
 2. **DebugServer 起不来**：报 "CKLINK may be used by other program" →
-   CSKYFlashProgrammer.exe 占用，`tasklist | grep -i csky` 找到后
-   `taskkill //F //PID <pid>`，重启 DebugServer。
+   FlashProgrammer（GUI `CSKYFlashProgrammer.exe` 或 CLI 烧录，§15）占用 CKLink。
+   反方向同理：**烧 flash 时 DebugServer 必须已退出**（`flash_program.py`
+   会检测警告，`--kill-debugserver` 强制杀）。切换场景时先确认对方已退出：
+   `tasklist | grep -i -E "cskyflash|debugserver"`。
 3. **不要用 netstat 判离线**：1025 由 PC 进程 DebugServer 提供（非固件内置），
    判断在线 = GDB 连一次看 "Remote debugging"。用户明确纠正过。
 4. **两遍烧录法**：单遍烧录 + continue 会因 I-cache 残留跑旧镜像（"慢一拍"）。
@@ -316,6 +324,12 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
     不可靠，用同步阻塞 continue + 超时。
 12. **prime/capture 输出混合**：两轮烧录的输出会混排造成测试顺序错乱假象，
     串口只在 capture 轮开。
+13. **XIP 烧录会话日志**：CLI 烧录追加写 `Bins\flash-programer.log`（与 GUI 共用），
+    `flash_program.py` 按文件偏移量 diff 出本会话新增段用于判定；排障先看
+    该文件尾部（"CKLINK may be used"、"verify fail" 等关键字）。
+14. **双核固化必须一次会话**：EraseType=0（全片擦）在编程前擦整个 flash；
+    分两次 CLI 调用烧 cpu1/cpu2 时第二次会擦掉第一个核的镜像。双核 XIP
+    用 `--bin a@0x08000000 --bin b@0x08100000` 一次烧（或 `--erase 2` 范围擦）。
 
 ## 11. 新建驱动测试工程时的验收标准
 
@@ -474,3 +488,120 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 | I3C 双核对连 | 有（I3C5↔I3C6 跨核接线） | 问接线/上拉/速率 | 报告接线状态 |
 | TRNG | 无（片内熵源） | 直接生成 | 无需报告环境 |
 | UART 环回测试 | 有（TX↔RX 短接） | 问是否环回/电平 | 报告环回状态 |
+
+## 15. XIP 固件固化与启动测试（CSKYFlashProgrammer CLI）
+
+把测试固件烧进板载 SPI flash，板卡复位后从 flash 启动（XIP 执行或 boot 拷贝）。
+与 §3 RAM load（GDB 加载到 SRAM）互补：RAM 模式断电丢失、每轮重载；flash
+固化是持久化的，适合 XIP 启动类测试 / 量产镜像。
+
+### 15.1 工具链（实测，勿凭想象）
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| CLI | 工程内打包副本优先：`tools/flash_program/CSKYFlashProgramerConsole.exe`；回退 `C:\user_file\EC_FLASH_PROGRAM\FlashProgrammer\Bins\CSKYFlashProgramerConsole.exe` | 已打包进工程（自包含，含 Cklink.dll 固件等全部依赖）；注意拼写 "Programer"（GUI 是 "Programmer"）；`-f <config.json>` 必需 |
+| 算法 | 工程内 `tools/flash_program/qsh_flash_algo.elf`；回退 `C:\user_file\EC_FLASH_PROGRAM\qsh_flash_algo.elf` | flash 芯片驱动；LE 系列用 `leo_flash_algo.elf`（也在 tools 内） |
+| 会话日志 | `tools/flash_program/flash-programer.log`（随 FP_EXE 所在目录） | 追加写，按偏移 diff 会话（§10.13）；打包时已清空旧日志 |
+| 路径默认 | `flash_program.py` 与 `test_common.sh`（`FP_EXE`/`FP_ALGO`）均为工程内优先 + 外部回退；用户可用环境变量覆盖 | 打包副本不依赖外部 C:\user_file，拷贝 810_driver_test 即自包含 |
+| config | JSON：`DebugServerSetting` + `FlashProgramSession`（CommandType 0=写/1=读、TargetConfig.AlgorithmFile/EraseType 0=全片/1=扇区/2=范围/3=不擦/ConnectType/Timeout/ResetAndRun、TargetObjectArray 按序 Program+Verify，Type 0=ELF/1=Hex/2=Bin+TargetAddr/3=规则数据） | 由 `scripts/flash_program.py` 生成，勿手写 |
+
+### 15.2 flash 地址约定
+
+| 镜像 | 地址 | 说明 |
+|---|---|---|
+| cpu1（1os/2os 都烧这个核） | `0x08000000` | XIP flash 基址 |
+| cpu2（仅 2os） | `0x08100000` | 与 cpu1 镜像相隔 16MB |
+
+> **地址与启动信息必须在脚本中自己掌握**：地址约定集中定义在
+> `scripts/test_common.sh` 环境变量（`CPU1_XIP_ADDR`/`CPU2_XIP_ADDR`/
+> `FP_EXE`/`FP_ALGO`），case 的 test.sh 引用这些变量，不散落硬编码；
+> 涉及 XIP 的 case 在 test.sh 头注释里**明确声明本 case 的启动模式**
+> （见 §15.6）与所用地址。
+
+### 15.6 多核运行模式（★ 每次固化前先想清楚本 case 用哪种）
+
+**核心机制（用户明确，勿违背）**：
+> **只要任一核固件是 XIP 的，所有核的固件都必须烧进 flash**——另一个核即使是
+> RAM 固件，也先把它的 bin 烧到 flash 对应区（cpu2 的 RAM 固件烧 `0x08100000`），
+> 由 XIP 核的 boot 代码负责把它引导启动。**只有单核运行、或双核全部 RAM 的
+> 场景，才可以直接经 CKLink（DebugServer + GDB）load 到 RAM 执行。**
+
+| 模式 | cpu1 | cpu2 | 操作 |
+|---|---|---|---|
+| **XIP 标准组合（默认 XIP 场景）** | flash `0x08000000`（XIP 变体构建，XIP 执行 + boot 引导） | flash `0x08100000`（**标准 2os 构建的 RAM 固件**，由 cpu1 boot 搬运启动） | cpu1 用 `@2os_xip` 构建、cpu2 用 `@2os` 构建（§15.3）；两个 bin 一次会话烧进 flash（§10.14），`--reset-and-run` 复位后 cpu1 XIP boot 统一引导 |
+| 全 RAM（单核或双核，**默认测试**） | RAM（`load` ELF@0x100c0000） | RAM（`restore bin@0x10000000`） | 不烧 flash，直接 CKLink GDB load（现有 §3 两遍烧录法） |
+
+要点：
+- **没有"一个核烧 flash、另一个核 GDB load RAM"的混合模式**：涉及 XIP 就
+  全烧 flash（cpu2 烧的是标准 2os 构建的 RAM 固件 bin，§15.3）；纯 RAM 才走 CKLink
+- **cpu2 的标准 2os 构建也会产出 `zephyr_flash_*.bin`**（flash 段镜像），
+  烧录就用它，不是 zephyr.bin
+- **1os 只有 cpu1**：1os_xip 固化只烧 `0x08000000`；2os XIP 标准组合才需要
+  cpu1+cpu2 两个区
+- 固化前确认：本 case 是否涉及 XIP → 涉及则列出**全部核**的构建变体与
+  flash 地址并一次会话烧录；纯 RAM 则照常 GDB。地址写进 test.sh 头注释与
+  运行记录，避免"以为在跑 flash 镜像其实跑的是 RAM 旧镜像"
+
+### 15.3 构建 XIP 变体（★ 默认标准：cpu1 XIP + cpu2 RAM）
+
+**默认测试（单核/双核）= 全 RAM**（现有 §3 流程，不烧 flash）。
+**XIP 场景的标准组合 = cpu1 XIP + cpu2 RAM**：
+- cpu1 用 XIP 变体构建（XIP 执行 + boot 引导），烧 `0x08000000`
+- cpu2 用**标准 2os 构建（RAM 固件）**，产物也烧进 flash `0x08100000`，
+  由 cpu1 的 XIP boot 代码搬运启动（§15.6）
+
+```bash
+# cpu1: XIP 变体（2os_xip）——分别用 -d 区分构建目录
+cd linkedsemi_zephyr_project/samples/<app>
+west build -p auto -b lsqsh_evb@2os_xip/lsqsh/cpu1 -d build_xip_cpu1 .
+# cpu2: 标准 2os（RAM 固件，不烧 XIP 变体）
+west build -p auto -b lsqsh_evb@2os/lsqsh/cpu2 -d build_cpu2 .
+```
+
+- XIP board 名 = `lsqsh_evb@{os}_xip/lsqsh/cpu{N}`（实测 `@1os_xip`/`@2os_xip`
+  都可用；`{os}`+`xip` 都在 `@` 后，cpu 后缀不带 xip；1os 只有 cpu1）
+- 产物：cpu1（XIP）→ `build_xip_cpu1/zephyr/zephyr_flash_bram_xip_*.bin`
+  （= BRAM boot header + flash 镜像合并，烧录用它）；cpu2（标准 2os）→
+  `build_cpu2/zephyr/zephyr_flash_*.bin`（flash 段镜像，烧录也用这个）
+
+### 15.4 烧录（scripts/flash_program.py）
+
+```bash
+# 标准 XIP 组合（cpu1 XIP + cpu2 RAM，§15.3）：两个 bin 一次会话烧录
+python 810_driver_test/scripts/flash_program.py \
+    --bin build_xip_cpu1/zephyr_flash_bram_xip_xxx.bin@0x08000000 \
+    --bin build_cpu2/zephyr_flash_xxx.bin@0x08100000 --verify
+
+# 单核（1os 或只烧 cpu1）：烧 + 校验
+python 810_driver_test/scripts/flash_program.py --bin zephyr_flash_xxx.bin@0x08000000 --verify
+
+# 读回 dump + 与源文件比对
+python 810_driver_test/scripts/flash_program.py --dump-out rb.bin \
+    --dump-addr 0x08000000 --dump-len 0x1000 --compare cpu1.bin
+```
+
+- 环境变量覆盖：`FP_EXE` / `FP_ALGO` / `FP_LOG`（test_common.sh 风格）
+- 结果：每对象 `FP_OK: <name>@<addr>`，失败 `FP_FAIL` + 退出码 1
+- 判定为双通道（CLI 退出码 + stdout/日志关键字），实测校准见 §10 追加
+- 烧录前 `flash_program.py` 检测 DebugServer/gdb 进程并警告（§10.2 互斥），
+  `--kill-debugserver` 强制清理
+
+### 15.5 启动测试（dbg_run.py --xip）
+
+```bash
+# 单核：烧录(带 ResetAndRun) → 从 flash 启动 → 串口采集
+python tests/scripts/dbg_run.py --xip \
+    --bins zephyr_flash_xxx.bin@0x08000000 --timeout 15 [--prefix HELLO]
+
+# 双核：两个 bin 一次烧，启动后双串口采集
+python tests/scripts/dbg_run.py --xip \
+    --bins cpu1.bin@0x08000000,cpu2.bin@0x08100000 --timeout 15
+
+# 烧完经 DebugServer 复位启动（--reset-and-run 无效或已关闭时）
+python tests/scripts/dbg_run.py --xip --bins ... --no-reset-run --gdb-reset
+```
+
+- 与 RAM 模式差异：**无两遍烧录法、无 GDB load**；烧录成功即从 flash 启动
+- 串口采集/角色识别/token 解析与 RAM 模式共用；token 前缀用 `--prefix` 指定
+  （默认 `I3C_TEST`），烧任意固件（如 hello_world）时按需设置
+- 启动方式（ResetAndRun vs DebugServer reset）以实机实测为准，回填本节约定

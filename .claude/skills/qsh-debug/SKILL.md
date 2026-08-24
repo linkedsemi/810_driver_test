@@ -45,11 +45,14 @@ cd C:/uaer_app/debug_server/bin && ./DebugServerConsole.exe &
 ```
 
 ### 2.2 启动失败：CKLINK may be used by other program
-CSKYFlashProgrammer.exe 占用了 CKLink。处理：
+FlashProgrammer（GUI `CSKYFlashProgrammer.exe` 或 CLI 烧录 `flash_program.py`，
+CLAUDE.md §15）占用了 CKLink。处理：
 ```bash
-tasklist | grep -i csky        # 找到占用进程
+tasklist | grep -i -E "cskyflash|debugserver"   # 找占用进程
 taskkill //F //PID <pid>       # 杀后重启 DebugServer
 ```
+> 互斥是双向的：烧 flash 前 DebugServer 也必须退出（`flash_program.py` 会
+> 检测警告，`--kill-debugserver` 强制杀）。
 
 ### 2.3 gdb 被杀后连接残留（★高频坑）
 `continue` 超时被 kill（如 dbg_run.py 的 prime/capture 轮）后，DebugServer 仍

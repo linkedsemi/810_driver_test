@@ -45,6 +45,7 @@ qsh-driver-test (本 skill：总入口，读它决定下一步)
 | 结果 PASS/FAIL 判定 | ③ | `qsh-test-compare` §2（双核双 PASS 才算过） |
 | 修复前后对比 | ③ | `qsh-test-compare` §5 |
 | 串口 token 被刷掉 / 无串口取结果 | ③ | `qsh-test-compare` §3（dump_results.py GDB 读内存兜底） |
+| 烧 XIP 固件 / flash 固化 / XIP 启动测试 | ③ | `qsh-test-run` §8（flash_program.py + dbg_run.py --xip；CLAUDE.md §15） |
 | 新坑沉淀 | — | 写进 CLAUDE.md §10 + 对应 skill 速查表 |
 
 ## 标准流程（一键走通）
@@ -69,6 +70,9 @@ python scripts/run_i3c_tests.py
 - 串口：COM15=controller（MCP2200）、COM16/17=target（CH342）、COM14=CKLink 自身
   （排除）；口号以设备管理器为准，按 banner 动态识别。
 - 烧录：两遍烧录法；cpu1 `load` ELF@0x100c0000，cpu2 `restore bin@0x10000000`。
+- Flash 烧录（XIP，CLAUDE.md §15）：`scripts/flash_program.py` 封装
+  `CSKYFlashProgramerConsole.exe` + `qsh_flash_algo.elf`；与 DebugServer **互斥**
+  占用 CKLink（烧 flash 前 DebugServer 必须退出）；cpu1@0x08000000、cpu2@0x08100000。
 
 ## 验证原则
 
