@@ -188,6 +188,9 @@ static void tgt_print_summary(void)
 		}
 	}
 	I3C_TEST_SUMMARY_END(TGT, passed, ran);
+
+	/* 通用结束标记：harness 以此判定 target 侧套件完整结束 */
+	I3C_TEST_TGT_DONE_VAR(passed == ran ? "PASS" : "FAIL");
 }
 
 static void reset_test_state(uint8_t id)

@@ -69,6 +69,17 @@ taskkill //F //IM DebugServerConsole.exe && cd C:/uaer_app/debug_server/bin && .
 # 3) 判断固件真的在跑：串口出现 "CPU2 MASTER"/"CPU1 SLAVE" banner，而不是靠 flash 输出
 ```
 
+> **实测纠正**：detach 不能真正释放连接（任何"连接→detach→退出"的 gdb 都留
+> 残留，**探测连接本身也制造残留**）→ 残留深时 detach 无效，唯一可靠 = 重启
+> DebugServer 进程。**脚本化自愈四步**（run_*_tests.py 的 `clean_gdb_residue`）：
+> ① netstat 找 1025 ESTABLISHED 对端 PID 杀 gdb；② taskkill /F /IM
+> DebugServerConsole.exe；③ netstat 精确杀 1025 LISTENING 兜底；④ Popen 重启 +
+> stdout 重定向日志，**轮询日志出现 `DebuggerServer$` 提示符判就绪**（≤30s），
+> 不能只固定 sleep（CKLink 初始化耗时随机）。
+> **Python subprocess 里 taskkill/tasklist 必须用单斜杠**（`/F /PID /FI /FO`）：
+> MSYS 的 `//F` 转换只对 Git Bash 有效，subprocess 无转换层，`//F` 原样传给
+> taskkill 报"无效参数"（CLAUDE.md §10.16）。
+
 ## 3. GDB 双核烧录（两遍烧录法）
 
 **为什么两遍**：gdb `reset` 后 I-cache 残留，单遍烧录 continue 会跑旧镜像

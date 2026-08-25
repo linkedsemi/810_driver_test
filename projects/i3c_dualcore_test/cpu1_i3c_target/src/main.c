@@ -5,6 +5,7 @@
  */
 
 #include "i3c_target_test.h"
+#include "i3c_dualcore_test_protocol.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +21,8 @@ uint8_t tgt_tx_buf[256];
 
 void test_main(void)
 {
+	I3C_TEST_TGT_BOOT();
+
 	LOG_INF("[CPU1 SLAVE] I3C target test started");
 
 	for (int i = 0; i < (int)sizeof(tgt_tx_buf); i++) {

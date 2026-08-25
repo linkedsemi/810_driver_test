@@ -245,32 +245,73 @@ load_and_run() {
     echo "    target ELF:   ${target_elf}"
     echo "    controller BIN: ${controller_bin}"
 
+    # gdb 是 Windows 程序，只认 D:/... 形式；test.sh 经 pwd 推导的
+    # MSYS 绝对路径（/d/...）会报 "No such file or directory" 并停在
+    # 交互式 (gdb) 提示符（无 -batch，错误不退出）。
+    local gdb_target_elf gdb_controller_bin
+    gdb_target_elf="$(win_path "${target_elf}")"
+    gdb_controller_bin="$(win_path "${controller_bin}")"
+
     if [ "${AGENT_RUN}" = "y" ]; then
         echo "I3C_AGENT:RUN_START:${test_name}"
     fi
 
-    local gdb_cmd=(
+    # 同一 gdb 会话里连续两个大块写（load ELF 后 restore bin）会卡死：
+    # 第二个大块写停在 100% 进度后无响应（DebugServer 对同一 RSP 会话的
+    # 第二次大块写不回应，实测必现）。拆成两个独立 gdb 会话：
+    #   A. load target ELF -> detach
+    #   B. restore controller bin -> continue
+    # reset 只复位 CPU 不清 RAM，B 的 reset 不影响 A 已 load 的内容。
+    local rc=0
+
+    local gdb_a=(
         riscv64-unknown-elf-gdb
+        -batch
         -ex "target remote ${GDB_SERVER_HOST}:${GDB_SERVER_PORT}"
         -ex "set output-radix 16"
         -ex "set confirm off"
         -ex "set pagination off"
         -ex "set \$ROM_START = ${TARGET_ROM_START}"
-        -ex "file ${target_elf}"
+        -ex "file ${gdb_target_elf}"
         -ex "reset"
         -ex "load"
-        -ex "restore ${controller_bin} binary ${CONTROLLER_LOAD_ADDR}"
+        -ex "set \$pc=\$ROM_START"
+        -ex "set mem inaccessible-by-default on"
+        -ex "set print pretty on"
+        -ex "detach"
+    )
+    if [ "${RUN_TIMEOUT}" = "0" ]; then
+        "${gdb_a[@]}" || rc=$?
+    else
+        timeout "${RUN_TIMEOUT}s" "${gdb_a[@]}" || rc=$?
+    fi
+    if [ ${rc} -ne 0 ]; then
+        echo "ERROR: [${test_name}] load target ELF failed (rc=${rc})" >&2
+        if [ "${AGENT_RUN}" = "y" ]; then
+            echo "I3C_AGENT:RUN_END:${test_name}:${rc}"
+        fi
+        return ${rc}
+    fi
+
+    local gdb_b=(
+        riscv64-unknown-elf-gdb
+        -batch
+        -ex "target remote ${GDB_SERVER_HOST}:${GDB_SERVER_PORT}"
+        -ex "set output-radix 16"
+        -ex "set confirm off"
+        -ex "set pagination off"
+        -ex "set \$ROM_START = ${TARGET_ROM_START}"
+        -ex "reset"
+        -ex "restore ${gdb_controller_bin} binary ${CONTROLLER_LOAD_ADDR}"
         -ex "set \$pc=\$ROM_START"
         -ex "set mem inaccessible-by-default on"
         -ex "set print pretty on"
         -ex "continue"
     )
-
-    local rc=0
     if [ "${RUN_TIMEOUT}" = "0" ]; then
-        "${gdb_cmd[@]}" || rc=$?
+        "${gdb_b[@]}" || rc=$?
     else
-        timeout "${RUN_TIMEOUT}s" "${gdb_cmd[@]}" || rc=$?
+        timeout "${RUN_TIMEOUT}s" "${gdb_b[@]}" || rc=$?
     fi
 
     if [ "${AGENT_RUN}" = "y" ]; then

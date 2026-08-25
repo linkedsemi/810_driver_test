@@ -40,13 +40,44 @@ GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 CONTROLLER_LOAD_ADDR = 0x10000000
 TARGET_ROM_START = 0x100C0000
 
-# i3c_test_names[] 枚举序必须与 protocol.h 一致；按 --count 截断
-TEST_NAMES = [
+
+def win_path(p) -> str:
+    """传给 Windows 版 gdb/nm 的路径规范化为 D:/... 形式。
+
+    从 MSYS 环境（Git Bash 的 /usr/bin/python）启动时 __file__ 解析为
+    /d/... 形式，Windows gdb 打不开（报 No such file or directory）。
+    """
+    s = Path(p).as_posix()
+    if len(s) > 2 and s[0] == "/" and s[1].isalpha() and s[2] == "/":
+        s = f"{s[1].upper()}:/{s[3:]}"
+    return s
+
+
+def parse_test_names() -> list:
+    """从 protocol.h 的 i3c_test_names[] 解析测试名（单一事实源，
+    新增测试项不用改本文件）；解析失败回退到内置列表。"""
+    import re
+    proto = TESTS_DIR / "include" / "i3c_dualcore_test_protocol.h"
+    try:
+        text = proto.read_text(encoding="utf-8")
+        names = re.findall(r'\[I3C_TEST_[A-Z0-9_]+\]\s*=\s*"([^"]+)"', text)
+        if names:
+            return names
+    except OSError:
+        pass
+    return _FALLBACK_TEST_NAMES
+
+
+_FALLBACK_TEST_NAMES = [
     "daa_discovery", "write_8", "write_100", "read_32_direct",
-    "write_read_1", "write_read_16", "write_read_17", "write_read_32",
+    "write_read_1", "write_read_15", "write_read_16", "write_read_17", "write_read_32",
     "ibi", "hot_join", "ccc_basic",
-    "write_stop_read_1", "write_stop_read_16", "write_stop_read_17", "write_stop_read_32",
+    "write_stop_read_1", "write_stop_read_15", "write_stop_read_16",
+    "write_stop_read_17", "write_stop_read_32",
 ]
+
+# 枚举序必须与 protocol.h 一致；按 --count 截断
+TEST_NAMES = parse_test_names()
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址
 RESULT_SYM = "test_results"
@@ -124,8 +155,8 @@ def main():
             sys.exit(f"ERROR: {tool} not in PATH (Xuantie toolchain?)")
 
     build = TESTS_DIR / args.case / "build"
-    tgt_elf = (build / "target" / "zephyr" / "zephyr.elf").as_posix()
-    ctrl_elf = (build / "controller" / "zephyr" / "zephyr.elf").as_posix()
+    tgt_elf = win_path(build / "target" / "zephyr" / "zephyr.elf")
+    ctrl_elf = win_path(build / "controller" / "zephyr" / "zephyr.elf")
     ctrl_bin = (build / "controller" / "zephyr" / "zephyr.bin").as_posix()
     for f in (tgt_elf, ctrl_elf, ctrl_bin):
         if not Path(f).exists():

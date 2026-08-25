@@ -71,7 +71,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ "${AUTO_GDB}" != "y" ]; then
+if [ "${AUTO_GDB}" != "y" ] && [ "${AGENT_RUN}" != "y" ]; then
     SKIP_LOAD="y"
 fi
 

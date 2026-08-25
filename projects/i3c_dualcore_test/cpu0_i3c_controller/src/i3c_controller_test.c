@@ -1098,6 +1098,8 @@ static void ctrl_print_summary(void)
 
 void test_main(void)
 {
+	I3C_TEST_CTRL_BOOT();
+
 	ztest_run_all(NULL, false, 1, 1);
 	ztest_verify_all_test_suites_ran();
 

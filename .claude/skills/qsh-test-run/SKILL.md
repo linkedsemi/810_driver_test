@@ -63,7 +63,14 @@ cd 810_driver_test/projects/i3c_dualcore_test/tests
 export I3C_CTRL_UART=COM15 I3C_TGT_UART=COM16   # 可选，默认自动发现
 python scripts/run_i3c_tests.py [--case case_pure_i3c_12m5]
 ```
-回归行为（CLAUDE.md §12，所有 run_*_tests.py 一致）：
+回归行为（CLAUDE.md §12/§6.2，所有 run_*_tests.py 一致）：
+- **判据核心（★ §6.2）**：两遍烧录（prime 判"任何 token"、pass-2 判 BOOT）、
+  spawn 后 20s 无 BOOT = 环境问题中止回归、BOOT 后 10s 无新串口字节 **且已见
+  SUMMARY:END/DONE 完成标记** = 套件结束提前杀（中途静默=慢速 case 长间隔，
+  继续等，case_timeout 兜底）、串口实时采集（事后读只剩 shell 提示符）、
+  token 解析 `re.search()` 不锚点（shell 前缀）、每 case 前后 DebugServer
+  **按需**自愈（§10.17：残留检测通过才重启，实测 6 case 仅重启 1 次）、
+  回归前构建全量 case（勿 --skip-build 混旧镜像，§10.18）
 - **报告归档**：Markdown + JSON 写到 `810_driver_test/reports/<YYYY-MM-DD>/`，
   当天 `summary.md` 索引自动更新（按工程名替换行）；同日重复回归=覆盖写
 - **INFO token 解析**：数值型实测（吞吐/占比等）进报告"实际"列（§13.4）

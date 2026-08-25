@@ -212,14 +212,20 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 
 - token 格式（机器可读，printk 输出，规避 LOG 前缀干扰）：
   ```
+  <PREFIX>:<CTRL|TGT>:BOOT                       # 通用开始标记（必须，见下）
   <PREFIX>:<CTRL|TGT>:START:<test_name>
   <PREFIX>:<CTRL|TGT>:PASS:<test_name>
   <PREFIX>:<CTRL|TGT>:FAIL:<test_name>:<reason>
   <PREFIX>:<CTRL|TGT>:INFO:<test_name>:<key>=<value>[,<key>=<value>...]
   <PREFIX>:<CTRL|TGT>:SUMMARY:ITEM:<name>:<PASS|FAIL|NOT_RUN>[:reason]
   <PREFIX>:<CTRL|TGT>:SUMMARY:END:<passed>/<ran> PASS
+  <PREFIX>:<CTRL|TGT>:DONE:<PASS|FAIL>           # 通用结束标记（必须，双核各自打印）
   <PREFIX>:DONE:<PASS|FAIL>
   ```
+  - **BOOT/DONE 是所有驱动测试工程必须实现的通用标记**（新工程生成时注入）：
+    BOOT 在固件入口（test_main 第一行）打印，DONE 在套件全部结束后打印。
+    harness 在 load 后收不到 BOOT → 判定**测试环境有问题**（烧录链路/串口），
+    区别于"测试失败"；DONE 用于判定套件完整结束。
   - INFO token 与 FAIL reason 格式规范见 §13.4 / §13.5。
 - 双核各自记账到 **§4.5 公共模块** `test_results[]`（-1 未跑/0 PASS/1 FAIL +
   reason），controller 在测试全部结束后先发 `'P'`（打印总结）命令，sleep 200ms
@@ -239,6 +245,40 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
   ```
 - 适用场景：串口 token 被刷掉/串口忙/远程无串口；**串口可用时仍以 token 为准**
   （§6 判定标准），内存结果用于兜底与交叉验证。
+
+### 6.2 批量回归判据（★ 所有 run_*_tests.py 必须实现，i3c 样板已校准）
+
+一次 case 的完整判定链（参数默认值实测校准，勿凭感觉改）：
+
+1. **两遍烧录**（§10.4）：prime 轮冲刷 I-cache 旧镜像，pass-2 为正式轮。
+   - prime 轮判据 = 串口出现**任何 `<PREFIX>:` token**（旧镜像可能无 BOOT 标记，
+     等 BOOT 会误报环境失败）；prime 轮输出丢弃，pass-2 前清空采集行。
+   - pass-2 判据 = **BOOT 标记**（当前固件必有）。
+2. **BOOT 环境判定**：pass-2 spawn 后 LOAD_WINDOW=20s 内收不到 BOOT → 判定
+   **测试环境问题**（DebugServer 残留/烧录链路/镜像陈旧），**中止回归**
+   （继续跑只会批量假 FAIL），区别于"测试失败"。
+3. **完成判定 = 静默判据 + 完成标记**（★ 2026-08-25 用户反馈"测试跑到一半被
+   截断"修正）：BOOT 之后连续 IDLE=10s 无新串口字节 **且已见套件完成标记**
+   （任一核 `SUMMARY:END` 或 `DONE`）→ 判 done 提前杀 gdb。**只有静默但无
+   完成标记 = 测试中途长间隔（慢速 case 相邻 token 间隔可 >10s）→ 继续等**，
+   每 15s 打一条诊断；case_timeout 硬上限兜底。10s 是"套件结束后快速收尾"
+   的窗口，不是"测试中途"的判据。
+4. **串口必须实时采集**（用户要求，批量必开）：token 是实时流，跑完即过，
+   事后读串口只剩 shell 提示符 → 后台线程逐行存 `lines`，判据与报告都取自
+   该流；禁止事后一次性读串口。
+5. **token 解析用 `re.search()` 不用 `^` 锚点**（§10.5：shell 提示符重绘会在
+   行首加 `uart:~$ ` 前缀）；DONE 正则须支持带 core 的 DONE
+   （`<PREFIX>:<TGT>:DONE:<PASS|FAIL>`，target 用 DONE_CORE 宏打印）。
+6. **每 case 前后 DebugServer 自愈（按需重启，★ 2026-08-25 用户反馈"CKLink
+   1s 开关 3-4 次"修正）**（§10.17）：先杀残留 gdb（1025 ESTABLISHED 对端），
+   杀完复查——连接残留仍在（ESTABLISHED 未释放）或 server 已死（无 LISTENING）
+   才重启；健康则**不重启**（实测 6 case 全量只重启 1 次）。重启 = taskkill +
+   Popen + 轮询日志 `DebuggerServer$` 提示符判就绪；Python 里 taskkill/tasklist
+   一律单斜杠参数（§10.16）。
+7. **回归前构建一致性**（§10.18）：固件加新标记（BOOT/DONE）后必须先构建全部
+   case 再回归，勿 `--skip-build` 混跑旧镜像（无 BOOT → 假 load_fail）。
+8. 结果判定沿用 §6：CTRL+TGT 双 PASS 且双核 DONE=PASS 才判 case PASS；
+   串口缺项按 §12.3 内存兜底合并（来源标 mem）。
 
 ## 7. 问题记录规范
 
@@ -262,7 +302,8 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 4. 编写 `tests/COVERAGE.md`（§13 覆盖矩阵，对着驱动源码逐路径列场景，
    不得拍脑袋；确定性测试标注预期数据来源）。
 5. 顶层 README.md「外设接线记录」登记接线；`run_<driver>_tests.py` 必须
-   实现 §12 报告归档（reports/<date>/ + summary.md 索引 + INFO 解析 + 内存兜底合并）。
+   实现 §6.2 批量回归判据 + §12 报告归档（reports/<date>/ + summary.md 索引 +
+   INFO 解析 + 内存兜底合并）。
 6. 先 `./test.sh -g` 验证一个 case 双核 PASS，再跑全量回归并核对归档（§11）。
 7. 单 case 实测通过前，不声明自动化回归 PASS。
 8. 新工程可用 `qsh-test-gen` skill 自动生成（见 §9）。
@@ -337,6 +378,26 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
     但**通用脚本不准放这里**——判断标准：别人/别的工程会不会直接调用它？
     会（dbg_run/dump_results/run_*_tests/GDB 会话脚本）→ 留 `tests/scripts/`
     永久提交；不会（一次性调查产物）→ `tests/tmp/`。
+16. **Python subprocess 调 Windows 命令不能用 MSYS 双斜杠**（★脚本层高频）：
+    Git Bash 里 `taskkill //F //PID x` 有效（MSYS 把 `//F` 转成 `/F`），但
+    **Python subprocess 没有 MSYS 转换层**，`//F` 原样传给 taskkill →
+    "无效参数/选项 - '//F'" 且进程没被杀；若代码用 `except: pass` 吞异常，
+    表现为"taskkill 杀不掉/杀不干净"假象（实测：`tasklist //FI` 过滤失效
+    显示 `?`、残留 DebugServer 占 1025、新实例绑定失败卡初始化全是这个根因）。
+    **subprocess 里一律单斜杠**：`["taskkill", "/F", "/PID", pid]`、
+    `["tasklist", "/FI", "PID eq x", "/FO", "CSV"]`。排查"杀不掉"先查参数斜杠。
+17. **DebugServer 连接残留的脚本化自愈（run_*_tests.py 的 clean_gdb_residue 模式）**：
+    detach 不能真正释放连接（任何"连接→detach→退出"的 gdb 都留残留，探测连接
+    也制造残留）；唯一可靠清理 = **重启 DebugServer 进程**。脚本化四步：
+    ① netstat 找 1025 上 ESTABLISHED 的对端 PID（是 gdb 则 taskkill /F /PID）；
+    ② taskkill /F /IM DebugServerConsole.exe；③ netstat 精确杀 1025 LISTENING
+    兜底（/IM 偶发杀不净）；④ Popen 重启（stdout 重定向到日志文件），**轮询
+    日志出现 `DebuggerServer$` 提示符判就绪**（≤30s）——不能只固定 sleep
+    （CKLink 初始化耗时随机）。就绪后 spawn 前打 1025 LISTENING 的 PID 便于诊断。
+18. **回归前必须构建全部 case（勿轻易 --skip-build）**：固件加新标记（BOOT/DONE）
+    后若只重建过部分 case，`--skip-build` 跑全量时旧镜像 case 无 BOOT → pass-2
+    等 BOOT 超时报"测试环境有问题"假 load_fail。判断"环境问题"前先确认该 case
+    的 build/ 是否包含当前固件（token 标记齐不齐）。
 
 ## 11. 新建驱动测试工程时的验收标准
 

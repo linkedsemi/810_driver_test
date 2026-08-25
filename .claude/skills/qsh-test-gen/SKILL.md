@@ -91,6 +91,10 @@ target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tests/incl
    - 通信类 → 固定 pattern + 状态字（预期字节序列/寄存器值）放 expected/
    - 生成脚本随工程保留（如 `tests/scripts/gen_vectors.py`），保证可复现
 3. **run_<driver>_tests.py** 必须实现（样板 run_i3c_tests.py 已带）：
+   - **§6.2 批量回归判据**：两遍烧录（prime 判"任何 token"、pass-2 判 BOOT）、
+     20s 无 BOOT=环境问题中止、BOOT 后 10s 静默=结束提前杀、串口实时采集、
+     token 解析 `re.search()` 不锚点、DONE 正则支持带 core、每 case 前后
+     DebugServer 自愈（§10.17）、构建全量 case 后回归（§10.18）
    - 写报告到 `810_driver_test/reports/<YYYY-MM-DD>/<driver>_test_report.{md,json}`
    - 更新当天 `reports/<date>/summary.md` 索引（§12.4，按工程名替换行）
    - 解析 INFO token 填报告"实际"列（§13.4）

@@ -190,6 +190,22 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 #define I3C_TEST_DONE(result) \
 	printk(I3C_TEST_TOKEN_PREFIX ":DONE:" result "\n")
 
+/* 通用开始/结束标记（不随测试项变化，环境判定用）：
+ * BOOT：固件起来即打印——harness 在 load 后收不到它 = 烧录链路/环境
+ *       有问题（区别于"测试失败"）；
+ * DONE：套件全部结束（controller 已有；target 在 summary 后补印）。 */
+#define I3C_TEST_BOOT_CORE(core) \
+	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":BOOT\n")
+#define I3C_TEST_CTRL_BOOT() I3C_TEST_BOOT_CORE(CTRL)
+#define I3C_TEST_TGT_BOOT()  I3C_TEST_BOOT_CORE(TGT)
+#define I3C_TEST_DONE_CORE(core, result) \
+	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":DONE:" result "\n")
+#define I3C_TEST_TGT_DONE(result) I3C_TEST_DONE_CORE(TGT, result)
+/* 运行期结果变体（result 是表达式/变量时用） */
+#define I3C_TEST_DONE_CORE_VAR(core, result) \
+	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":DONE:%s\n", result)
+#define I3C_TEST_TGT_DONE_VAR(result) I3C_TEST_DONE_CORE_VAR(TGT, result)
+
 #define I3C_TEST_CTRL_START(name) I3C_TEST_START_CORE(CTRL, name)
 #define I3C_TEST_CTRL_PASS(name)  I3C_TEST_PASS_CORE(CTRL, name)
 #define I3C_TEST_CTRL_FAIL(name, reason) I3C_TEST_FAIL_CORE(CTRL, name, reason)
