@@ -30,6 +30,7 @@ extern "C" {
 #define CMD_TRIGGER_HJ         'H'	/* 0x48 */
 #define CMD_RESET_TARGET_STATE 'R'	/* 0x52 */
 #define CMD_PRINT_SUMMARY      'P'	/* 0x50 */
+#define CMD_RUN_TGT_NEG        'N'	/* 0x4E：让 target 执行 IBI 负路径自检 */
 
 /* write_read 写阶段的占位字节：不参与解析，仅用于产生 restart 前的写段。
  * 读长度统一由 CMD_SET_READ_LEN 告知 target。 */
@@ -56,6 +57,7 @@ enum i3c_test_id {
 	I3C_TEST_WRITE_100,
 	I3C_TEST_READ_32_DIRECT,
 	I3C_TEST_WRITE_READ_1,
+	I3C_TEST_WRITE_READ_15,
 	I3C_TEST_WRITE_READ_16,
 	I3C_TEST_WRITE_READ_17,
 	I3C_TEST_WRITE_READ_32,
@@ -63,9 +65,20 @@ enum i3c_test_id {
 	I3C_TEST_HOT_JOIN,
 	I3C_TEST_CCC_BASIC,
 	I3C_TEST_WRITE_STOP_READ_1,
+	I3C_TEST_WRITE_STOP_READ_15,
 	I3C_TEST_WRITE_STOP_READ_16,
 	I3C_TEST_WRITE_STOP_READ_17,
 	I3C_TEST_WRITE_STOP_READ_32,
+	I3C_TEST_READ_UNDERRUN_8_16,
+	I3C_TEST_READ_UNDERRUN_16_32,
+	I3C_TEST_NACK_BAD_ADDR,
+	I3C_TEST_BACK_TO_BACK_8X8,
+	I3C_TEST_BIG_256,
+	I3C_TEST_CCC_RAPID_8,
+	I3C_TEST_READ_MASTER_ABORT,
+	I3C_TEST_IBI_NEG_PATHS,
+	I3C_TEST_API_NEG_PATHS,
+	I3C_TEST_MULTI_MSG_4,
 	I3C_TEST_COUNT,
 };
 
@@ -75,6 +88,7 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 	[I3C_TEST_WRITE_100] = "write_100",
 	[I3C_TEST_READ_32_DIRECT] = "read_32_direct",
 	[I3C_TEST_WRITE_READ_1] = "write_read_1",
+	[I3C_TEST_WRITE_READ_15] = "write_read_15",
 	[I3C_TEST_WRITE_READ_16] = "write_read_16",
 	[I3C_TEST_WRITE_READ_17] = "write_read_17",
 	[I3C_TEST_WRITE_READ_32] = "write_read_32",
@@ -82,9 +96,20 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 	[I3C_TEST_HOT_JOIN] = "hot_join",
 	[I3C_TEST_CCC_BASIC] = "ccc_basic",
 	[I3C_TEST_WRITE_STOP_READ_1] = "write_stop_read_1",
+	[I3C_TEST_WRITE_STOP_READ_15] = "write_stop_read_15",
 	[I3C_TEST_WRITE_STOP_READ_16] = "write_stop_read_16",
 	[I3C_TEST_WRITE_STOP_READ_17] = "write_stop_read_17",
 	[I3C_TEST_WRITE_STOP_READ_32] = "write_stop_read_32",
+	[I3C_TEST_READ_UNDERRUN_8_16] = "read_underrun_8_16",
+	[I3C_TEST_READ_UNDERRUN_16_32] = "read_underrun_16_32",
+	[I3C_TEST_NACK_BAD_ADDR] = "nack_bad_addr",
+	[I3C_TEST_BACK_TO_BACK_8X8] = "back_to_back_8x8",
+	[I3C_TEST_BIG_256] = "big_256",
+	[I3C_TEST_CCC_RAPID_8] = "ccc_rapid_8",
+	[I3C_TEST_READ_MASTER_ABORT] = "read_master_abort",
+	[I3C_TEST_IBI_NEG_PATHS] = "ibi_neg_paths",
+	[I3C_TEST_API_NEG_PATHS] = "api_neg_paths",
+	[I3C_TEST_MULTI_MSG_4] = "multi_msg_4",
 };
 
 /*
@@ -109,23 +134,34 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
  * 若单独分块跑 ibi/hot_join 而不跑 ccc_basic，行为不受影响；
  * 若一起跑，controller 会在 ibi/hot_join 测试前重新 ENEC。
  */
-/* 调试开关：只跑 daa_discovery + write_read_16（抓 read actual 0 现场用）。
- * 恢复全量时把下面全部置 1（含 WRITE_READ_1/17/32 等）。 */
-#define I3C_TEST_EN_CCC_BASIC          0
+/* 全量测试开关（2026-08-24：write_read 根因闭环后恢复全开） */
+#define I3C_TEST_EN_CCC_BASIC          1
 #define I3C_TEST_EN_DAA_DISCOVERY      1
-#define I3C_TEST_EN_WRITE_8            0
-#define I3C_TEST_EN_WRITE_100          0
-#define I3C_TEST_EN_READ_32_DIRECT     0
-#define I3C_TEST_EN_WRITE_READ_1       0
+#define I3C_TEST_EN_WRITE_8            1
+#define I3C_TEST_EN_WRITE_100          1
+#define I3C_TEST_EN_READ_32_DIRECT     1
+#define I3C_TEST_EN_WRITE_READ_1       1
+#define I3C_TEST_EN_WRITE_READ_15      1
 #define I3C_TEST_EN_WRITE_READ_16      1
-#define I3C_TEST_EN_WRITE_READ_17      0
-#define I3C_TEST_EN_WRITE_READ_32      0
-#define I3C_TEST_EN_IBI                0
-#define I3C_TEST_EN_HOT_JOIN           0
-#define I3C_TEST_EN_WRITE_STOP_READ_1  0
-#define I3C_TEST_EN_WRITE_STOP_READ_16 0
-#define I3C_TEST_EN_WRITE_STOP_READ_17 0
-#define I3C_TEST_EN_WRITE_STOP_READ_32 0
+#define I3C_TEST_EN_WRITE_READ_17      1
+#define I3C_TEST_EN_WRITE_READ_32      1
+#define I3C_TEST_EN_IBI                1
+#define I3C_TEST_EN_HOT_JOIN           1
+#define I3C_TEST_EN_WRITE_STOP_READ_1  1
+#define I3C_TEST_EN_WRITE_STOP_READ_15 1
+#define I3C_TEST_EN_WRITE_STOP_READ_16 1
+#define I3C_TEST_EN_WRITE_STOP_READ_17 1
+#define I3C_TEST_EN_WRITE_STOP_READ_32 1
+#define I3C_TEST_EN_READ_UNDERRUN_8_16  1
+#define I3C_TEST_EN_READ_UNDERRUN_16_32 1
+#define I3C_TEST_EN_NACK_BAD_ADDR       1
+#define I3C_TEST_EN_BACK_TO_BACK_8X8    1
+#define I3C_TEST_EN_BIG_256             1
+#define I3C_TEST_EN_CCC_RAPID_8         1
+#define I3C_TEST_EN_READ_MASTER_ABORT   1
+#define I3C_TEST_EN_IBI_NEG_PATHS       1
+#define I3C_TEST_EN_API_NEG_PATHS       1
+#define I3C_TEST_EN_MULTI_MSG_4         1
 
 /*
  * Structured UART tokens.

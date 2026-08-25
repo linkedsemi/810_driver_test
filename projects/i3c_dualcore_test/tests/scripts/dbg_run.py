@@ -4,6 +4,14 @@
 Usage:
     python tests/dbg_run.py [--case case_pure_i3c_6m25] [--timeout 15] [--raw]
     python tests/dbg_run.py --case case_pure_i3c_12m5 --ctrl-uart COM16 --tgt-uart COM17
+    python tests/dbg_run.py --xip --bins cpu1.bin@0x08000000,cpu2.bin@0x08100000 --timeout 15
+
+XIP mode (--xip): instead of GDB RAM-loading, program the given bin(s) to the
+on-board SPI flash via scripts/flash_program.py (CSKYFlashProgramerConsole),
+reset/run from flash and capture UART - same token parsing/SUMMARY as RAM
+mode.  Flash programming needs exclusive CKLink access: the XuanTie
+DebugServer must not be connected while programming (see CLAUDE.md §10/§15);
+pass --gdb-reset to reset via DebugServer AFTER programming (it is free then).
 
 UART role discovery (dynamic):
     - By default all non-CKLink COM ports are opened; after the flash/reset
@@ -13,7 +21,8 @@ UART role discovery (dynamic):
       so port roles are resolved from actual output, no hardcoding.
     - Explicit override: --ctrl-uart COM16 --tgt-uart COM17.
 
-Assumes firmware is already built under tests/<case>/build/{controller,target}.
+Assumes firmware is already built under tests/<case>/build/{controller,target}
+(RAM mode) or a zephyr_flash_*.bin exists (XIP mode).
 """
 import argparse
 import re
@@ -28,6 +37,9 @@ import serial.tools.list_ports as list_ports
 
 # tests/scripts/dbg_run.py -> parents[1] = i3c_dualcore_test/tests
 TESTS_DIR = Path(__file__).resolve().parents[1]
+# dbg_run.py at 810_driver_test/projects/<p>/tests/scripts/ -> parents[4] = 810_driver_test
+DRIVER_TEST_ROOT = Path(__file__).resolve().parents[4]
+FP_SCRIPT = DRIVER_TEST_ROOT / "scripts" / "flash_program.py"
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 TARGET_ROM_START = "0x100c0000"
@@ -39,9 +51,20 @@ TGT_BANNERS = ("CPU1 SLAVE", "i3c_slave_test")
 # Zephyr console shell 重绘提示符会向串口发 ANSI 转义，token 行首可能混入
 # （如 \x1b[1;32muart:~$ \x1b[8D\x1b[J），先剥离再匹配。
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-TOKEN_RE = re.compile(r"I3C_TEST:(CTRL|TGT):(START|PASS|FAIL):(\w+)(?::(.*))?\s*")
-SUMMARY_RE = re.compile(r"I3C_TEST:(CTRL|TGT):SUMMARY:(.*)")
-DONE_RE = re.compile(r"I3C_TEST:DONE:(PASS|FAIL)")
+DEFAULT_PREFIX = "I3C_TEST"
+
+
+def make_token_res(prefix):
+    """Build token regexes for a given token prefix (XIP mode may run
+    arbitrary firmware, so the prefix is configurable via --prefix)."""
+    return (
+        re.compile(rf"{prefix}:(CTRL|TGT):(START|PASS|FAIL):(\w+)(?::(.*))?\s*"),
+        re.compile(rf"{prefix}:(CTRL|TGT):SUMMARY:(.*)"),
+        re.compile(rf"{prefix}:DONE:(PASS|FAIL)"),
+    )
+
+
+TOKEN_RE, SUMMARY_RE, DONE_RE = make_token_res(DEFAULT_PREFIX)
 
 
 def reader(ser, lines, stop):
@@ -82,6 +105,144 @@ def discover_ports(explicit=None):
     return ports
 
 
+def start_capture(names, ports):
+    """Open ports and start reader threads (capture pass only, so the log
+    contains one clean run; any prime pass output is discarded)."""
+    sers = {}
+    for name in names:
+        try:
+            sers[name] = serial.Serial(name, 115200, timeout=0.1)
+        except serial.SerialException as e:
+            print(f"[dbg] WARNING: cannot open {name}: {e}", flush=True)
+    if not sers:
+        sys.exit("ERROR opening serial: no port could be opened")
+    threads = []
+    for name, ser in sers.items():
+        t = threading.Thread(target=reader,
+                             args=(ser, ports[name]["lines"], ports[name]["stop"]),
+                             daemon=True)
+        t.start()
+        threads.append(t)
+    return sers, threads
+
+
+def finish_summary(ports, sers, threads, ctrl_uart, tgt_uart, raw):
+    """Stop capture, identify roles by banner, print SUMMARY (+ raw dump)."""
+    for name in ports:
+        ports[name]["stop"].set()
+    for t in threads:
+        t.join(timeout=1)
+    for ser in sers.values():
+        ser.close()
+
+    # Identify roles by banner (dynamic discovery: role is determined by the
+    # actual UART output after flash/reset, not by port name)
+    role = {}
+    for name, p in ports.items():
+        text = "\n".join(p["lines"])
+        if any(b in text for b in CTRL_BANNERS):
+            role[name] = "CTRL"
+        elif any(b in text for b in TGT_BANNERS):
+            role[name] = "TGT"
+        else:
+            role[name] = "?"
+
+    if ctrl_uart and ctrl_uart in role:
+        role[ctrl_uart] = "CTRL"
+    if tgt_uart and tgt_uart in role:
+        role[tgt_uart] = "TGT"
+
+    print("\n===== UART ROLE DISCOVERY =====", flush=True)
+    for name in ports:
+        print(f"  {name} -> {role[name]}", flush=True)
+    if "?" in role.values():
+        print("  (WARNING: un-identified port(s); no firmware banner seen there)", flush=True)
+
+    print("\n===== SUMMARY =====")
+    for name, p in ports.items():
+        print(f"--- {name} ({role[name]}): {len(p['lines'])} lines ---")
+        for ln in p["lines"]:
+            if TOKEN_RE.search(ln) or SUMMARY_RE.search(ln) or DONE_RE.search(ln):
+                print("  " + ln)
+        # key debug lines
+        for ln in p["lines"]:
+            if any(k in ln for k in ("Slave stop", "prefill", "SERRWARN", "URUN",
+                                     "write_requested", "non-opcode", "drain bailed",
+                                     "read failed", "read actual")):
+                print("  * " + ln)
+
+    if raw:
+        for name, p in ports.items():
+            print(f"\n===== RAW {name} ({role[name]}) =====")
+            for ln in p["lines"]:
+                print(ln)
+
+
+def run_xip(args):
+    """XIP mode: program flash (flash_program.py), reset/run, capture UART.
+
+    Flash programming owns the CKLink exclusively; the DebugServer must not
+    be connected meanwhile.  After programming (tool exited), the CKLink is
+    free again - then --gdb-reset can reset the board via DebugServer, or the
+    flash programmer's --reset-and-run (already passed unless --no-reset-run)
+    resets the board on the spot.
+    """
+    global TOKEN_RE, SUMMARY_RE, DONE_RE
+    if args.prefix != DEFAULT_PREFIX:
+        TOKEN_RE, SUMMARY_RE, DONE_RE = make_token_res(args.prefix)
+
+    if not args.bins:
+        sys.exit("ERROR: --xip requires --bins FILE@ADDR[,FILE@ADDR]")
+    bins = []
+    for spec in args.bins.split(","):
+        if "@" in spec:
+            path, _, a = spec.rpartition("@")
+            bins.append((path, int(a, 0)))
+        else:
+            bins.append((spec, 0x08000000))  # default: cpu1 XIP base
+    for path, _ in bins:
+        if not Path(path).exists():
+            sys.exit(f"ERROR: XIP bin not found: {path}")
+
+    explicit = [p for p in (args.ctrl_uart, args.tgt_uart) if p]
+    names = discover_ports(explicit)
+    ports = {name: {"lines": [], "stop": threading.Event()} for name in names}
+
+    # ---- 1. program flash ---------------------------------------------------
+    print(f"[dbg] XIP: programming flash via {FP_SCRIPT.name} ...", flush=True)
+    fp_cmd = [sys.executable, str(FP_SCRIPT),
+              "--erase", str(args.erase), "--raw"]
+    for path, addr in bins:
+        fp_cmd += ["--bin", f"{Path(path).as_posix()}@{hex(addr)}"]
+    if not args.no_reset_run:
+        fp_cmd += ["--reset-and-run"]
+    proc = subprocess.run(fp_cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=300)
+    if proc.returncode != 0:
+        print(proc.stdout[-2000:], flush=True)
+        sys.exit(f"ERROR: XIP flash programming failed (rc={proc.returncode})")
+    print("[dbg] XIP: flash programming OK", flush=True)
+
+    # ---- 2. optional reset via DebugServer (tool already exited) ------------
+    if args.gdb_reset:
+        print("[dbg] XIP: reset via DebugServer ...", flush=True)
+        reset_cmd = [GDB, "-ex", f"target remote {GDB_HOST}:{GDB_PORT}",
+                     "-ex", "set confirm off", "-ex", "set pagination off",
+                     "-ex", "reset", "-ex", "detach", "-ex", "quit"]
+        r = subprocess.run(reset_cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=15)
+        if "Remote debugging" not in r.stdout + r.stderr:
+            print("[dbg] WARNING: DebugServer not reachable for reset; "
+                  "press the board reset button if it did not start", flush=True)
+
+    # ---- 3. capture + summary ------------------------------------------------
+    sers, threads = start_capture(names, ports)
+    print(f"[dbg] XIP: capturing {args.timeout}s from flash-booted firmware ...",
+          flush=True)
+    time.sleep(args.timeout)
+    finish_summary(ports, sers, threads, args.ctrl_uart, args.tgt_uart, args.raw)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", default="case_pure_i3c_6m25")
@@ -89,7 +250,26 @@ def main():
     ap.add_argument("--raw", action="store_true", help="dump all captured lines")
     ap.add_argument("--ctrl-uart", default=None, help="controller UART, e.g. COM16")
     ap.add_argument("--tgt-uart", default=None, help="target UART, e.g. COM17")
+    ap.add_argument("--prefix", default=DEFAULT_PREFIX,
+                    help="token prefix for parsing (default I3C_TEST)")
+    ap.add_argument("--xip", action="store_true",
+                    help="XIP mode: program flash via flash_program.py, then reset/run")
+    ap.add_argument("--bins", default=None,
+                    help="XIP: comma-separated FILE@ADDR[,FILE@ADDR] to program to flash")
+    ap.add_argument("--erase", type=int, choices=[0, 1, 2, 3], default=0,
+                    help="XIP: flash erase type (default 0=chip erase)")
+    ap.add_argument("--no-reset-run", action="store_true",
+                    help="XIP: do not pass --reset-and-run to flash programmer")
+    ap.add_argument("--gdb-reset", action="store_true",
+                    help="XIP: reset the board via DebugServer after programming")
     args = ap.parse_args()
+
+    if args.xip:
+        return run_xip(args)
+
+    global TOKEN_RE, SUMMARY_RE, DONE_RE
+    if args.prefix != DEFAULT_PREFIX:
+        TOKEN_RE, SUMMARY_RE, DONE_RE = make_token_res(args.prefix)
 
     build = TESTS_DIR / args.case / "build"
     target_elf = (build / "target" / "zephyr" / "zephyr.elf").as_posix()
@@ -101,24 +281,6 @@ def main():
     explicit = [p for p in (args.ctrl_uart, args.tgt_uart) if p]
     names = discover_ports(explicit)
     ports = {name: {"lines": [], "stop": threading.Event()} for name in names}
-
-    def start_capture():
-        """Open ports and start reader threads (capture pass only, so the log
-        contains one clean run; the prime pass output is discarded)."""
-        sers = {}
-        for name in names:
-            try:
-                sers[name] = serial.Serial(name, 115200, timeout=0.1)
-            except serial.SerialException as e:
-                print(f"[dbg] WARNING: cannot open {name}: {e}", flush=True)
-        if not sers:
-            sys.exit("ERROR opening serial: no port could be opened")
-        threads = []
-        for name, ser in sers.items():
-            t = threading.Thread(target=reader, args=(ser, ports[name]["lines"], ports[name]["stop"]), daemon=True)
-            t.start()
-            threads.append(t)
-        return sers, threads
 
     gdb_cmd = [
         GDB,
@@ -174,7 +336,7 @@ def main():
     time.sleep(1)
 
     # 只在 capture 轮开串口采集：prime 轮输出丢弃，保证日志是单轮干净数据
-    sers, threads = start_capture()
+    sers, threads = start_capture(names, ports)
 
     print(f"[dbg] flashing again (capture pass), capturing {args.timeout}s ...", flush=True)
     proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
@@ -199,54 +361,7 @@ def main():
         sys.exit(2)
     time.sleep(0.3)
 
-    for name in ports:
-        ports[name]["stop"].set()
-    for t in threads:
-        t.join(timeout=1)
-    for ser in sers.values():
-        ser.close()
-
-    # Identify roles by banner (dynamic discovery: role is determined by the
-    # actual UART output after flash/reset, not by port name)
-    role = {}
-    for name, p in ports.items():
-        text = "\n".join(p["lines"])
-        if any(b in text for b in CTRL_BANNERS):
-            role[name] = "CTRL"
-        elif any(b in text for b in TGT_BANNERS):
-            role[name] = "TGT"
-        else:
-            role[name] = "?"
-
-    if args.ctrl_uart and args.ctrl_uart in role:
-        role[args.ctrl_uart] = "CTRL"
-    if args.tgt_uart and args.tgt_uart in role:
-        role[args.tgt_uart] = "TGT"
-
-    print("\n===== UART ROLE DISCOVERY =====", flush=True)
-    for name in ports:
-        print(f"  {name} -> {role[name]}", flush=True)
-    if "?" in role.values():
-        print("  (WARNING: un-identified port(s); no firmware banner seen there)", flush=True)
-
-    print("\n===== SUMMARY =====")
-    for name, p in ports.items():
-        print(f"--- {name} ({role[name]}): {len(p['lines'])} lines ---")
-        for ln in p["lines"]:
-            if TOKEN_RE.search(ln) or SUMMARY_RE.search(ln) or DONE_RE.search(ln):
-                print("  " + ln)
-        # key debug lines
-        for ln in p["lines"]:
-            if any(k in ln for k in ("Slave stop", "prefill", "SERRWARN", "URUN",
-                                     "write_requested", "non-opcode", "drain bailed",
-                                     "read failed", "read actual")):
-                print("  * " + ln)
-
-    if args.raw:
-        for name, p in ports.items():
-            print(f"\n===== RAW {name} ({role[name]}) =====")
-            for ln in p["lines"]:
-                print(ln)
+    finish_summary(ports, sers, threads, args.ctrl_uart, args.tgt_uart, args.raw)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,16 @@
 | write_stop_read_16 | 写+stop+读（16B） | 边界长度 | 停后读回 16B == 写入值 | 协议文档 | ✅ |
 | write_stop_read_17 | 写+stop+读（17B 非对齐） | 边界长度 | 停后读回 17B == 写入值 | 协议文档 | ✅ |
 | write_stop_read_32 | 写+stop+读（32B） | 边界长度 | 停后读回 32B == 写入值 | 协议文档 | ✅ |
+| read_underrun_8_16 | ls_i3c_transfer 读 + target T-bit 提前终止（ISR FC 落账路径） | 异常/提前终止 | 读 16 实际收 8，不挂死，恢复读 OK | 协议文档（T-bit 提前终止合法） | ✅ |
+| read_underrun_16_32 | 同上，跨 target TX FIFO(16) 边界 | 异常/提前终止 | 读 32 实际收 16，不挂死，恢复读 OK | 协议文档 | ✅ |
+| nack_bad_addr | ls_i3c_transfer 地址 NACK（ISR ERR/SER 检测 + 写完整性校验） | 异常参数/恢复 | 不挂死；读不得伪造数据（actual==0 或报错）；事后正常读 OK | 协议文档 | ✅ |
+| back_to_back_8x8 | ls_i3c_transfer 零间隙 8 连发 + target 预填/续发 | 中断/时序 | 8 次全部成功、数据正确 | 压力/时序 | ✅ |
+| big_256 | ls_i3c_transfer 256B 读写 + target read_processed_cb 续发 | 边界长度 | 256B 写入+读回 == pattern | 协议文档 | ✅ |
+| ccc_rapid_8 | ls_i3c_do_ccc 连发（num_xfer 清零回归） | 压力/时序 | getpid x8 全部成功、PID 非零 | 回归（num_xfer 根因） | ✅ |
+| read_master_abort | 主机主动截断读 + target TERM 恢复（STOP 后 FLUSHTB 重填对齐） | 异常/提前终止 | 读 32 取 8 后，下一笔读从 pattern 起点对齐 | 协议文档 | ✅ |
+| ibi_neg_paths | ls_i3c_ibi_raise fail-fast 三分支：payload>8/-EINVAL、IBIDIS/-EACCES、DAVALID HJ/-EACCES | 异常参数 | 三个返回值精确匹配 | 驱动契约 | ✅ |
+| api_neg_paths | ls_i3c_transfer 入口：num_msgs=0/dynamic_addr=0/hdr_mode=1/msgs=NULL → -EINVAL | 异常参数 | 全部 -EINVAL，事后正常读 OK | 驱动契约 | ✅ |
+| multi_msg_4 | ls_i3c_transfer 4 段复合帧（W+R+W+R）+ isr_tx 读消息拦截 | 功能通路/时序 | 各段 num_xfer 正确、两段读数据 == pattern | 协议文档 | ✅ |
 
 ## 覆盖说明
 

@@ -72,6 +72,7 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
             │   ├── test.sh                  # 三模式脚本（见 §5）
             │   ├── *.overlay / prj.conf 差异
             │   └── build/                   # 构建产物（.gitignore）
+            ├── tmp/                         # 调试临时物（探针/抓包/日志，git 忽略，见 §10.15）
             └── *.md                         # 问题总结/状态记录（见 §7）
 ```
 
@@ -330,6 +331,12 @@ taskkill //F //PID <pid>          # 杀掉后重启 DebugServer
 14. **双核固化必须一次会话**：EraseType=0（全片擦）在编程前擦整个 flash；
     分两次 CLI 调用烧 cpu1/cpu2 时第二次会擦掉第一个核的镜像。双核 XIP
     用 `--bin a@0x08000000 --bin b@0x08100000` 一次烧（或 `--erase 2` 范围擦）。
+15. **调试临时物统一放 `tests/tmp/`**：一次性探针脚本、GDB 断点脚本、串口
+    抓包、临时采集脚本一律放工程 `tests/tmp/` 下（gitignore 规则
+    `projects/*/tests/tmp/` 已全局忽略，含 `__pycache__/`），用完无需删；
+    但**通用脚本不准放这里**——判断标准：别人/别的工程会不会直接调用它？
+    会（dbg_run/dump_results/run_*_tests/GDB 会话脚本）→ 留 `tests/scripts/`
+    永久提交；不会（一次性调查产物）→ `tests/tmp/`。
 
 ## 11. 新建驱动测试工程时的验收标准
 

@@ -41,6 +41,7 @@ enum tgt_event_type {
 	TGT_EVT_TRIGGER_HJ,
 	TGT_EVT_PRINT_SUMMARY,
 	TGT_EVT_TEST_START,
+	TGT_EVT_RUN_NEG,
 };
 
 struct tgt_event {
@@ -54,7 +55,7 @@ static volatile uint8_t current_test_id;
 static volatile uint8_t ctrl_result;
 static volatile bool addressed;
 
-static volatile uint8_t rx_buf[128];
+static volatile uint8_t rx_buf[256];
 static volatile size_t rx_idx;
 static volatile uint16_t tx_idx;
 static volatile uint16_t tx_len;
@@ -62,26 +63,17 @@ static volatile uint16_t last_read_len;
 static volatile int read_req_cnt;
 static volatile int read_proc_cnt;
 
-static volatile uint8_t write_data[128];
+static volatile uint8_t write_data[256];
 static volatile size_t write_len;
 static volatile size_t write_len_expected;
 
-/* 调试：字节历史环 + 计数器（ISR 内纯内存写，GDB 读；排查完删除） */
-struct dbg_rx_hist_ent {
-	uint16_t seq;
-	uint8_t byte;
-	uint8_t state;	/* 处理前的 parse_state */
-};
-volatile struct dbg_rx_hist_ent dbg_rx_hist[32];
-volatile uint32_t dbg_rx_hist_idx;
-volatile uint32_t dbg_byte_cnt;
-volatile uint32_t dbg_e_seen;	/* 收到 0x45 的次数 */
-volatile uint32_t dbg_end_put;	/* TEST_END 事件入队成功次数 */
-volatile uint32_t dbg_wr_match;	/* write_requested_cb 次数 */
-volatile uint32_t dbg_stop;	/* stop_cb 次数 */
-
 static volatile bool ibi_raised;
 static volatile bool hj_raised;
+
+/* IBI 负路径自检结果（CMD_RUN_TGT_NEG 触发，validate 时判定） */
+static volatile int neg_ret_long_payload;
+static volatile int neg_ret_hj_davalid;
+static volatile int neg_ret_ibidis;
 
 static char tgt_fail_reason[256];
 static bool tgt_failed;
@@ -209,6 +201,9 @@ static void reset_test_state(uint8_t id)
 	write_len_expected = 0;
 	ibi_raised = false;
 	hj_raised = false;
+	neg_ret_long_payload = 0;
+	neg_ret_hj_davalid = 0;
+	neg_ret_ibidis = 0;
 	addressed = true;
 	tgt_failed = false;
 	tgt_fail_reason[0] = '\0';
@@ -315,12 +310,46 @@ static void raise_hj(void)
 	}
 }
 
+/* IBI 负路径自检（CMD_RUN_TGT_NEG 触发，dispatcher 线程上下文执行）。
+ * 调用时 controller 已发 DISEC(EVT_INTR)，IBIDIS 处于锁存态。
+ * 三个负路径都是驱动手写 fail-fast 分支，此前无回归保护。 */
+static void run_ibi_neg_checks(void)
+{
+	/* 1) payload > 8 字节 → -EINVAL */
+	uint8_t pl9[9] = {0};
+	struct i3c_ibi req_long = {
+		.ibi_type = I3C_IBI_TARGET_INTR,
+		.payload = pl9,
+		.payload_len = sizeof(pl9),
+	};
+	neg_ret_long_payload = i3c_ibi_raise(i3c_tgt_dev, &req_long);
+
+	/* 2) DAVALID=1 时发 Hot-Join → -EACCES（HJ 仅限无动态地址设备） */
+	struct i3c_ibi req_hj = {
+		.ibi_type = I3C_IBI_HOTJOIN,
+		.payload = NULL,
+		.payload_len = 0,
+	};
+	neg_ret_hj_davalid = i3c_ibi_raise(i3c_tgt_dev, &req_hj);
+
+	/* 3) IBIDIS 锁存（DISEC 后）发 IBI → -EACCES */
+	uint8_t pl2[2] = { 0xBB, 0x02 };
+	struct i3c_ibi req_ibi = {
+		.ibi_type = I3C_IBI_TARGET_INTR,
+		.payload = pl2,
+		.payload_len = sizeof(pl2),
+	};
+	neg_ret_ibidis = i3c_ibi_raise(i3c_tgt_dev, &req_ibi);
+
+	LOG_INF("neg checks: long=%d hj=%d ibidis=%d",
+		neg_ret_long_payload, neg_ret_hj_davalid, neg_ret_ibidis);
+}
+
 /* ========== I3C target callbacks ========== */
 
 static int slave_write_requested_cb(struct i3c_target_config *config)
 {
 	ARG_UNUSED(config);
-	dbg_wr_match++;
 	rx_idx = 0;
 
 	/* 写匹配（MATCHED/STREQWR）时刻预填读数据：master 写段有 N 字节数据 +
@@ -336,19 +365,6 @@ static int slave_write_requested_cb(struct i3c_target_config *config)
 static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val)
 {
 	ARG_UNUSED(config);
-
-	/* 调试历史（ISR 安全：纯内存写） */
-	dbg_byte_cnt++;
-	{
-		uint32_t i = dbg_rx_hist_idx & 31U;
-		dbg_rx_hist[i].seq = (uint16_t)dbg_byte_cnt;
-		dbg_rx_hist[i].byte = val;
-		dbg_rx_hist[i].state = (uint8_t)parse_state;
-		dbg_rx_hist_idx++;
-	}
-	if (val == 0x45U) {
-		dbg_e_seen++;
-	}
 
 	if (rx_idx < sizeof(rx_buf)) {
 		rx_buf[rx_idx++] = val;
@@ -390,13 +406,23 @@ static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val
 				(void)k_msgq_put(&tgt_event_queue, &evt, K_NO_WAIT);
 			}
 			break;
+		case CMD_RUN_TGT_NEG:
+			{
+				struct tgt_event evt = { .type = TGT_EVT_RUN_NEG };
+				(void)k_msgq_put(&tgt_event_queue, &evt, K_NO_WAIT);
+			}
+			break;
 		default:
 			/* 非 opcode 字节（如 write_read/write_stop_read 写阶段的占位字节
 			 * CMD_DUMMY_BYTE）按原始数据记录，便于排查。
-			 * 写段预填已在 write_requested_cb（写匹配）完成，此处无需再调。 */
+			 * 写段最后字节（0xA5）接收 = T bit 前、restart 前 3us 窗口起点，
+			 * 此刻再 prefill 一次（TXCOUNT 续写幂等）：保证该窗口内 FIFO
+			 * 有数据（用户硬件规则：读请求前 FIFO 必须已填好，否则从机
+			 * 直接触发错误结束通信）。 */
 			if (write_len < sizeof(write_data)) {
 				write_data[write_len++] = val;
 			}
+			target_prefill_tx();
 			break;
 		}
 		break;
@@ -428,23 +454,22 @@ static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val
 				.test_id = current_test_id,
 				.ctrl_result = ctrl_result,
 			};
-			if (k_msgq_put(&tgt_event_queue, &evt, K_NO_WAIT) == 0) {
-				dbg_end_put++;
-			}
+			(void)k_msgq_put(&tgt_event_queue, &evt, K_NO_WAIT);
 		}
 		parse_state = TGT_PARSE_IDLE;
 		break;
 
 	case TGT_PARSE_READ_LEN:
-		tx_len = val;
-		last_read_len = val;
+		/* 长度字节 val==0 约定为 256（单字节表达上限 255，big_256 用） */
+		tx_len = (val == 0) ? 256 : val;
+		last_read_len = tx_len;
 		/* 只改长度记账；FIFO 由后续 write_requested_cb（写匹配）/ stop_cb
 		 * （总线空闲）按新 tx_len 预填。 */
 		parse_state = TGT_PARSE_IDLE;
 		break;
 
 	case TGT_PARSE_WRITE_LEN:
-		write_len_expected = val;
+		write_len_expected = (val == 0) ? 256 : val;	/* 0 => 256 */
 		write_len = 0;
 		parse_state = TGT_PARSE_WRITE_DATA;
 		break;
@@ -494,15 +519,10 @@ static int slave_read_processed_cb(struct i3c_target_config *config, uint8_t *va
 	return 1;
 }
 
-/* 实验（排查 IBI 后 8ms 死窗）：1 = 屏蔽 STOP 回调里的 target_prefill_tx。
- * 结论（NOPREFIL 烧录实测）：屏蔽后死窗依旧，prefill 假设排除，恢复为 0。 */
-#define TGT_DBG_NO_STOP_PREFILL 0
-
 static int slave_stop_cb(struct i3c_target_config *config)
 {
 	ARG_UNUSED(config);
 
-	dbg_stop++;
 	rx_idx = 0;
 	read_req_cnt = 0;
 	read_proc_cnt = 0;
@@ -510,10 +530,10 @@ static int slave_stop_cb(struct i3c_target_config *config)
 	/* 不再无条件恢复 tx_len=32：reset_test_state 已负责每测试的默认读长度，
 	 * 这里覆盖会把 SET_READ_LEN 设置的写读测试长度洗掉（实测读请求时刻
 	 * tx_len 被 stop_cb 从 16 覆盖成 32，read_requested_cb 供错数据）。
-	 * 预填用当前 tx_len；下一笔写匹配由 write_requested_cb 重新 prefill。 */
-#if !TGT_DBG_NO_STOP_PREFILL
+	 * 预填用当前 tx_len；下一笔写匹配由 write_requested_cb 重新 prefill。
+	 * 注：STOP 分支（驱动）此时已 FLUSHTB 清空 TX FIFO，此处 prefill 即
+	 * 从 buf[0] 起装干净前缀（write+stop+read 场景读段前的最后一次填充）。 */
 	target_prefill_tx();
-#endif
 	return 0;
 }
 
@@ -534,8 +554,6 @@ void target_test_init(void)
 	};
 
 	reset_all_target_state();
-
-	printk("TGT BUILD_TAG: FAST1MS\n");	/* 临时标记：验证烧录镜像新旧 */
 
 	tr_init(I3C_TEST_COUNT);
 
@@ -560,6 +578,12 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 
 		switch (evt.type) {
 		case TGT_EVT_TEST_START:
+			/* read_32_direct 无前置写段，TEST_START 写传输的 stop_cb 已按
+			 * 当前 tx_len（32）prefill；此处再显式补一次（TXCOUNT 续写幂等），
+			 * 保证读请求时 FIFO 已满（用户规则：读请求前 FIFO 必须有数据）。 */
+			if (evt.test_id == I3C_TEST_READ_32_DIRECT) {
+				target_prefill_tx();
+			}
 			raise_ready_ibi(evt.test_id);
 			break;
 		case TGT_EVT_TRIGGER_IBI:
@@ -570,6 +594,9 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 			break;
 		case TGT_EVT_PRINT_SUMMARY:
 			tgt_print_summary();
+			break;
+		case TGT_EVT_RUN_NEG:
+			run_ibi_neg_checks();
 			break;
 		case TGT_EVT_TEST_END:
 			current_test_id = evt.test_id;
@@ -639,6 +666,11 @@ static void validate_write_read_1(void)
 	TGT_EXPECT(last_read_len == 1, "last_read_len %u != 1", last_read_len);
 }
 
+static void validate_write_read_15(void)
+{
+	TGT_EXPECT(last_read_len == 15, "last_read_len %u != 15", last_read_len);
+}
+
 static void validate_write_read_16(void)
 {
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
@@ -657,6 +689,11 @@ static void validate_write_read_32(void)
 static void validate_write_stop_read_1(void)
 {
 	TGT_EXPECT(last_read_len == 1, "last_read_len %u != 1", last_read_len);
+}
+
+static void validate_write_stop_read_15(void)
+{
+	TGT_EXPECT(last_read_len == 15, "last_read_len %u != 15", last_read_len);
 }
 
 static void validate_write_stop_read_16(void)
@@ -690,6 +727,89 @@ static void validate_ccc_basic(void)
 	TGT_EXPECT(addressed, "target was not addressed");
 }
 
+/* ========== 主机主动临界测试的 target 侧校验（2026-08-24 新增） ========== */
+
+static void validate_read_underrun_8_16(void)
+{
+	/* 主机读穿预填（8<16）：target 回调供完 8 字节后返回 1（END），
+	 * 由硬件 T-bit 提前终止。本侧只需确认读长度协议点正确到达。 */
+	TGT_EXPECT(last_read_len == 8, "last_read_len %u != 8", last_read_len);
+}
+
+static void validate_read_underrun_16_32(void)
+{
+	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
+}
+
+static void validate_nack_bad_addr(void)
+{
+	/* 错误地址在硬件层 NACK，不经任何软件回调；本侧无感知即正确 */
+	TGT_EXPECT(addressed, "target was not addressed");
+}
+
+static void validate_back_to_back_8x8(void)
+{
+	/* 8 次 write_read 各带 1 个占位字节 0xA5（default 分支记录） */
+	TGT_EXPECT(write_len == 8, "write_len %zu != 8", (size_t)write_len);
+	for (size_t i = 0; i < write_len && i < 8; i++) {
+		TGT_EXPECT(write_data[i] == CMD_DUMMY_BYTE,
+			   "write_data[%zu] 0x%02x != 0x%02x",
+			   i, write_data[i], CMD_DUMMY_BYTE);
+	}
+}
+
+static void validate_big_256(void)
+{
+	TGT_EXPECT(write_len == 256, "write_len %zu != 256", (size_t)write_len);
+	for (size_t i = 0; i < write_len && i < 256; i++) {
+		TGT_EXPECT(write_data[i] == (uint8_t)(0x40 + i),
+			   "write_data[%zu] 0x%02x != 0x%02x",
+			   i, write_data[i], (uint8_t)(0x40 + i));
+	}
+	TGT_EXPECT(last_read_len == 256, "last_read_len %u != 256", last_read_len);
+}
+
+static void validate_ccc_rapid_8(void)
+{
+	/* CCC 由 target 硬件直接应答，软件不参与；确认被寻址即可 */
+	TGT_EXPECT(addressed, "target was not addressed");
+}
+
+static void validate_read_master_abort(void)
+{
+	/* 主机截断读：本侧只需确认默认读长度协议点仍在（32）。
+	 * 真正的对齐校验在 controller 侧（post-abort 读回 0x00.. 起点）。 */
+	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
+}
+
+static void validate_ibi_neg_paths(void)
+{
+	TGT_EXPECT(neg_ret_long_payload == -EINVAL,
+		   "long payload ret %d != -EINVAL", neg_ret_long_payload);
+	TGT_EXPECT(neg_ret_hj_davalid == -EACCES,
+		   "HJ with DAVALID ret %d != -EACCES", neg_ret_hj_davalid);
+	TGT_EXPECT(neg_ret_ibidis == -EACCES,
+		   "IBI under IBIDIS ret %d != -EACCES", neg_ret_ibidis);
+}
+
+static void validate_api_neg_paths(void)
+{
+	/* 纯 controller 本地负路径，target 不参与 */
+	TGT_EXPECT(addressed, "target was not addressed");
+}
+
+static void validate_multi_msg_4(void)
+{
+	/* 两个写段各带 1 个占位字节 0xA5 */
+	TGT_EXPECT(write_len == 2, "write_len %zu != 2", (size_t)write_len);
+	for (size_t i = 0; i < write_len && i < 2; i++) {
+		TGT_EXPECT(write_data[i] == CMD_DUMMY_BYTE,
+			   "write_data[%zu] 0x%02x != 0x%02x",
+			   i, write_data[i], CMD_DUMMY_BYTE);
+	}
+	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
+}
+
 ZTEST(i3c_target, run_current_test)
 {
 	I3C_TEST_TGT_START_VAR(tgt_test_name());
@@ -709,6 +829,9 @@ ZTEST(i3c_target, run_current_test)
 		break;
 	case I3C_TEST_WRITE_READ_1:
 		validate_write_read_1();
+		break;
+	case I3C_TEST_WRITE_READ_15:
+		validate_write_read_15();
 		break;
 	case I3C_TEST_WRITE_READ_16:
 		validate_write_read_16();
@@ -731,6 +854,9 @@ ZTEST(i3c_target, run_current_test)
 	case I3C_TEST_WRITE_STOP_READ_1:
 		validate_write_stop_read_1();
 		break;
+	case I3C_TEST_WRITE_STOP_READ_15:
+		validate_write_stop_read_15();
+		break;
 	case I3C_TEST_WRITE_STOP_READ_16:
 		validate_write_stop_read_16();
 		break;
@@ -739,6 +865,36 @@ ZTEST(i3c_target, run_current_test)
 		break;
 	case I3C_TEST_WRITE_STOP_READ_32:
 		validate_write_stop_read_32();
+		break;
+	case I3C_TEST_READ_UNDERRUN_8_16:
+		validate_read_underrun_8_16();
+		break;
+	case I3C_TEST_READ_UNDERRUN_16_32:
+		validate_read_underrun_16_32();
+		break;
+	case I3C_TEST_NACK_BAD_ADDR:
+		validate_nack_bad_addr();
+		break;
+	case I3C_TEST_BACK_TO_BACK_8X8:
+		validate_back_to_back_8x8();
+		break;
+	case I3C_TEST_BIG_256:
+		validate_big_256();
+		break;
+	case I3C_TEST_CCC_RAPID_8:
+		validate_ccc_rapid_8();
+		break;
+	case I3C_TEST_READ_MASTER_ABORT:
+		validate_read_master_abort();
+		break;
+	case I3C_TEST_IBI_NEG_PATHS:
+		validate_ibi_neg_paths();
+		break;
+	case I3C_TEST_API_NEG_PATHS:
+		validate_api_neg_paths();
+		break;
+	case I3C_TEST_MULTI_MSG_4:
+		validate_multi_msg_4();
 		break;
 	default:
 		TGT_EXPECT(false, "unknown test id %u", current_test_id);
