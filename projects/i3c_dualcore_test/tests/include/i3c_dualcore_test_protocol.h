@@ -31,10 +31,39 @@ extern "C" {
 #define CMD_RESET_TARGET_STATE 'R'	/* 0x52 */
 #define CMD_PRINT_SUMMARY      'P'	/* 0x50 */
 #define CMD_RUN_TGT_NEG        'N'	/* 0x4E：让 target 执行 IBI 负路径自检 */
+#define CMD_AASA_PROBE         'A'	/* 0x41：SETAASA/SETDASA 测试的新地址探针写，
+					 * target 收到时快照 SDYNADDR 寄存器（此刻
+					 * 能被寻址本身即证明地址已切换） */
+#define CMD_INDEXED_READ       'X'	/* 0x58：索引读——下一字节是索引，target 按
+					 * 索引预填 tgt_tx_buf[idx..idx+len-1] 返回 */
+#define CMD_INDEXED_READ_DELAY 'Y'	/* 0x59：延时索引读——后随 2 字节（索引 + 延时档位），
+					 * target 收到延时字节后先 spin 延时再预填，用于实测
+					 * "写段 data 到读段欠载"的可用准备窗口（P1→T-bit）。
+					 * 延时档位单位 50ns（0-255 → 0-12.75us）。 */
+#define CMD_INDEXED_READ_DELAY_LEN 'Z'	/* 0x5A：延时长度索引读——后随 3 字节
+					 * （索引 + 延时档位 + 读长度），target 收到
+					 * 长度字节（=写段最后字节）后 spin 延时再预填，
+					 * 读段按 len 返回。FIFO 深 16，>16 由 TXSEND
+					 * 中断 read_processed_cb 续发——测跨 FIFO 深度
+					 * 边界的回复能力。长度 0 → 256（单字节约定）。 */
 
 /* write_read 写阶段的占位字节：不参与解析，仅用于产生 restart 前的写段。
  * 读长度统一由 CMD_SET_READ_LEN 告知 target。 */
 #define CMD_DUMMY_BYTE         0xA5
+
+/* SETAASA/SETDASA 测试地址约定：
+ * - target 静态地址（cpu1_i3c_target/app.overlay 的 static-address，
+ *   写进 SCONFIG.SADDR，硬件据此响应 SETDASA/SETAASA）
+ * - SETDASA 测试分配的动态地址（故意 ≠ 静态地址 ≠ 0x32，证明地址可变） */
+#define I3C_TARGET_STATIC_ADDR 0x5AU
+#define I3C_SETDASA_NEW_ADDR   0x45U
+
+/* SETAASA/SETDASA 探针写负载（'A' 之后跟 4 字节 magic），
+ * target 侧校验 write_data 前 4 字节等于它。 */
+#define AASA_PROBE_MAGIC_0     0xDE
+#define AASA_PROBE_MAGIC_1     0xAD
+#define AASA_PROBE_MAGIC_2     0xBE
+#define AASA_PROBE_MAGIC_3     0xEF
 
 /* Result codes carried by CMD_TEST_END. */
 #define TEST_RESULT_PASS  0
@@ -79,6 +108,22 @@ enum i3c_test_id {
 	I3C_TEST_IBI_NEG_PATHS,
 	I3C_TEST_API_NEG_PATHS,
 	I3C_TEST_MULTI_MSG_4,
+	/* 主机写 1 字节（索引），从机 restart 后根据索引预填对应数据段返回：
+	 * 验证 write_received_cb 改 tx_len/偏移后，write_requested_cb 能按新
+	 * 参数预填（ISR 顺序重构：MATCHED 先于 RXPEND） */
+	I3C_TEST_WRITE_INDEXED_READ_16,
+	/* 延时索引读：测从机收到写段 data 后到读段欠载的可用准备窗口。
+	 * controller 扫延时档位，target 收到写段后 spin 延时再预填，
+	 * 临界档位（恰好不欠载的最大延时）即 P1→T-bit 实测窗口 */
+	I3C_TEST_WRITE_DELAY_READ_16,
+	/* 延时长度索引读：写段内容决定读长度（FIFO 深 16 临界 17/32/64），
+	 * target spin 后 prefill 16B，>16 由续发路径补齐——验证跨 FIFO
+	 * 深度边界的回复能力 + 续发不缩小可用准备窗口 */
+	I3C_TEST_WRITE_DELAY_READ_LEN,
+	/* SETAASA/SETDASA 放最后：测试会 RSTDAA 清动态地址再恢复，
+	 * 若恢复失败只影响这两项自身，不波及其他测试 */
+	I3C_TEST_SETAASA,
+	I3C_TEST_SETDASA,
 	I3C_TEST_COUNT,
 };
 
@@ -110,6 +155,11 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 	[I3C_TEST_IBI_NEG_PATHS] = "ibi_neg_paths",
 	[I3C_TEST_API_NEG_PATHS] = "api_neg_paths",
 	[I3C_TEST_MULTI_MSG_4] = "multi_msg_4",
+	[I3C_TEST_WRITE_INDEXED_READ_16] = "write_indexed_read_16",
+	[I3C_TEST_WRITE_DELAY_READ_16] = "write_delay_read_16",
+	[I3C_TEST_WRITE_DELAY_READ_LEN] = "write_delay_read_len",
+	[I3C_TEST_SETAASA] = "setaasa",
+	[I3C_TEST_SETDASA] = "setdasa",
 };
 
 /*
@@ -162,6 +212,11 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 #define I3C_TEST_EN_IBI_NEG_PATHS       1
 #define I3C_TEST_EN_API_NEG_PATHS       1
 #define I3C_TEST_EN_MULTI_MSG_4         1
+#define I3C_TEST_EN_WRITE_INDEXED_READ_16 1
+#define I3C_TEST_EN_WRITE_DELAY_READ_16   1
+#define I3C_TEST_EN_WRITE_DELAY_READ_LEN  1
+#define I3C_TEST_EN_SETAASA             1
+#define I3C_TEST_EN_SETDASA             1
 
 /*
  * Structured UART tokens.

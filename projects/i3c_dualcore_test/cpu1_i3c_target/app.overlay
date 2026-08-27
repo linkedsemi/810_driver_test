@@ -5,6 +5,11 @@
     tgt-pid = <0x0208 0x13811000>;
     dcr = <0x4>;
     bcr = <0x06>;
+    /* 静态地址：写进 SCONFIG.SADDR，硬件据此响应 SETDASA/SETAASA 广播
+     * （setaasa/setdasa 测试项用；日常传输仍走 ENTDAA 分配的 0x32，
+     * MATCHSS 未置位，静态地址不影响正常数据通路）。与协议头
+     * I3C_TARGET_STATIC_ADDR 保持一致。 */
+    static-address = <0x5a>;
 
     pinctrl-0 = <
         &i3c6_scl_pj08

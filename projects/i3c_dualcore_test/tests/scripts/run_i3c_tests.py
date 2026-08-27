@@ -220,14 +220,13 @@ def restart_debugserver() -> None:
     """重启 XuanTie DebugServer（residue 深到 detach 清不掉时的兜底）。
 
     §10.1：残留时 reset/load 静默无效；§2.3：杀 server 重启是最终手段。
+    ★ 重启后必须等就绪（日志轮询 "DebuggerServer$"）+ 稳定期：实测
+    （2026-08-27，2/2 复现）DebugServer 新实例后立即连跑 → 间歇性
+    load_fail / load 中途断连 / WDR 时序异常；实例稳定 ~30min 后连跑
+    7 case 全无环境失败。重启后 warm_up_s 内不开始烧录。
     """
-    print("[PREFLIGHT] restarting DebugServer...", file=sys.stderr)
-    subprocess.run(["taskkill", "/F", "/IM", "DebugServerConsole.exe"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1)
-    subprocess.Popen([DEBUGSERVER_EXE], cwd=str(Path(DEBUGSERVER_EXE).parent),
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(4)
+    _restart_debugserver()   # taskkill + 兜底杀 + Popen + 30s 就绪轮询
+    time.sleep(30)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
 
 
 def preflight_gdb() -> None:
@@ -979,11 +978,30 @@ def main() -> int:
     results: List[Dict] = []
     for case_dir in cases:
         clean_gdb_residue()  # 上一 case 杀 gdb 的残留不带到本 case
-        try:
-            raw = run_case(case_dir, ctrl_port, tgt_port, args.case_timeout)
-        except RuntimeError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 1
+        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 30s 稳定期，
+        # 见 restart_debugserver 注释）后重跑该 case 1 次——"重启后立即连跑
+        # 不稳定"实测 2/2 复现（load_fail/断连/WDR 时序异常），稳定期后再跑
+        # 可自愈；重试仍失败才中止/判 FAIL（不掩盖真环境故障）。
+        raw = None
+        for attempt in range(2):
+            try:
+                raw = run_case(case_dir, ctrl_port, tgt_port, args.case_timeout)
+            except RuntimeError as exc:
+                if attempt == 0:
+                    print(f"[RETRY] {case_dir.name}: 环境失败（{exc}）→ "
+                          "重启 DebugServer 后重试", file=sys.stderr)
+                    restart_debugserver()
+                    clean_gdb_residue()
+                    continue
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+            if raw.get("load_failed") and attempt == 0:
+                print(f"[RETRY] {case_dir.name}: load_fail（环境问题）→ "
+                      "重启 DebugServer 后重试", file=sys.stderr)
+                restart_debugserver()
+                clean_gdb_residue()
+                continue
+            break
         if raw.get("env_failed"):
             # BOOT 标记未到 = 测试环境有问题（烧录链路/串口/镜像陈旧），
             # 继续跑只会批量产出假 FAIL——直接中止

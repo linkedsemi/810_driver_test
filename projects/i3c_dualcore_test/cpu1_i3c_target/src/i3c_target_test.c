@@ -33,6 +33,10 @@ enum tgt_parse_state {
 	TGT_PARSE_READ_LEN,
 	TGT_PARSE_WRITE_LEN,
 	TGT_PARSE_WRITE_DATA,
+	TGT_PARSE_INDEXED_READ,	/* CMD_INDEXED_READ 后等索引字节 */
+	TGT_PARSE_INDEXED_READ_DELAY,	/* CMD_INDEXED_READ_DELAY 后等 索引+延时 2 字节 */
+	TGT_PARSE_INDEXED_READ_DELAY_LEN,	/* CMD_INDEXED_READ_DELAY_LEN 后等
+						 * 索引+延时+长度 3 字节 */
 };
 
 enum tgt_event_type {
@@ -59,6 +63,43 @@ static volatile uint8_t rx_buf[256];
 static volatile size_t rx_idx;
 static volatile uint16_t tx_idx;
 static volatile uint16_t tx_len;
+static volatile uint16_t tx_offset;	/* 索引读：tgt_tx_buf 起始偏移（CMD_INDEXED_READ 设置） */
+static volatile bool indexed_read_pending;	/* 索引读进行中：写匹配时 tx_offset 未收到，延迟预填 */
+static volatile uint8_t delay_read_idx;	/* 延时索引读：0=未收索引 1=已收索引（首字节暂存于 delay_read_offset） */
+static volatile uint8_t delay_read_offset;	/* 延时索引读：暂存索引字节（延时字节后 prefill 生效） */
+static volatile bool delay_read_seen;	/* 延时索引读：收到过 'Y' opcode（stop_cb 不清，validate 用） */
+static volatile bool delay_len_seen;	/* 延时长度索引读：收到过 'Z' opcode（stop_cb 不清，validate 用） */
+static volatile uint8_t delay_len_value;	/* 延时长度索引读：收到的读长度原始值（0→256 解析处换算） */
+static volatile uint8_t delay_len_delay_step;	/* 延时长度索引读：暂存延时档位（'Z' 第 2 字节，
+						 * len 字节触发 spin 时用它计算） */
+/* nack_recovery 诊断（临时探针，闭环后清理）：
+ * 'X' opcode 到达时刻 parse_state、索引字节到达时刻 tx_offset、
+ * 读匹配（read_requested_cb）时刻 tx_offset/tx_idx——区分
+ * "'X' 未按 opcode 分发 / 索引未收到 / 偏移未复位"三种失败路径 */
+static volatile uint32_t nackx_opcode_pstate;
+static volatile uint32_t nackx_idx_txoff;
+static volatile uint32_t nackx_read_txoff;
+static volatile uint32_t nackx_read_txidx;
+static volatile uint32_t spin_ns_last;	/* 延时索引读：最后一笔 spin 实际消耗 cycles（记账核对） */
+static volatile uint32_t spin_done_actstate;	/* spin 完成时刻 SSTATUS.ACTSTATE（总线处于哪一阶段） */
+static volatile uint32_t spin_done_cyc;		/* spin 完成时刻 cycle */
+static volatile uint32_t matched_cyc_last;	/* 本笔 spin 期间 MATCHED（新 match）硬件置位时刻 */
+static volatile uint32_t matched_cyc_first;	/* 首笔（step 0）MATCHED 置位时刻 */
+static volatile uint32_t wait_sst_entry;	/* wait/spin 入口 SSTATUS 快照（MATCHED 是否已置位） */
+static volatile uint32_t wait_sst_timeout;	/* wait_matched 超时时刻 SSTATUS（诊断用） */
+static volatile uint32_t hit_txcount;		/* wait 命中时刻 TX FIFO 计数（16=常备未发，<16=数据已发出） */
+static volatile uint32_t hit_sst;		/* wait 命中时刻 SSTATUS 快照 */
+static volatile uint32_t sst_pre_flush;		/* FLUSHTB 前（spin/wait 结束时刻）SSTATUS 快照 */
+static volatile uint32_t pre_fill_cyc;		/* FLUSHTB+prefill 完成时刻 cycle */
+#define WDR_MAX_STEP 256
+static volatile uint16_t wdr_cnt;		/* 已记档数（每档一笔，≤256） */
+static volatile uint32_t wdr_entry_sst[WDR_MAX_STEP];	/* 每档 wait/spin 入口 SSTATUS */
+static volatile int32_t wdr_match_delta[WDR_MAX_STEP];	/* 命中-delay处理 cycles（-1=未命中） */
+static volatile uint32_t wdr_txcount[WDR_MAX_STEP];	/* 命中时 TXCOUNT（0xFFFF=未命中） */
+static volatile uint32_t wdr_hit_sst[WDR_MAX_STEP];	/* 命中时 SSTATUS 快照 */
+static volatile uint32_t rx_delay_byte_cyc;	/* 收到 delay 字节（ISR 处理）时刻 cycle */
+static volatile uint32_t rx_delay_byte_cyc_first;	/* 首笔（step 0，spin=0ns）delay 字节时刻 */
+static volatile bool first_cyc_done;		/* 首笔 cycle 记账完成 */
 static volatile uint16_t last_read_len;
 static volatile int read_req_cnt;
 static volatile int read_proc_cnt;
@@ -74,6 +115,12 @@ static volatile bool hj_raised;
 static volatile int neg_ret_long_payload;
 static volatile int neg_ret_hj_davalid;
 static volatile int neg_ret_ibidis;
+
+/* SETAASA/SETDASA 探针：收到 CMD_AASA_PROBE 时（此刻已被新地址寻址）
+ * 在 ISR 里快照 SDYNADDR 寄存器（只读寄存器，不打日志不拿锁，§4.2 合规），
+ * validate 时核对 DAVALID/DADDR/DCAUSE。 */
+static volatile bool aasa_probe_seen;
+static volatile uint32_t aasa_snap;
 
 static char tgt_fail_reason[256];
 static bool tgt_failed;
@@ -112,10 +159,69 @@ static void target_prefill_tx(void)
 		return;
 	}
 
-	int pre = i3c_target_tx_write(i3c_tgt_dev, (uint8_t *)tgt_tx_buf, tx_len, 0);
+	/* 索引读：从 tx_offset 偏移开始预填；普通读：从 0 开始 */
+	const uint8_t *buf = tgt_tx_buf + tx_offset;
+	int pre = i3c_target_tx_write(i3c_tgt_dev, (uint8_t *)buf, tx_len, 0);
 	if (pre > 0) {
 		tx_idx = (uint16_t)pre;
 	}
+	/* tx_offset 保留到本笔读完成（read_processed_cb 续发用），
+	 * 由 stop_cb（传输结束）复位为 0 */
+}
+
+/* 忙等延时（ns）：ISR 上下文可用（仅读 cycle counter），用于
+ * write_delay_read_16 测试——模拟"从机根据写段 data 计算回读数据"
+ * 所消耗的时间，实测写段结束到读段欠载的可用准备窗口。
+ * 返回实际消耗的 cycle 数（供记账核对 spin 是否按名义值生效）。 */
+static inline uint32_t spin_ns(uint32_t ns, volatile uint32_t *matched_cyc)
+{
+	uint32_t target = (uint32_t)((uint64_t)ns *
+				     CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000000ULL);
+	uint32_t start = k_cycle_get_32();
+	I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+
+	*matched_cyc = 0;	/* 0 = spin 期间"新 match"（MATCHED 标志）未置位 */
+	hit_txcount = 0xFFFFU;	/* 清零防残留（未命中时保持 0xFFFF） */
+	hit_sst = 0;
+	wait_sst_entry = base->SSTATUS;	/* 入口快照：本笔 restart+地址 是否已匹配 */
+	while ((uint32_t)(k_cycle_get_32() - start) < target) {
+		/* 轮询硬件 MATCHED 标志：记录本笔 restart+地址匹配的物理时刻
+		 * （读 SSTATUS 不清标志；写段匹配的标志已被前序 ISR 清除，
+		 * 此处捕获的是 restart 后的新匹配） */
+		if (*matched_cyc == 0U &&
+		    (base->SSTATUS & I3C_SSTATUS_MATCHED_MASK)) {
+			*matched_cyc = k_cycle_get_32();
+			hit_txcount = (base->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) >>
+				      I3C_SDATACTRL_TXCOUNT_POS;
+			hit_sst = base->SSTATUS;
+		}
+	}
+	return (uint32_t)(k_cycle_get_32() - start);
+}
+
+/* 等待本笔"新 match"（MATCHED 硬件置位）或超时，返回置位时刻（0=超时）。
+ * 无人工延时场景（step 0）测量 delay 字节 → 地址匹配的物理间隔用。 */
+static inline void wait_matched(uint32_t timeout_ns, volatile uint32_t *matched_cyc)
+{
+	uint32_t target = (uint32_t)((uint64_t)timeout_ns *
+				     CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000000ULL);
+	uint32_t start = k_cycle_get_32();
+	I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+
+	*matched_cyc = 0;
+	hit_txcount = 0xFFFFU;	/* 清零防残留（未命中时保持 0xFFFF） */
+	hit_sst = 0;
+	wait_sst_entry = base->SSTATUS;	/* 入口快照：delay 字节处理时 restart+地址 是否已匹配 */
+	do {
+		if (base->SSTATUS & I3C_SSTATUS_MATCHED_MASK) {
+			*matched_cyc = k_cycle_get_32();
+			hit_txcount = (base->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) >>
+				      I3C_SDATACTRL_TXCOUNT_POS;
+			hit_sst = base->SSTATUS;
+			return;
+		}
+	} while ((uint32_t)(k_cycle_get_32() - start) < target);
+	wait_sst_timeout = base->SSTATUS;	/* 超时时刻快照（诊断：MATCHED 一直 0 时看其他标志） */
 }
 
 K_MSGQ_DEFINE(tgt_event_queue, sizeof(struct tgt_event), 4, 1);
@@ -197,9 +303,26 @@ static void reset_test_state(uint8_t id)
 {
 	rx_idx = 0;
 	tx_len = 32;
+	tx_offset = 0;
+	indexed_read_pending = false;
 	last_read_len = 32;	/* 默认读长度：direct read 场景 */
 	read_req_cnt = 0;
 	read_proc_cnt = 0;
+	delay_read_seen = false;
+	delay_len_seen = false;
+	spin_done_actstate = 0;
+	spin_done_cyc = 0;
+	rx_delay_byte_cyc_first = 0;
+	matched_cyc_first = 0;
+	matched_cyc_last = 0;
+	wait_sst_entry = 0;
+	wait_sst_timeout = 0;
+	hit_txcount = 0;
+	hit_sst = 0;
+	sst_pre_flush = 0;
+	pre_fill_cyc = 0;
+	wdr_cnt = 0;
+	first_cyc_done = false;
 	write_len = 0;
 	write_len_expected = 0;
 	ibi_raised = false;
@@ -207,6 +330,8 @@ static void reset_test_state(uint8_t id)
 	neg_ret_long_payload = 0;
 	neg_ret_hj_davalid = 0;
 	neg_ret_ibidis = 0;
+	aasa_probe_seen = false;
+	aasa_snap = 0;
 	addressed = true;
 	tgt_failed = false;
 	tgt_fail_reason[0] = '\0';
@@ -225,9 +350,26 @@ static void reset_all_target_state(void)
 	rx_idx = 0;
 	/* tx_idx 由下面的 target_prefill_tx 返回值设置 */
 	tx_len = 32;
+	tx_offset = 0;
+	indexed_read_pending = false;
 	last_read_len = 32;
 	read_req_cnt = 0;
 	read_proc_cnt = 0;
+	delay_read_seen = false;
+	delay_len_seen = false;
+	spin_done_actstate = 0;
+	spin_done_cyc = 0;
+	rx_delay_byte_cyc_first = 0;
+	matched_cyc_first = 0;
+	matched_cyc_last = 0;
+	wait_sst_entry = 0;
+	wait_sst_timeout = 0;
+	hit_txcount = 0;
+	hit_sst = 0;
+	sst_pre_flush = 0;
+	pre_fill_cyc = 0;
+	wdr_cnt = 0;
+	first_cyc_done = false;
 	write_len = 0;
 	write_len_expected = 0;
 	ibi_raised = false;
@@ -360,8 +502,13 @@ static int slave_write_requested_cb(struct i3c_target_config *config)
 	 * 此时装 FIFO 保证 restart 读请求时 FIFO 已满（含 END0），不再依赖
 	 * read_requested_cb 在 3us 内抢装（实测只能装 3 字节 → TXCOUNT=3 → 欠载）。
 	 * 驱动 i3c_target_tx_write 允许 WR 态续写（只拒 RD 态），按 TXCOUNT 续写
-	 * 幂等：写匹配若保留旧 FIFO 内容则不再写，若已清空则从 buf[0] 装起。 */
-	target_prefill_tx();
+	 * 幂等：写匹配若保留旧 FIFO 内容则不再写，若已清空则从 buf[0] 装起。
+	 *
+	 * 索引读（CMD_INDEXED_READ）：写匹配时 tx_offset 还没收到（索引在写段
+	 * 数据里），此时不预填；等 write_received_cb 收到索引后按 tx_offset 预填。 */
+	if (!indexed_read_pending) {
+		target_prefill_tx();
+	}
 	return 0;
 }
 
@@ -414,6 +561,37 @@ static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val
 				struct tgt_event evt = { .type = TGT_EVT_RUN_NEG };
 				(void)k_msgq_put(&tgt_event_queue, &evt, K_NO_WAIT);
 			}
+			break;
+		case CMD_INDEXED_READ:
+			nackx_opcode_pstate = parse_state;	/* 探针：opcode 分发前状态 */
+			parse_state = TGT_PARSE_INDEXED_READ;
+			indexed_read_pending = true;
+			break;
+		case CMD_INDEXED_READ_DELAY:
+			/* 延时索引读：等 索引+延时 2 字节，收到延时字节后
+			 * spin 延时再预填（测 P1→欠载可用窗口） */
+			parse_state = TGT_PARSE_INDEXED_READ_DELAY;
+			indexed_read_pending = true;
+			delay_read_idx = 0;
+			delay_read_seen = true;
+			break;
+		case CMD_INDEXED_READ_DELAY_LEN:
+			/* 延时长度索引读：等 索引+延时+长度 3 字节，收到长度字节
+			 * （=写段最后字节）后 spin 延时再预填——同 'Y' 的窗口测量，
+			 * 但读段长度由写段内容决定（FIFO 深 16，>16 由续发补齐） */
+			parse_state = TGT_PARSE_INDEXED_READ_DELAY_LEN;
+			indexed_read_pending = true;
+			delay_read_idx = 0;
+			delay_read_seen = true;
+			delay_len_seen = true;
+			break;
+		case CMD_AASA_PROBE:
+			/* SETAASA/SETDASA 探针：controller 已在新地址（静态地址或
+			 * SETDASA 分配地址）上寻址到本机，此刻快照 SDYNADDR——
+			 * 寄存器里 DADDR/DCAUSE 就是硬件刚才地址切换的证据。
+			 * 随后的 magic 字节走 default 分支记入 write_data。 */
+			aasa_snap = ((I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6)))->SDYNADDR;
+			aasa_probe_seen = true;
 			break;
 		default:
 			/* 非 opcode 字节（如 write_read/write_stop_read 写阶段的占位字节
@@ -471,6 +649,159 @@ static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val
 		parse_state = TGT_PARSE_IDLE;
 		break;
 
+	case TGT_PARSE_INDEXED_READ:
+		/* 索引读：按索引设置 tx_offset 和 tx_len（16 字节），并立即预填。
+		 * 注意：写方向的 write_requested_cb 已在收到索引前跳过预填
+		 * （indexed_read_pending=true），这里需要先 FLUSHTB 清空 FIFO，
+		 * 再按新偏移预填，否则数据错位。 */
+		nackx_idx_txoff = tx_offset;	/* 探针：索引到达时残留偏移 */
+		tx_offset = val;
+		tx_len = 16;
+		last_read_len = tx_len;
+		indexed_read_pending = false;
+		{
+			/* 清空 TX FIFO 后按新偏移预填（FLUSHTB 清除写方向预填的旧数据） */
+			I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+			base->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
+			target_prefill_tx();
+		}
+		parse_state = TGT_PARSE_IDLE;
+		break;
+
+	case TGT_PARSE_INDEXED_READ_DELAY:
+		/* 延时索引读：第 1 字节 = 索引（暂存），第 2 字节 = 延时档位。
+		 * 收到延时字节（= 写段最后字节）后 spin 延时，模拟"根据写段
+		 * data 计算回读数据"消耗的时间；再 FLUSHTB + 按新偏移预填。
+		 * controller 侧扫描延时档位，欠载临界档位即 P1→T-bit 实测窗口。 */
+		if (delay_read_idx == 0) {
+			delay_read_idx = 1;	/* 用 1 标记"已收索引"，避免与索引 0 冲突 */
+			delay_read_offset = val;
+			break;
+		}
+		delay_read_idx = 0;
+		rx_delay_byte_cyc = k_cycle_get_32();	/* delay 字节 ISR 处理时刻（≈ACK 后 0.1-0.3µs） */
+		if (!first_cyc_done) {
+			first_cyc_done = true;
+			rx_delay_byte_cyc_first = rx_delay_byte_cyc;
+		}
+		if (val == 0) {
+			/* step 0（无人工延时）：不 wait_matched——死等 20µs 远超
+			 * 实测窗口（6-12µs），且真读匹配从不出现（spin 轮询实证），
+			 * 只靠写段残留假匹配命中（SCL 慢时前序 ISR 已清除 → 死等
+			 * 满 → 必欠载，6m25 档确定性 first_short=0）。直接记录
+			 * 入口状态后 FLUSHTB（等清空完成）+ prefill。 */
+			I3C_TypeDef *b = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+			matched_cyc_first = 0;
+			hit_txcount = 0xFFFFU;
+			hit_sst = 0;
+			wait_sst_entry = b->SSTATUS;
+			b->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
+			/* 无 spin 缓冲：FLUSHTB 后必须等清空完成（TXCOUNT 归零）
+			 * 再 prefill，否则写入与清空竞争被抹（0xff 偶发根因） */
+			uint32_t fw = 0U;
+			while (((b->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) != 0U) &&
+			       (fw < 10000U)) {
+				fw++;
+			}
+		} else {
+			/* step>0：FLUSHTB 提前到 spin 之前——spin 期间硬件必然完成
+			 * 清空，spin 结束直接 prefill 无清空竞态（实测 spin 后
+			 * FLUSHTB+立即 prefill 与异步清空竞争，写入被抹 → FIFO
+			 * 复位值 0xff，触发率 ~1/3）。 */
+			((I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6)))->SDATACTRL |=
+				I3C_SDATACTRL_FLUSHTB_MASK;
+			spin_ns_last = spin_ns((uint32_t)val * 50U, &matched_cyc_last);
+		}
+		/* per-step 记账（ISR 内只记 cycle/快照，validate 统一打印）：
+		 * 每档 wait 入口状态、命中间隔（delay 字节处理→MATCHED）、命中时
+		 * TXCOUNT/SSTATUS——区分"读地址真匹配"与"写段残留匹配"。 */
+		int32_t wdr_match = (val == 0) ?
+			((matched_cyc_first != 0U) ? (int32_t)(matched_cyc_first - rx_delay_byte_cyc) : -1) :
+			((matched_cyc_last != 0U) ? (int32_t)(matched_cyc_last - rx_delay_byte_cyc) : -1);
+		if (wdr_cnt < WDR_MAX_STEP) {
+			wdr_entry_sst[wdr_cnt] = wait_sst_entry;
+			wdr_match_delta[wdr_cnt] = wdr_match;
+			wdr_txcount[wdr_cnt] = (wdr_match >= 0) ? hit_txcount : 0xFFFFU;
+			wdr_hit_sst[wdr_cnt] = hit_sst;
+			wdr_cnt++;
+		}
+		spin_done_cyc = k_cycle_get_32();
+		spin_done_actstate =
+			((I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6)))->SSTATUS &
+			I3C_SSTATUS_ACTSTATE_MASK;
+		{
+			I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+			sst_pre_flush = base->SSTATUS;	/* spin 结束时刻总线状态（FLUSHTB 已提前） */
+			tx_offset = delay_read_offset;
+			tx_len = 16;
+			last_read_len = tx_len;
+			indexed_read_pending = false;
+			/* FLUSHTB 已在 spin 前执行（清空完成），此处直接 prefill */
+			target_prefill_tx();
+			pre_fill_cyc = k_cycle_get_32();
+		}
+		parse_state = TGT_PARSE_IDLE;
+		break;
+
+	case TGT_PARSE_INDEXED_READ_DELAY_LEN:
+		/* 延时长度索引读：与 'Y' 同构（idx → delay → len 三字节），
+		 * len 字节（=写段最后字节）收完即 spin。FLUSHTB 前置到 spin 前
+		 * （WDR16 修复：避免异步清空与 prefill 竞态）；prefill 只装
+		 * FIFO 容得下的前缀（≤16），>16 由 TXSEND 中断 read_processed_cb
+		 * 续发——跨 FIFO 深度边界的回复能力即本测试核心。 */
+		if (delay_read_idx < 2) {
+			if (delay_read_idx == 0) {
+				delay_read_offset = val;	/* 首字节 = 索引 */
+			} else {
+				delay_len_delay_step = val;	/* 第 2 字节 = 延时档位（暂存） */
+			}
+			delay_read_idx++;
+			break;
+		}
+		delay_read_idx = 0;
+		rx_delay_byte_cyc = k_cycle_get_32();	/* len 字节（写段最后字节）ISR 处理时刻 */
+		delay_len_value = val;			/* 第 3 字节 = 读长度 */
+		val = delay_len_delay_step;		/* spin 用延时档位（len 字节触发） */
+		if (val == 0) {
+			/* step 0（无人工延时）：同 'Y' 修复——不 wait_matched
+			 * （死等 20µs 远超窗口必欠载），直接 FLUSHTB（等清空
+			 * 完成）再 prefill。 */
+			I3C_TypeDef *b = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+			matched_cyc_first = 0;
+			hit_txcount = 0xFFFFU;
+			hit_sst = 0;
+			wait_sst_entry = b->SSTATUS;
+			b->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
+			uint32_t fw = 0U;
+			while (((b->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) != 0U) &&
+			       (fw < 10000U)) {
+				fw++;
+			}
+		} else {
+			((I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6)))->SDATACTRL |=
+				I3C_SDATACTRL_FLUSHTB_MASK;
+			spin_ns_last = spin_ns((uint32_t)val * 50U, &matched_cyc_last);
+		}
+		spin_done_cyc = k_cycle_get_32();
+		spin_done_actstate =
+			((I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6)))->SSTATUS &
+			I3C_SSTATUS_ACTSTATE_MASK;
+		{
+			I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+			sst_pre_flush = base->SSTATUS;	/* spin 结束时刻总线状态 */
+			tx_offset = delay_read_offset;
+			tx_len = (delay_len_value == 0) ? 256 : delay_len_value;
+			last_read_len = tx_len;
+			indexed_read_pending = false;
+			/* FLUSHTB 已在 spin 前执行（清空完成），此处直接 prefill：
+			 * 只装 FIFO 容得下的前缀（≤16），余下由 read_processed_cb
+			 * 续发（tx_idx 已在 prefill 内按实际装入数更新） */
+			target_prefill_tx();
+			pre_fill_cyc = k_cycle_get_32();
+		}
+		parse_state = TGT_PARSE_IDLE;
+		break;
+
 	case TGT_PARSE_WRITE_LEN:
 		write_len_expected = (val == 0) ? 256 : val;	/* 0 => 256 */
 		write_len = 0;
@@ -495,11 +826,22 @@ static int slave_read_requested_cb(struct i3c_target_config *config, uint8_t *va
 	ARG_UNUSED(config);
 
 	read_req_cnt++;
+	nackx_read_txoff = tx_offset;	/* 探针：读匹配时偏移 */
+	nackx_read_txidx = tx_idx;	/* 探针：读匹配时索引 */
 
 	if (tx_idx < tx_len) {
-		*val = tgt_tx_buf[tx_idx++];
+		/* tx_idx 是相对索引（已预填/已发送字节数），实际数据在
+		 * tgt_tx_buf[tx_offset + tx_idx]（索引读时 tx_offset 非 0） */
+		*val = tgt_tx_buf[tx_offset + tx_idx++];
 		/* 返回 1 = 这是最后字节，驱动为其标 END0 */
-		return (tx_idx >= tx_len) ? 1 : 0;
+		if (tx_idx >= tx_len) {
+			/* 本笔读完成：复位 tx_offset 和 indexed_read_pending（索引读只影响
+			 * 本笔），避免污染后续普通读 */
+			tx_offset = 0;
+			indexed_read_pending = false;
+			return 1;
+		}
+		return 0;
 	}
 
 	/* All requested bytes were already pre-filled; signal end of data. */
@@ -513,8 +855,17 @@ static int slave_read_processed_cb(struct i3c_target_config *config, uint8_t *va
 
 	read_proc_cnt++;
 	if (tx_idx < tx_len) {
-		*val = tgt_tx_buf[tx_idx++];
-		return (tx_idx >= tx_len) ? 1 : 0;
+		/* tx_idx 是相对索引（已预填/已发送字节数），实际数据在
+		 * tgt_tx_buf[tx_offset + tx_idx]（索引读时 tx_offset 非 0） */
+		*val = tgt_tx_buf[tx_offset + tx_idx++];
+		if (tx_idx >= tx_len) {
+			/* 本笔读完成：复位 tx_offset 和 indexed_read_pending（索引读只影响
+			 * 本笔），避免污染后续普通读 */
+			tx_offset = 0;
+			indexed_read_pending = false;
+			return 1;
+		}
+		return 0;
 	}
 
 	/* No more data expected. */
@@ -530,6 +881,11 @@ static int slave_stop_cb(struct i3c_target_config *config)
 	read_req_cnt = 0;
 	read_proc_cnt = 0;
 	parse_state = TGT_PARSE_IDLE;
+	/* 索引读的 tx_offset 只影响本笔读：write+restart+read 场景下 stop_cb
+	 * 在写传输结束时触发，此时 tx_offset 还没被 write_requested_cb
+	 * （restart 后的读匹配）使用，不能复位；write+stop+read 场景下
+	 * stop_cb 在写传输结束时触发，读传输是独立的 START，此时应复位。
+	 * 统一在 read_requested_cb（读匹配时）复位（读完成后），见该函数。 */
 	/* 不再无条件恢复 tx_len=32：reset_test_state 已负责每测试的默认读长度，
 	 * 这里覆盖会把 SET_READ_LEN 设置的写读测试长度洗掉（实测读请求时刻
 	 * tx_len 被 stop_cb 从 16 覆盖成 32，read_requested_cb 供错数据）。
@@ -679,6 +1035,91 @@ static void validate_write_read_16(void)
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
 }
 
+static void validate_write_indexed_read_16(void)
+{
+	/* 索引读：tx_len 应为 16（write_received_cb 设置），
+	 * tx_offset 已被 stop_cb 复位为 0（传输结束），只验证长度 */
+	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
+}
+
+static void validate_write_delay_read_16(void)
+{
+	/* 延时索引读：协议点确认——收到过 'Y'（delay_read_seen，stop_cb
+	 * 不清此标志）、读长度协议正确。数据能否在 T-bit 前入 FIFO
+	 * （欠载与否）由 controller 侧扫描判定，target 侧不参与。 */
+	TGT_EXPECT(delay_read_seen, "no CMD_INDEXED_READ_DELAY received");
+	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
+	/* nack_recovery 诊断（临时探针）：'X' 分发前 parse_state（非 IDLE 即
+	 * 卡状态）、索引到达时残留 tx_offset（0x10=WDR 残留未复位）、
+	 * 读匹配时 tx_offset/tx_idx（0x10/0 = 偏移未复位直接供残留数据） */
+	printk("TGT_DBG7: nackx opcode_pstate=0x%x idx_txoff=%u read_txoff=%u read_txidx=%u\n",
+	       nackx_opcode_pstate, nackx_idx_txoff, nackx_read_txoff,
+	       nackx_read_txidx);
+	/* spin 实测核对 + 总线阶段/新 match 时序（最后有效一笔）：
+	 * - spin_done_actstate：spin 完成时刻总线阶段（0=idle 1=write 2=read）
+	 * - match2delay：delay 字节收完 → MATCHED 置位（"新 match"）的物理
+	 *   间隔；0 = spin 期间未匹配（该笔 master 间隙 > spin，欠载档） */
+	printk("TGT_DBG: spin=%ucyc(%uns) actstate=0x%x match2delay=%dus\n",
+	       spin_ns_last,
+	       spin_ns_last * 1000000000ULL /
+		       (uint64_t)CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
+	       spin_done_actstate,
+	       (int)((matched_cyc_last - rx_delay_byte_cyc) /
+		     (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000ULL)));
+	/* 首笔（step 0，无人工延时）：delay 字节收完 → MATCHED 物理间隔
+	 * = master 写段结束到 restart+地址匹配的实际时间（直接对照波形）。
+	 * wait_sst_entry：wait 入口（delay 字节 ISR 处理时刻）SSTATUS 快照——
+	 * 0x200（MATCHED）= 入口时 restart+地址 已匹配（gap≈0，ISR 处理 delay
+	 * 字节时匹配已完成）；0 = 未匹配（wait 等新匹配）。 */
+	printk("TGT_DBG2: step0 match2delay=%dus (no spin, master gap+addr)\n",
+	       (int)((matched_cyc_first - rx_delay_byte_cyc_first) /
+		     (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000ULL)));
+	printk("TGT_DBG3: step0 sst_entry=0x%x (%s) wait_timeout_sst=0x%x match_first=%u(0=timeout) rx_first=%u\n",
+	       wait_sst_entry,
+	       (wait_sst_entry & I3C_SSTATUS_MATCHED_MASK) ? "MATCHED-already-set" : "no-match-yet",
+	       wait_sst_timeout,
+	       matched_cyc_first, rx_delay_byte_cyc_first);
+	printk("TGT_DBG4: last sst_entry=0x%x match_last=%u(0=spin-didnt-see) rx_delay_cyc=%u\n",
+	       wait_sst_entry, matched_cyc_last, rx_delay_byte_cyc);
+	printk("TGT_DBG5: hit_txcount=%u hit_sst=0x%x (%s)\n",
+	       hit_txcount, hit_sst,
+	       (hit_txcount == 0xFFFFU) ? "spin-didnt-see" : "16=常备未发,<16=数据已发出");
+	/* per-step 时间线：每档 wait 入口 SSTATUS、命中间隔（delay→MATCHED
+	 * cycles，-1=未命中）、命中时 TXCOUNT。观察"假匹配"（写段残留）与
+	 * 真读匹配的分界，回答死等预算与 match 时机的关系。 */
+	printk("WDR_TIMELINE:\n");
+	for (uint16_t i = 0; i < wdr_cnt && i < WDR_MAX_STEP; i++) {
+		printk("W%03u:%s e=0x%x d=%d tx=%u hs=0x%x\n", i,
+		       (wdr_match_delta[i] >= 0) ? "hit" : "miss",
+		       wdr_entry_sst[i], wdr_match_delta[i], wdr_txcount[i],
+		       wdr_hit_sst[i]);
+	}
+	printk("TGT_DBG6: pre_flush=0x%x prefill_cyc=%u (spin后FLUSHTB前状态)\n",
+	       sst_pre_flush, pre_fill_cyc);
+	/* CPU 频率 probe（cycle→ns 基准校准）：printk 逐字节轮询 @115200，
+	 * 77 字符 ≈ 77×86.8µs = 6.68ms 外部基准。dt_cycles / 6.68ms =
+	 * cycle counter 实际频率（CONFIG 声明 600MHz，若实际不同则所有
+	 * cycle→ns 换算虚高/虚低）。 */
+	uint32_t _t0 = k_cycle_get_32();
+	printk("CPUFREQ_PROBE:0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n");
+	uint32_t _dt = k_cycle_get_32() - _t0;
+	printk("CPUFREQ: cyc=%u -> %u MHz (declared 600)\n", _dt,
+	       (uint32_t)((uint64_t)_dt * 1000ULL / 6680ULL));
+}
+
+static void validate_write_delay_read_len(void)
+{
+	/* 延时长度索引读：协议点确认——收到过 'Z'（delay_len_seen，stop_cb
+	 * 不清此标志）、读长度来自写段内容（≥17 = 跨 FIFO 深度 16 边界，
+	 * 由续发路径补齐；非默认 16）。数据正确性由 controller 侧扫描判定
+	 * （pattern 校验读回内容），target 侧只确认协议点与长度记账。 */
+	TGT_EXPECT(delay_len_seen, "no CMD_INDEXED_READ_DELAY_LEN received");
+	TGT_EXPECT(last_read_len >= 17 && last_read_len <= 256,
+		   "last_read_len %u not from write segment", last_read_len);
+	printk("TGT_DBG: wdrlen last_len=%u spin=%ucyc actstate=0x%x\n",
+	       last_read_len, spin_ns_last, spin_done_actstate);
+}
+
 static void validate_write_read_17(void)
 {
 	TGT_EXPECT(last_read_len == 17, "last_read_len %u != 17", last_read_len);
@@ -813,6 +1254,62 @@ static void validate_multi_msg_4(void)
 	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
 }
 
+/* SETAASA/SETDASA 公共校验（2026-08-26 新增）。
+ * 证据链（i3c_peripheral_programmers_model.pdf DYNADDR @0x64）：
+ * 1. 探针写在新地址上被收到（aasa_probe_seen）——地址切换后总线可达；
+ * 2. 探针时刻快照的 SDYNADDR：DAVALID=1、DADDR=期望地址、DCAUSE=2
+ *    （SETDASA/SETAASA/SETNEWDA 置位路径）；
+ * 3. 探针 magic 字节内容正确（数据通路正常）。
+ * 注：RSTDAA/SETAASA/SETDASA/SETNEWDA 全部由硬件自动处理（SSTATUS.CCC
+ * 仅对硬件不处理的 CCC 中断），无需驱动介入。 */
+static void validate_aasa_common(uint8_t expect_addr)
+{
+	static const uint8_t magic[] = {
+		AASA_PROBE_MAGIC_0, AASA_PROBE_MAGIC_1,
+		AASA_PROBE_MAGIC_2, AASA_PROBE_MAGIC_3,
+	};
+	I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+
+	/* 静态地址确实已写进硬件（SETDASA/SETAASA 匹配的前提） */
+	uint32_t saddr = (base->SCONFIG & I3C_SCONFIG_SADDR_MASK) >> I3C_SCONFIG_SADDR_POS;
+	TGT_EXPECT(saddr == I3C_TARGET_STATIC_ADDR,
+		   "SCONFIG.SADDR 0x%02x != 0x%02x", saddr, I3C_TARGET_STATIC_ADDR);
+
+	TGT_EXPECT(aasa_probe_seen, "AASA probe not received");
+	if (!aasa_probe_seen) {
+		return;
+	}
+
+	uint32_t snap = aasa_snap;
+	uint8_t daddr = (snap & I3C_SDYNADDR_DADDR_MASK) >> I3C_SDYNADDR_DADDR_POS;
+	uint8_t dcause = (snap & I3C_SDYNADDR_DCAUSE_MASK) >> I3C_SDYNADDR_DCAUSE_POS;
+
+	TGT_EXPECT(snap & I3C_SDYNADDR_DAVALID_MASK, "SDYNADDR.DAVALID=0");
+	TGT_EXPECT(daddr == expect_addr,
+		   "SDYNADDR.DADDR 0x%02x != 0x%02x", daddr, expect_addr);
+	TGT_EXPECT(dcause == 2, "SDYNADDR.DCAUSE %u != 2", dcause);
+
+	TGT_EXPECT(write_len >= sizeof(magic),
+		   "probe magic write_len %zu < %zu", write_len, sizeof(magic));
+	for (size_t i = 0; i < sizeof(magic) && i < write_len; i++) {
+		TGT_EXPECT(write_data[i] == magic[i],
+			   "probe magic[%zu] 0x%02x != 0x%02x",
+			   i, write_data[i], magic[i]);
+	}
+}
+
+static void validate_setaasa(void)
+{
+	/* SETAASA 后动态地址 = 静态地址 */
+	validate_aasa_common(I3C_TARGET_STATIC_ADDR);
+}
+
+static void validate_setdasa(void)
+{
+	/* SETDASA 后动态地址 = controller 指定的 0x45 */
+	validate_aasa_common(I3C_SETDASA_NEW_ADDR);
+}
+
 ZTEST(i3c_target, run_current_test)
 {
 	I3C_TEST_TGT_START_VAR(tgt_test_name());
@@ -898,6 +1395,21 @@ ZTEST(i3c_target, run_current_test)
 		break;
 	case I3C_TEST_MULTI_MSG_4:
 		validate_multi_msg_4();
+		break;
+	case I3C_TEST_WRITE_INDEXED_READ_16:
+		validate_write_indexed_read_16();
+		break;
+	case I3C_TEST_WRITE_DELAY_READ_16:
+		validate_write_delay_read_16();
+		break;
+	case I3C_TEST_WRITE_DELAY_READ_LEN:
+		validate_write_delay_read_len();
+		break;
+	case I3C_TEST_SETAASA:
+		validate_setaasa();
+		break;
+	case I3C_TEST_SETDASA:
+		validate_setdasa();
 		break;
 	default:
 		TGT_EXPECT(false, "unknown test id %u", current_test_id);

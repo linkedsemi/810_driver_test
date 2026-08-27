@@ -1,0 +1,30 @@
+# Application Kconfig root：必须先引入 Zephyr 主配置树，
+# 否则整个 Zephyr 符号树缺失（LOG/I3C 等全部 undefined）。
+source "$(ZEPHYR_BASE)/Kconfig.zephyr"
+
+# write_delay_read_16 常态化门限（从机准备窗口监控）
+#
+# controller 侧扫描 delay_step 得 critical_delay_ns（最后一个读满 16B 的
+# 档位 × 50ns = 从机"收到写段数据后最长可延时"的实测窗口）。窗口值随
+# 时钟源/SCL 速率变化（25M 源+12.5MHz SCL ≈ 6µs，50M 源 ≈ 12.5µs），
+# 门限按 case 在 controller.conf 中配置，0 = 不启用该门限。
+
+config I3C_TEST_WDR_MIN_CRITICAL_NS
+	int "write_delay_read_16 临界窗口下限（ns），0=不启用"
+	default 0
+	help
+	  从机准备窗口低于此值判 FAIL（驱动/配置改动导致准备时间退化）。
+
+config I3C_TEST_WDR_MAX_CRITICAL_NS
+	int "write_delay_read_16 临界窗口上限（ns），0=不启用"
+	default 0
+	help
+	  从机准备窗口高于此值判 FAIL（时序基线异常变化，防假阳性）。
+
+config I3C_TEST_WDR_NACK_BOUNDARY_CHECK
+	bool "write_delay_read_16 NACK 边界硬判定"
+	default y
+	help
+	  master 在欠载后下一笔报 Address NACK（err=-5）停止扫描时，
+	  要求 stop_step 必须 > 临界档（NACK 只能发生在最后一个读满档之后）。
+	  若 stop_step <= 临界档 → 从机在窗口内就 NACK，通信失败提前，判 FAIL。

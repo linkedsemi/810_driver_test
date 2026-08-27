@@ -175,6 +175,17 @@ static void ctrl_test_end(void)
 	uint8_t result = ctrl_failed ? TEST_RESULT_FAIL : TEST_RESULT_PASS;
 	int ret = ctrl_send_cmd((const uint8_t[]){ CMD_TEST_END, (uint8_t)current_test_id, result }, 3);
 	CTRL_STEP("E sent");
+	if (ret != 0) {
+		/* 'E' 是测试收尾命令（target 侧 ztest 在 'S' 后已跑完并 PASS，
+		 * 不依赖 'E' 完成）。偶发场景：被测测试项连发压满 target
+		 * （如 ccc_rapid_8 连发 8 次 CCC）后 'E' 地址段被 target 短暂
+		 * NACK（target 硬件仍忙，实测纯 i3c 12m5 偶发）。NACK 发生在
+		 * 地址段 = target 未收到任何字节，重发安全且幂等；重试仍
+		 * 失败才暴露为 FAIL（target 真挂死不被掩盖）。 */
+		k_sleep(K_MSEC(5));
+		ret = ctrl_send_cmd((const uint8_t[]){ CMD_TEST_END, (uint8_t)current_test_id, result }, 3);
+		CTRL_STEP("E retry");
+	}
 	CTRL_EXPECT(ret == 0, "CMD_TEST_END failed: %d", ret);
 
 	/* Give target time to run its ztest and emit the TGT token. */
@@ -500,6 +511,301 @@ ZTEST(i3c_controller, write_read_32)
 	ctrl_test_end();
 }
 #endif /* I3C_TEST_EN_WRITE_READ_32 */
+
+#if I3C_TEST_EN_WRITE_INDEXED_READ_16
+/*
+ * 主机写 1 字节（索引），从机 restart 后根据索引预填对应数据段返回。
+ * 验证 ISR 顺序重构（MATCHED 先于 RXPEND）：write_received_cb 收到索引后
+ * 改 tx_len/偏移，write_requested_cb（restart 后的读匹配）按新参数预填。
+ *
+ * 协议：主机写 1 字节索引（0x00/0x10/0x20），从机返回 tgt_tx_buf[idx..idx+15]。
+ * 从机 write_received_cb 收到索引后设置 tx_offset = idx，tx_len = 16；
+ * restart 后 write_requested_cb 按 tx_offset 预填。
+ */
+ZTEST(i3c_controller, write_indexed_read_16)
+{
+	uint8_t rd[16];
+	uint8_t idx;
+
+	if (!ctrl_test_begin(I3C_TEST_WRITE_INDEXED_READ_16)) {
+		ctrl_test_end();
+		return;
+	}
+
+	/* 测试 3 个索引：0x00 / 0x10 / 0x20（对应 pattern seed 0/16/32） */
+	for (int i = 0; i < 3; i++) {
+		idx = i * 0x10;
+		/* 写 CMD_INDEXED_READ + 索引字节，然后 restart 读 16 字节 */
+		uint8_t wr[2] = { CMD_INDEXED_READ, idx };
+		size_t actual = 0;
+		int ret = i3c_write_read_actual(target_desc, wr, sizeof(wr), rd, sizeof(rd), &actual);
+		CTRL_EXPECT(ret == 0, "write-read idx=0x%02x failed: %d", idx, ret);
+		CTRL_EXPECT(actual == sizeof(rd), "read actual %zu != %zu", actual, sizeof(rd));
+		if (ret == 0 && actual == sizeof(rd)) {
+			/* 从机返回的数据应从 idx 偏移开始（pattern seed = idx） */
+			validate_pattern(rd, actual, idx, "indexed read");
+		}
+		if (ret != 0 || actual != sizeof(rd)) {
+			break;  /* 失败即停，不继续测下一个索引 */
+		}
+	}
+
+	ctrl_test_end();
+}
+#endif /* I3C_TEST_EN_WRITE_INDEXED_READ_16 */
+
+#if I3C_TEST_EN_WRITE_DELAY_READ_16
+/*
+ * write_delay_read_16：实测从机"写段 data → 读段欠载"的可用准备窗口
+ * （P1→T-bit 的实测值，协议固定 ≈11-12 SCL 周期）。
+ *
+ * 协议：主机写 3 字节 {CMD_INDEXED_READ_DELAY, idx, delay_step}，restart 后
+ * 读 16 字节。从机收到写段最后字节（delay_step）后 spin delay_step×50ns
+ * 再 FLUSHTB+预填；spin 过长则读段 T-bit 采样前 FIFO 仍空 → 读欠载。
+ *
+ * 方法：扫描 delay_step 0..79（0-3950ns，50ns 步进），记录每档读回字节数；
+ * 临界档 = 最后一个读满 16 字节的档位 = 从机"恰好来得及"的最大准备延时。
+ * 欠载档从临界档+1 开始（读回字节数 < 16）。
+ */
+/* WDR16 临界档跨 ZTEST 传递：write_delay_read_len 用它判定"续发不缩小窗口"
+ * （ztest 按 enum 顺序注册，WDR16 先于 WDR_LEN 执行，本变量必然已赋值） */
+static int g_wdr16_critical_step = -1;
+/* 'Z' 协议自身基准：len=17 的临界档（同 4 字节写段 + 1 字节续发 ≈ 纯 prefill
+ * 窗口；32/64 与之比较消除"写段字节数/读长度"的 master 侧固有偏移） */
+static int g_wdrlen17_critical_step = -1;
+static int g_wdrlen32_critical_step = -1;	/* 判定②基准（len64 与其比） */
+
+ZTEST(i3c_controller, write_delay_read_16)
+{
+	static const int DELAY_STEP_NS = 50;    /* 档位单位（与协议头注释一致） */
+	static const int DELAY_MAX_STEP = 255;  /* 扫描上限 255 档 = 12750ns */
+
+	g_wdr16_critical_step = -1; /* 重置（每次测试运行重新测量） */
+	int first_short = -1;   /* 第一个欠载档位（诊断用） */
+	int stop_step = -1;     /* master 报错停止扫描的档位（欠载后恢复问题，观察用） */
+	uint8_t rd[16];
+
+	if (!ctrl_test_begin(I3C_TEST_WRITE_DELAY_READ_16)) {
+		ctrl_test_end();
+		return;
+	}
+
+	for (int step = 0; step <= DELAY_MAX_STEP; step++) {
+		/* idx=0x10：读回数据必须来自 tgt_tx_buf[0x10..0x1f]（pattern seed
+		 * 0x10），与 FIFO 常备数据（0x00..0x0f）区分，证明 spin 后
+		 * 重新 prefill 生效（对照：FLUSHTB 无效时会读到常备数据） */
+		uint8_t wr[3] = { CMD_INDEXED_READ_DELAY, 0x10, (uint8_t)step };
+		size_t actual = 0;
+		int ret = i3c_write_read_actual(target_desc, wr, sizeof(wr),
+						rd, sizeof(rd), &actual);
+		if (ret != 0) {
+			/* master 读欠载（target 提前终止）后的恢复问题：
+			 * 下一笔 transfer 报错即停止扫描。这是 controller 侧
+			 * 状态恢复课题（另行观察），不影响"从机准备窗口"测量 */
+			stop_step = step;
+			break;
+		}
+		printk("CTRL_STEP: delay step=%d actual=%zu\n", step, actual);
+		if (actual == sizeof(rd)) {
+			g_wdr16_critical_step = step;
+			validate_pattern(rd, actual, 0x10, "delay-read");
+		} else if (first_short < 0) {
+			first_short = step;
+		}
+	}
+
+	/* INFO token：扫描结果上报（报告"实际"列取用，§13.4） */
+	printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:write_delay_read_16:"
+	       "critical_delay_ns=%d,first_short_step=%d,master_stop_step=%d\n",
+	       (g_wdr16_critical_step >= 0) ?
+		       g_wdr16_critical_step * DELAY_STEP_NS : 0,
+	       first_short, stop_step);
+
+	/* 判定：临界档必须存在——0 档（不延时）都欠载说明时序基线异常 */
+	CTRL_EXPECT(g_wdr16_critical_step >= 0,
+		    "no step read full 16B (step 0 underrun)");
+	if (first_short >= 0) {
+		CTRL_EXPECT(first_short > 0,
+			    "underrun at step 0 (no delay), window < %dns",
+			    DELAY_STEP_NS);
+	} else {
+		printk("CTRL_STEP: delay scan all %d steps OK, window >= %dns\n",
+		       DELAY_MAX_STEP + 1, (DELAY_MAX_STEP + 1) * DELAY_STEP_NS);
+	}
+
+	/* 常态化门限（§13.1 时序维度）：窗口值必须在 case 配置区间内，
+	 * 超出 = 驱动/配置改动导致准备时间退化（<min）或基线异常（>max）。
+	 * case 差异在 controller.conf（25M 源 [5500,7000]，0=禁用）。 */
+#if CONFIG_I3C_TEST_WDR_MIN_CRITICAL_NS > 0
+	int wdr_min = CONFIG_I3C_TEST_WDR_MIN_CRITICAL_NS;
+	int wdr_max = CONFIG_I3C_TEST_WDR_MAX_CRITICAL_NS;
+	int wdr_ns = (g_wdr16_critical_step >= 0) ?
+			g_wdr16_critical_step * DELAY_STEP_NS : 0;
+	CTRL_EXPECT(wdr_ns >= wdr_min,
+		    "window %dns < min %dns (target prep time degraded)",
+		    wdr_ns, wdr_min);
+	if (wdr_max > 0) {
+		CTRL_EXPECT(wdr_ns <= wdr_max,
+			    "window %dns > max %dns (timing baseline anomaly)",
+			    wdr_ns, wdr_max);
+	}
+#endif
+
+	/* NACK 边界硬判定：master 在欠载后下一笔 Address NACK（err=-5）
+	 * 停止扫描是已知行为（从机状态恢复课题，观察项），但 NACK 只能
+	 * 发生在最后一个读满档（临界档）之后；若在窗口内就 NACK → 从机
+	 * 通信失败提前，属回归（配置开关控制，默认启用）。 */
+#if CONFIG_I3C_TEST_WDR_NACK_BOUNDARY_CHECK
+	if (stop_step >= 0 && g_wdr16_critical_step >= 0) {
+		CTRL_EXPECT(stop_step > g_wdr16_critical_step,
+			    "Address NACK at step %d <= critical %d (early NACK)",
+			    stop_step, g_wdr16_critical_step);
+	}
+#endif
+
+	/* nack_recovery：欠载扫描以 Address NACK（stop_step）结束是 WDR 场景
+	 * 的终点。紧接发一笔 2 字节写段 {CMD_INDEXED_READ, idx=0} 索引读：
+	 * - master 侧：err=-5 后驱动状态机必须已恢复，本笔 ret==0；
+	 * - target 侧：NACK 后总线 STOP → 驱动 STOP 分支 FLUSHTB + stop_cb
+	 *   常备预填 + tx_offset=0 复位；若 FIFO 残留 WDR 预填数据
+	 *   （0x10..0x1f）或偏移未复位，读回 pattern 不是 0x00..0x0f →
+	 *   validate_pattern 失败。数据对齐 buf[0] 即证明清理链正确。 */
+	if (stop_step >= 0) {
+		uint8_t wrr[2] = { CMD_INDEXED_READ, 0x00 };
+		uint8_t rdr[16];
+		size_t actual_r = 0;
+		int ret_r = i3c_write_read_actual(target_desc, wrr, sizeof(wrr),
+						  rdr, sizeof(rdr), &actual_r);
+		if (ret_r == 0 && actual_r == sizeof(rdr)) {
+			validate_pattern(rdr, actual_r, 0x00, "nack-recovery");
+			printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:"
+			       "write_delay_read_16:nack_recover_ok=1\n");
+		} else {
+			CTRL_EXPECT(0, "nack recovery: ret=%d actual=%zu",
+				    ret_r, actual_r);
+		}
+	} else {
+		printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:"
+		       "write_delay_read_16:nack_recover_ok=skip(no-nack)\n");
+	}
+
+	ctrl_test_end();
+}
+#endif /* I3C_TEST_EN_WRITE_DELAY_READ_16 */
+
+#if I3C_TEST_EN_WRITE_DELAY_READ_LEN
+/*
+ * write_delay_read_len：写段内容决定读长度的 FIFO 深度临界测试。
+ *
+ * 协议：写 4 字节 {CMD_INDEXED_READ_DELAY_LEN, idx, delay_step, len}，
+ * restart 后读 len 字节。target 收 len 字节（=写段最后字节）后 spin
+ * delay×50ns 再 FLUSHTB+prefill——FIFO 深 16 只装 16B，第 17 字节起由
+ * TXSEND 中断 read_processed_cb 续发（T-bit 间隔内补字节）。
+ *
+ * 方法：len∈{17,32,64} 各扫 delay 档找临界（最后一个读满 len 的档）。
+ * 判定：① 临界档存在（能读满 len 且 pattern 对，idx=0x10 对照验证续发
+ * 数据来自 tgt_tx_buf[0x10+16..] 而非 FIFO 残留/复位值）；② 续发路径
+ * 不得显著缩小可用窗口——critical[len] ≥ WDR16 critical − 容差。
+ */
+ZTEST(i3c_controller, write_delay_read_len)
+{
+	static const int DELAY_STEP_NS = 50;    /* 档位单位（与协议头注释一致） */
+	static const int DELAY_MAX_STEP = 255;  /* 扫描上限 255 档 = 12750ns */
+	static const int LENS[] = { 17, 32, 64 }; /* FIFO 深度 16 的临界+倍率 */
+	/* 判定②容差（len64 vs len32）：实测两档差 ≤3 档（多字节续发
+	 * 量 3 倍差距下窗口几乎不变）；连跑下 len64 续发 ISR 偶发慢一拍
+	 * （临界档提前最多 6 档 = 300ns），8 档吸收该抖动。续发路径真
+	 * 退化（跟不上 T-bit 间隔）时临界档会缩小几十档，不会被 8 档
+	 * 容差掩盖。 */
+	static const int WDRLEN_TOLERANCE_STEPS = 8;
+	uint8_t rd[64];
+
+	if (!ctrl_test_begin(I3C_TEST_WRITE_DELAY_READ_LEN)) {
+		ctrl_test_end();
+		return;
+	}
+
+	for (size_t li = 0; li < ARRAY_SIZE(LENS); li++) {
+		int len = LENS[li];
+		int critical = -1;	/* 最后一个读满 len 的档位 */
+		int first_short = -1;	/* 第一个欠载档（诊断用） */
+		int stop = -1;		/* master 报错停止扫描的档位 */
+
+		for (int step = 0; step <= DELAY_MAX_STEP; step++) {
+			uint8_t wr[4] = { CMD_INDEXED_READ_DELAY_LEN, 0x10,
+					  (uint8_t)step, (uint8_t)len };
+			size_t actual = 0;
+			int ret = i3c_write_read_actual(target_desc, wr, sizeof(wr),
+							rd, sizeof(rd), &actual);
+			if (ret != 0) {
+				stop = step;
+				break;
+			}
+			/* pattern 前缀完整性：第一个 ≠ 0x10+i 的下标 = target 实际
+			 * 供数边界。bnd ≥ len ⟺ rd[0..len-1] 全对（target 供满
+			 * len）——残留污染只会把 bnd 往大推，不会把"真欠载"
+			 * （断裂点 < len）改判成功，判定无污染风险。 */
+			int bnd = actual;
+			for (int i = 0; i < 64; i++) {
+				if (rd[i] != (uint8_t)(0x10 + i)) {
+					bnd = i;
+					break;
+				}
+			}
+			if (bnd >= (int)len) {
+				/* 成功档：target 供满 len。actual 可能被 master 读段
+				 * DCNT 放大（target 供完 32B 后 FIFO 空 → 中途欠载 →
+				 * master 继续读满 DCNT 收 0xff，actual=64 假象）——
+				 * target 供数正确即成功，多收字节是 master 侧硬件
+				 * 行为，非 target 欠供。 */
+				critical = step;
+				validate_pattern(rd, len, 0x10, "delay-read-len");
+			} else {
+				/* 欠载步：bnd < len = target 供数在 len 前断流
+				 * （prefill 没赶上/续发跟不上 T-bit）；bnd 值
+				 * 区分供数边界。 */
+				if (first_short < 0) {
+					first_short = step;
+				}
+			}
+		}
+
+		/* INFO token：每 len 一条（报告"实际"列取用，§13.4） */
+		printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:write_delay_read_len:"
+		       "len=%d,critical_ns=%d,first_short_step=%d,stop_step=%d\n",
+		       len, (critical >= 0) ? critical * DELAY_STEP_NS : 0,
+		       first_short, stop);
+
+		/* 判定①：临界档存在——len 档连 step 0（不延时）都读不满 =
+		 * 时序基线异常（或续发路径根本跟不上 T-bit 间隔） */
+		CTRL_EXPECT(critical >= 0,
+			    "len=%d: no step read full %dB", len, len);
+
+		/* 判定②：跨 FIFO 边界的续发不缩小可用窗口——len64 与 len32
+		 * 互比（同为多字节续发：16/48 字节），不用 len17 当基准：
+		 * 实测 len17（1 字节续发）的临界档波动 120-143 档（ISR 抖动
+		 * 在宽松单字节窗口上放大），而 len32/64 稳定在 117-121 档
+		 * 且互差 ≤3 档——"48 字节续发 vs 16 字节"窗口几乎不变即
+		 * 证明 TXSEND 续发跟上 T-bit 间隔（本测试要暴露的驱动边界
+		 * 在 64 档上会显著缩小）。len17 临界档与 WDR16 临界档随
+		 * INFO 上报作旁证（打印不判定）。 */
+		if (li == 0) {
+			g_wdrlen17_critical_step = critical;
+		} else if (li == 1) {
+			g_wdrlen32_critical_step = critical;
+		} else if (critical >= 0 && g_wdrlen32_critical_step >= 0) {
+			CTRL_EXPECT(critical + WDRLEN_TOLERANCE_STEPS >=
+				    g_wdrlen32_critical_step,
+				    "len=%d: critical %dns < len32 %dns - tol %dns "
+				    "(continue path shrinks window)",
+				    len, critical * DELAY_STEP_NS,
+				    g_wdrlen32_critical_step * DELAY_STEP_NS,
+				    WDRLEN_TOLERANCE_STEPS * DELAY_STEP_NS);
+		}
+	}
+	ctrl_test_end();
+}
+#endif /* I3C_TEST_EN_WRITE_DELAY_READ_LEN */
 
 /*
  * write+stop+start+read 变体：数据内容与 write_read 完全一致，
@@ -1066,6 +1372,201 @@ ZTEST(i3c_controller, multi_msg_4)
 	ctrl_test_end();
 }
 #endif /* I3C_TEST_EN_MULTI_MSG_4 */
+
+/* ========== SETAASA / SETDASA 地址分配 CCC（2026-08-26 新增） ==========
+ *
+ * 硬件依据（i3c_peripheral_programmers_model.pdf，NXP I3C slave IP）：
+ * - target 静态地址写在 SCONFIG.SADDR（DTS static-address，见 app.overlay）；
+ * - RSTDAA 广播后 DAVALID=0；SETAASA 广播 / SETDASA 直通（发往静态地址）
+ *   由硬件自动处理，SDYNADDR.DADDR 变为新地址、DCAUSE=2；
+ * - SETNEWDA 把 DA 改回 0x32（PDF：SETNEWDA 不触发 DACHG，但地址照换）。
+ *
+ * 两个测试都放套件末尾：中途要 RSTDAA 清掉 0x32，靠 SETNEWDA 恢复；
+ * 若恢复失败只影响本项的 TEST_END，不波及其他测试。
+ */
+
+/* 发 1 字节负载的 direct CCC 到任意 7 位地址（不要求地址在 device list 里，
+ * ls_i3c_do_ccc 不校验地址归属）。用于 SETDASA（发往静态地址）——
+ * i3c_ccc_do_setdasa() 要求 desc->static_addr != 0，而本工程 DT 里
+ * target 节点 reg[0]=0，故绕过 helper 直接构造 payload。 */
+static int ctrl_ccc_direct_write1(uint8_t ccc_id, uint8_t addr, uint8_t data)
+{
+	struct i3c_ccc_target_payload tgt_pl = {
+		.addr = addr,
+		.rnw = 0,
+		.data = &data,
+		.data_len = 1,
+	};
+	struct i3c_ccc_payload payload = { 0 };
+
+	payload.ccc.id = ccc_id;
+	payload.targets.payloads = &tgt_pl;
+	payload.targets.num_targets = 1;
+
+	return i3c_do_ccc(i3c_ctrl_dev, &payload);
+}
+
+/* GETPID 直通 CCC 验证当前 dynamic_addr 指向的设备是目标从机 */
+static void ctrl_verify_pid(const char *ctx)
+{
+	struct i3c_ccc_getpid pid;
+	uint64_t got = 0;
+
+	memset(&pid, 0, sizeof(pid));
+	int ret = i3c_ccc_do_getpid(target_desc, &pid);
+	CTRL_EXPECT(ret == 0, "%s GETPID failed: %d", ctx, ret);
+	if (ret == 0) {
+		for (int i = 0; i < 6; i++) {
+			got = (got << 8) | pid.pid[i];
+		}
+		CTRL_EXPECT(got == target_desc->pid,
+			    "%s pid 0x%llx != 0x%llx", ctx, got, target_desc->pid);
+	}
+}
+
+/* 写探针 {'A', magic[4]} 到当前 dynamic_addr：能被寻址本身证明地址已切换，
+ * target 侧在收到 'A' 时快照 SDYNADDR 并校验 magic。 */
+static void ctrl_send_aasa_probe(void)
+{
+	static const uint8_t probe[] = {
+		CMD_AASA_PROBE,
+		AASA_PROBE_MAGIC_0, AASA_PROBE_MAGIC_1,
+		AASA_PROBE_MAGIC_2, AASA_PROBE_MAGIC_3,
+	};
+	int ret = ctrl_send_cmd(probe, sizeof(probe));
+
+	CTRL_EXPECT(ret == 0, "AASA probe write failed: %d", ret);
+}
+
+/* SETNEWDA 恢复 0x32 并做恢复后 sanity（GETPID@0x32）；
+ * 再验证测试期使用的地址（prev_addr）恢复后不再被应答——
+ * 静态地址与动态地址不同时生效（PDF：static match 仅在无 DA 时）。 */
+static void ctrl_restore_daa_addr(uint8_t saved_addr, uint8_t prev_addr,
+				  const char *ctx)
+{
+	struct i3c_ccc_address new_da = { .addr = (I3C_TARGET_ADDR << 1) };
+
+	int ret = i3c_ccc_do_setnewda(target_desc, new_da);
+	CTRL_EXPECT(ret == 0, "%s SETNEWDA restore failed: %d", ctx, ret);
+	target_desc->dynamic_addr = saved_addr;
+
+	if (ret == 0) {
+		ctrl_verify_pid("post-restore");
+
+		/* 负路径：恢复后旧测试地址必须失效 */
+		target_desc->dynamic_addr = prev_addr;
+		struct i3c_ccc_getpid pid;
+
+		memset(&pid, 0, sizeof(pid));
+		ret = i3c_ccc_do_getpid(target_desc, &pid);
+		CTRL_EXPECT(ret != 0,
+			    "%s GETPID@0x%02x after restore unexpectedly OK: %d",
+			    ctx, prev_addr, ret);
+		target_desc->dynamic_addr = saved_addr;
+	}
+}
+
+#if I3C_TEST_EN_SETAASA
+ZTEST(i3c_controller, setaasa)
+{
+	struct i3c_ccc_getpid pid;
+
+	if (!ctrl_test_begin(I3C_TEST_SETAASA)) {
+		ctrl_test_end();
+		return;
+	}
+
+	uint8_t saved_addr = target_desc->dynamic_addr;
+
+	/* 1. RSTDAA 广播：target 失去动态地址 0x32 */
+	int ret = i3c_ccc_do_rstdaa_all(i3c_ctrl_dev);
+	CTRL_EXPECT(ret == 0, "RSTDAA failed: %d", ret);
+	k_sleep(K_MSEC(2));
+
+	/* 1b. 负路径证据：RSTDAA 后旧地址 0x32 必须已失效（NACK），
+	 *     否则后面的"新地址可达"可能是假象（地址根本没动过） */
+	memset(&pid, 0, sizeof(pid));
+	ret = i3c_ccc_do_getpid(target_desc, &pid);
+	CTRL_EXPECT(ret != 0, "GETPID@0x32 after RSTDAA unexpectedly OK: %d", ret);
+
+	/* 2. SETAASA 广播：target 硬件把静态地址 0x5A 提为动态地址 */
+	ret = i3c_ccc_do_setaasa_all(i3c_ctrl_dev);
+	CTRL_EXPECT(ret == 0, "SETAASA failed: %d", ret);
+	k_sleep(K_MSEC(2));
+
+	/* 3. 指向静态地址：GETPID 验身份 + 探针写验数据通路 */
+	target_desc->dynamic_addr = I3C_TARGET_STATIC_ADDR;
+	ctrl_verify_pid("@static");
+	ctrl_send_aasa_probe();
+
+	/* 3b. 负路径：dynamic_addr=0/static_addr=0x5A 的 desc 传输必须
+	 *     直接 -EINVAL 且不 mutate desc（SETAASA 记账根因已在
+	 *     i3c_common.c 修复，驱动不再有 dynamic_addr==0 回退
+	 *     static_addr 的兜底——回退会掩盖配置错误，此处固化该契约） */
+	{
+		struct i3c_device_desc fb_desc = {
+			.bus = i3c_ctrl_dev,
+			.pid = target_desc->pid,
+			.static_addr = I3C_TARGET_STATIC_ADDR,
+			.dynamic_addr = 0,
+		};
+		uint8_t rd[4];
+		size_t actual = 0;
+
+		int ret2 = i3c_read_actual(&fb_desc, rd, sizeof(rd), &actual);
+		CTRL_EXPECT(ret2 == -EINVAL,
+			    "dyn=0 read ret %d != -EINVAL (silent fallback?)", ret2);
+		CTRL_EXPECT(fb_desc.dynamic_addr == 0,
+			    "desc mutated: dynamic_addr=0x%02x", fb_desc.dynamic_addr);
+	}
+
+	/* 4. 恢复 0x32 */
+	ctrl_restore_daa_addr(saved_addr, I3C_TARGET_STATIC_ADDR, "setaasa");
+
+	ctrl_test_end();
+}
+#endif /* I3C_TEST_EN_SETAASA */
+
+#if I3C_TEST_EN_SETDASA
+ZTEST(i3c_controller, setdasa)
+{
+	if (!ctrl_test_begin(I3C_TEST_SETDASA)) {
+		ctrl_test_end();
+		return;
+	}
+
+	uint8_t saved_addr = target_desc->dynamic_addr;
+
+	/* 1. RSTDAA 广播：target 失去动态地址 0x32 */
+	int ret = i3c_ccc_do_rstdaa_all(i3c_ctrl_dev);
+	CTRL_EXPECT(ret == 0, "RSTDAA failed: %d", ret);
+	k_sleep(K_MSEC(2));
+
+	/* 1b. 负路径证据：RSTDAA 后旧地址 0x32 必须已失效（NACK） */
+	struct i3c_ccc_getpid pid;
+
+	memset(&pid, 0, sizeof(pid));
+	ret = i3c_ccc_do_getpid(target_desc, &pid);
+	CTRL_EXPECT(ret != 0, "GETPID@0x32 after RSTDAA unexpectedly OK: %d", ret);
+
+	/* 2. SETDASA 直通到静态地址 0x5A，分配新动态地址 0x45
+	 *    （payload 为左对齐 7 位地址，见 i3c_common.c SETDASA 用法） */
+	ret = ctrl_ccc_direct_write1(I3C_CCC_SETDASA, I3C_TARGET_STATIC_ADDR,
+				     I3C_SETDASA_NEW_ADDR << 1);
+	CTRL_EXPECT(ret == 0, "SETDASA failed: %d", ret);
+	k_sleep(K_MSEC(2));
+
+	/* 3. 指向新动态地址 0x45：GETPID 验身份 + 探针写验数据通路 */
+	target_desc->dynamic_addr = I3C_SETDASA_NEW_ADDR;
+	ctrl_verify_pid("@setdasa");
+	ctrl_send_aasa_probe();
+
+	/* 4. 恢复 0x32 */
+	ctrl_restore_daa_addr(saved_addr, I3C_SETDASA_NEW_ADDR, "setdasa");
+
+	ctrl_test_end();
+}
+#endif /* I3C_TEST_EN_SETDASA */
 
 ZTEST_SUITE(i3c_controller, NULL, i3c_controller_setup,
 	    i3c_controller_before, i3c_controller_after, NULL);
