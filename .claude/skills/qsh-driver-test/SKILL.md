@@ -69,7 +69,9 @@ python scripts/run_i3c_tests.py
 - GDB：`riscv64-unknown-elf-gdb`，`target remote 127.0.0.1:1025`，无 Python。
 - 串口：COM15=controller（MCP2200）、COM16/17=target（CH342）、COM14=CKLink 自身
   （排除）；口号以设备管理器为准，按 banner 动态识别。
-- 烧录：两遍烧录法；cpu1 `load` ELF@0x100c0000，cpu2 `restore bin@0x10000000`。
+- 烧录：双核 i3c 用两遍烧录法；cpu1 `load` ELF@0x100c0000，cpu2 `restore bin@0x10000000`。
+  **单核工程（otbn_test/otbn_selftest）用单遍烧录 + 写包提速 41x + --no-load 免烧重跑**
+  （见 qsh-debug §3.1）。
 - Flash 烧录（XIP，CLAUDE.md §15）：`scripts/flash_program.py` 封装
   `CSKYFlashProgramerConsole.exe` + `qsh_flash_algo.elf`；与 DebugServer **互斥**
   占用 CKLink（烧 flash 前 DebugServer 必须退出）；cpu1@0x08000000、cpu2@0x08100000。

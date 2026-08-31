@@ -103,8 +103,39 @@ riscv64-unknown-elf-gdb \
   test_common.sh、dbg_run.py/*.gdbcmd
 - GDB **无 Python**：别写 python 脚本；`continue &`+`interrupt` 不可靠，
   用同步 continue + 外部超时。
-- 双核串口：COM15=controller（MCP2200）、COM16/17=target（CH342）、
-  COM14=CKLink 自身（排除）；口号以设备管理器为准，按 banner 动态识别。
+- 双核串口：COM15=controller（MCP2200）、COM16=target（CH342，banner 实测口）、
+  COM17=CH342 备用（无 banner，空口）、COM14=CKLink 自身（排除）；
+  口号以设备管理器为准，按 banner 动态识别。
+- run_i3c_tests.py 必须显式传口号：`--ctrl-uart COM15 --tgt-uart COM16`
+  （传错 target 口（如 COM17）会 token 全失、走 GDB 内存兜底，仍 210/210 但
+  报告 source 全 mem——需重跑）
+
+### 3.1 单核工程烧录（otbn_test/otbn_selftest，★ §10.23/§10.24）
+
+与双核两遍烧录法**不同**，单核工程用**单遍烧录**（dbg_run.py 已固化）：
+
+```bash
+cd 810_driver_test/projects/otbn_test/tests
+python scripts/dbg_run.py --case case_default --timeout 90   # 单遍：reset→load→continue 采首轮
+python scripts/dbg_run.py --case case_default --no-load      # 免烧重跑（镜像已在 RAM，0 烧录）
+python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提速（默认 16384）
+```
+
+- **单遍烧录成立**：reset 已冲刷 I-cache（两遍法在双核存在的"慢一拍"场景
+  被覆盖），load 后 .data/.bss 天然干净；单遍与两遍法结果逐项一致（三连验证）
+- **会话内二次 load 会静默挂死**（实测 2/2）：第一次 load 成功后 interrupt、
+  再发 `load`，gdb 无任何输出（连 "Loading section" 都没有）→ 只能超时
+  proc.kill()，且留 DebugServer 连接残留（§2.3 重启才干净）。**不要在任何
+  单会话流程里 load 第二次**
+- **写包提速（41x）**：load 前 `set memory-write-packet-size 16384` +
+  `set remotewritesize 16384`，CKLink load 实测 1KB/s → 41KB/s（192KB 镜像
+  ~190s → ~5s）；stub 不接受时回 `Remote failure`/`E22` 立即失败
+- **交互式流程（★ §10.25）**：reset+load 后等 "Transfer rate" 再 continue。
+  一次性 -ex 链的 continue 在 load 刚完成瞬间发出，DebugServer 状态不佳时
+  被静默丢弃 → CPU 停 halt 无 BOOT，detach 恢复运行（回归 3/3 复现）；
+  dbg_run.py / run_*_tests.py 均为交互式（0 失败）。手工 GDB 也照此
+- **免烧重跑 --no-load**：attach → `x/4wx 0x100c0000` sanity（镜像在？非全 0）
+  → `set $pc=0x100c0000` 重跑复位向量（重新初始化 .bss/.data，等效软复位）
 
 ## 4. 串口动态识别与采集
 
@@ -194,9 +225,13 @@ riscv64-unknown-elf-gdb -q \
 | flash 输出正常但串口 0 行 / 只有 \x00 | gdb 被杀后连接残留，reset/load 无效 | detach 清理或重启 DebugServer（§2.3） |
 | banner 全 `?` | 固件没跑或口号错 | 先 §2.3 清理；再手动验证串口（§4.2） |
 | PermissionError 开串口 | 端口被占用 | `tasklist \| grep python` → taskkill |
-| 单遍烧录行为"慢一拍" | I-cache 残留 | 两遍烧录法（§3） |
+| 单遍烧录行为"慢一拍"（双核） | I-cache 残留 | 两遍烧录法（§3）；单核工程无此问题（reset 已刷 I-cache，§3.1） |
 | 目标停死、异常反复 | 调试期 while(1) 陷阱残留 | 清理探针（§8 / CLAUDE.md §10.6） |
 | 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（§6） |
+| DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~30s 稳定期再烧录；run_i3c_tests.py 已自动重试 |
+| 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（§10.21） |
+| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
+| 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
 
 ## 8. 探针纪律（用户要求，防污染其他工程）
 
@@ -206,6 +241,23 @@ riscv64-unknown-elf-gdb -q \
 - **功能修复与调试残留要区分**：驱动/SoC 层的功能修复（如 MPIL workaround、
   PMP_W 写保护）必须保留；调试残留一律删。用 `git diff` 逐文件甄别。
 - 详见 CLAUDE.md §10.6。
+
+### 8.1 驱动注释规范（★ 职责边界：只写本层语义，不写外部历史）
+
+调试驱动时**新增/修改注释必须遵守 CLAUDE.md §4.6**：只描述**本层（驱动）
+的行为语义与契约**，不得把属于外部系统（Zephyr OS 框架、历史 bug、调试
+过程）的原因写进驱动注释。判断标准："如果这段代码换到别的工程/别的 OS
+配置下，这条注释还成立吗？"不成立就不该写在本层。
+
+- **应该写**：协议语义（"TERM/URUN 在读欠载是 controller 主动提前终止的
+  合法行为"）、硬件行为（"STOP 分支必须 FLUSHTB 清空 TX FIFO"）、设计约束
+  （"opcode 用 ASCII 助记符避免与 CCC 命令码混淆"）。
+- **不应该写**：OS 层问题（"panic_mode 已修，ztest 不触发 LOG_PANIC"）、
+  调试历史（"之前 LOG_ERR 阻塞 10ms 造成 8ms 死窗"）、环境问题（"Windows
+  gdb stdout 管道块缓冲"）。
+- **外部原因的归处**：反复会踩的通用坑 → §7 速查表 / CLAUDE.md §10；
+  一次性定位闭环的 bug → 问题总结 .md（CLAUDE.md §7）；调试临时注释 →
+  按 §8 探针纪律清理，不得随功能代码提交。
 
 ## 9. 坑沉淀要求
 
