@@ -1,0 +1,14 @@
+/*
+ * 纯 I2C 波形质量测试：slave（cpu1）侧总线配置。
+ *
+ * i2c6（i2c@40084400）I2C 从机（地址 0x58，固件 i2c_target_register 指定），
+ * 引脚 I2C6_scl_PJ08 / I2C6_sda_PJ09。pinctrl-0 由 board 宏默认生成，
+ * overlay 无需重复配置。
+ *
+ * bus-frequency = 400K：与 master 侧 i2c5 匹配。
+ */
+
+&i2c6 {
+    status = "okay";
+    bus-frequency = <400000>;
+};

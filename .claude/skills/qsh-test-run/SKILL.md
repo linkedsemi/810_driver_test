@@ -1,6 +1,6 @@
 ---
 name: qsh-test-run
-description: QSH 驱动测试执行 skill（三大类③自动化测试）：dbg_run.py 单次烧录+双串口采集+ztest 原生输出解析、test.sh 三模式、run_*_tests.py 一键回归（批量入口 regression/run_all.py）、ztest 原生输出格式与判定标准。构建/烧录/跑用例按本 skill 操作；连不上/烧不进先查 qsh-debug；结果分析见 qsh-test-compare。
+description: QSH 驱动测试执行 skill（三大类③自动化测试）：dbg_run.py 单次烧录+双串口采集+ztest 原生输出解析、test.sh 三模式、run_test.py 一键回归（批量入口 regression/run_all.py）、ztest 原生输出格式与判定标准。构建/烧录/跑用例按本 skill 操作；连不上/烧不进先查 qsh-debug；结果分析见 qsh-test-compare。
 ---
 
 # QSH 驱动测试执行
@@ -65,7 +65,7 @@ python scripts/dbg_run.py --case case_pure_i3c_12m5 --timeout 35
 - **交互式流程（★ §10.25）**：reset+load 后**等 gdb 打出 "Transfer rate"**
   再 set $pc+continue。一次性 `-ex` 链在 load 刚完成的瞬间发 continue，
   DebugServer 状态不佳时会被**静默丢弃**（CPU 停 halt 无 BOOT，detach 才
-  跑起来，实测回归 3/3 复现；dbg_run.py 交互式 0 失败）。run_*_tests.py
+  跑起来，实测回归 3/3 复现；dbg_run.py 交互式 0 失败）。run_test.py
   已固化交互式 + 90s 无 BOOT 判 no_boot 强制 [RETRY] 自愈
 - **免烧重跑 `--no-load`**：镜像已在 RAM（此前 load 过、未断电）时
   attach → sanity 查 0x100c0000 → `set $pc=入口` 重跑，0 烧录；
@@ -100,14 +100,14 @@ python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
   ——双核 run 脚本**必须显式 UART，不支持自动发现**（2026-08-29 实测；
   单核脚本可自动发现）
 
-### 4.2 单工程/单 case 回归（run_*_tests.py）
+### 4.2 单工程/单 case 回归（run_test.py）
 
 ```bash
 cd 810_driver_test/projects/i3c_dualcore_test/tests
 export I3C_CTRL_UART=COM15 I3C_TGT_UART=COM16   # ★ 双核必须显式（无自动发现）
-python scripts/run_i3c_tests.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
+python run_test.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
 ```
-回归行为（CLAUDE.md §12/§6.2，所有 run_*_tests.py 一致）：
+回归行为（CLAUDE.md §12/§6.2，所有 run_test.py 一致）：
 - **判据核心（★ §6.2）**：两遍烧录（prime 判"任何 ztest 输出"、pass-2 判
   ZT_BOOT）、spawn 后 20s 无 ZT_BOOT = 环境问题中止回归、BOOT 后 10s 无新
   串口字节 **且已见任一核 `PROJECT EXECUTION ...` 完成标记** = 套件结束提前杀
@@ -147,7 +147,7 @@ PROJECT EXECUTION SUCCESSFUL|FAILED       # ztest 原生，本核套件完成标
   SUCCESSFUL` 才算过；单核假 PASS（如 target 只校验部分）不算
 - **双核例外（i3c_dualcore_test）**：target `test_main` 不返回（CLAUDE.md §4.1）
   → TGT 端口**没有** `PROJECT EXECUTION` 行，属设计；该工程完成判定 =
-  CTRL 侧 SUCCESSFUL 且 TGT execution != "FAILED"（样板 `run_i3c_tests.py`
+  CTRL 侧 SUCCESSFUL 且 TGT execution != "FAILED"（样板 `run_test.py`
   `evaluate_case`）。i2c_pure/i3c_i2c_switch 仍按两核各自 SUCCESSFUL 判
 - 以机器输出为准，肉眼扫串口不可靠；逐项输出依赖
   `CONFIG_ZTEST_VERBOSE_OUTPUT=y`（§10.26，=n 则 START/PASS 行被抑制全 MISSING）

@@ -7,8 +7,6 @@
 #ifndef I3C_DUALCORE_TEST_PROTOCOL_H
 #define I3C_DUALCORE_TEST_PROTOCOL_H
 
-#include <zephyr/sys/printk.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -217,87 +215,6 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 #define I3C_TEST_EN_WRITE_DELAY_READ_LEN  1
 #define I3C_TEST_EN_SETAASA             1
 #define I3C_TEST_EN_SETDASA             1
-
-/*
- * Structured UART tokens.
- *
- * Both cores emit these machine-readable lines on their respective UARTs.
- * They bypass the logging subsystem so formatting is deterministic.
- */
-#define I3C_TEST_TOKEN_PREFIX "I3C_TEST"
-
-/* String-literal variants (compile-time name). */
-#define I3C_TEST_START_CORE(core, name) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":START:" name "\n")
-#define I3C_TEST_PASS_CORE(core, name) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":PASS:" name "\n")
-#define I3C_TEST_FAIL_CORE(core, name, reason) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":FAIL:" name ":" reason "\n")
-
-/* Run-time name variants (name is a const char * variable). */
-#define I3C_TEST_START_CORE_VAR(core, name) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":START:%s\n", name)
-#define I3C_TEST_PASS_CORE_VAR(core, name) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":PASS:%s\n", name)
-#define I3C_TEST_FAIL_CORE_VAR(core, name, reason) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":FAIL:%s:%s\n", name, reason)
-
-#define I3C_TEST_DONE(result) \
-	printk(I3C_TEST_TOKEN_PREFIX ":DONE:" result "\n")
-
-/* 通用开始/结束标记（不随测试项变化，环境判定用）：
- * BOOT：固件起来即打印——harness 在 load 后收不到它 = 烧录链路/环境
- *       有问题（区别于"测试失败"）；
- * DONE：套件全部结束（controller 已有；target 在 summary 后补印）。 */
-#define I3C_TEST_BOOT_CORE(core) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":BOOT\n")
-#define I3C_TEST_CTRL_BOOT() I3C_TEST_BOOT_CORE(CTRL)
-#define I3C_TEST_TGT_BOOT()  I3C_TEST_BOOT_CORE(TGT)
-#define I3C_TEST_DONE_CORE(core, result) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":DONE:" result "\n")
-#define I3C_TEST_TGT_DONE(result) I3C_TEST_DONE_CORE(TGT, result)
-/* 运行期结果变体（result 是表达式/变量时用） */
-#define I3C_TEST_DONE_CORE_VAR(core, result) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":DONE:%s\n", result)
-#define I3C_TEST_TGT_DONE_VAR(result) I3C_TEST_DONE_CORE_VAR(TGT, result)
-
-#define I3C_TEST_CTRL_START(name) I3C_TEST_START_CORE(CTRL, name)
-#define I3C_TEST_CTRL_PASS(name)  I3C_TEST_PASS_CORE(CTRL, name)
-#define I3C_TEST_CTRL_FAIL(name, reason) I3C_TEST_FAIL_CORE(CTRL, name, reason)
-
-#define I3C_TEST_CTRL_START_VAR(name) I3C_TEST_START_CORE_VAR(CTRL, name)
-#define I3C_TEST_CTRL_PASS_VAR(name)  I3C_TEST_PASS_CORE_VAR(CTRL, name)
-#define I3C_TEST_CTRL_FAIL_VAR(name, reason) I3C_TEST_FAIL_CORE_VAR(CTRL, name, reason)
-
-#define I3C_TEST_TGT_START(name) I3C_TEST_START_CORE(TGT, name)
-#define I3C_TEST_TGT_PASS(name)  I3C_TEST_PASS_CORE(TGT, name)
-#define I3C_TEST_TGT_FAIL(name, reason) I3C_TEST_FAIL_CORE(TGT, name, reason)
-
-#define I3C_TEST_TGT_START_VAR(name) I3C_TEST_START_CORE_VAR(TGT, name)
-#define I3C_TEST_TGT_PASS_VAR(name)  I3C_TEST_PASS_CORE_VAR(TGT, name)
-#define I3C_TEST_TGT_FAIL_VAR(name, reason) I3C_TEST_FAIL_CORE_VAR(TGT, name, reason)
-
-#define I3C_TEST_DONE_VAR(result) printk(I3C_TEST_TOKEN_PREFIX ":DONE:%s\n", result)
-
-/*
- * Summary tokens.
- *
- * 每个核在全部测试结束后打印一张逐项结果表，方便在冗长的调试 log 里
- * 一眼看清哪些测试过了。格式：
- *   I3C_TEST:CTRL:SUMMARY:BEGIN
- *   I3C_TEST:CTRL:SUMMARY:ITEM:<name>:<PASS|FAIL|NOT_RUN>[:reason]
- *   I3C_TEST:CTRL:SUMMARY:END:<passed>/<ran> PASS
- */
-#define I3C_TEST_SUMMARY_BEGIN(core) \
-	printk("\n" I3C_TEST_TOKEN_PREFIX ":" #core ":SUMMARY:BEGIN\n")
-#define I3C_TEST_SUMMARY_ITEM(core, name, result) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":SUMMARY:ITEM:%s:%s\n", name, result)
-#define I3C_TEST_SUMMARY_ITEM_REASON(core, name, result, reason) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":SUMMARY:ITEM:%s:%s:%s\n", \
-	       name, result, reason)
-#define I3C_TEST_SUMMARY_END(core, passed, ran) \
-	printk(I3C_TEST_TOKEN_PREFIX ":" #core ":SUMMARY:END:%d/%d PASS\n\n", \
-	       passed, ran)
 
 #ifdef __cplusplus
 }

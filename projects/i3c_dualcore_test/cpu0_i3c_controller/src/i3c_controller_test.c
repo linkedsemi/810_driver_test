@@ -7,10 +7,12 @@
 #include "i3c_controller_test.h"
 #include "i3c_dualcore_test_protocol.h"
 #include "test_results.h"
+#include "ztest_glue.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/ztest.h>
+#include <zephyr/ztest_test.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/i3c.h>
 #include <zephyr/drivers/i3c/ibi.h>
@@ -21,7 +23,6 @@ LOG_MODULE_DECLARE(i3c_master_test, LOG_LEVEL_INF);
 
 static struct i3c_device_desc *target_desc;
 static enum i3c_test_id current_test_id;
-static bool ctrl_any_failed;
 
 static volatile bool ibi_received;
 static volatile uint8_t ibi_payload_buf[8];
@@ -117,8 +118,6 @@ static bool ctrl_test_begin(enum i3c_test_id id)
 	ctrl_failed = false;
 	ctrl_fail_reason[0] = '\0';
 
-	I3C_TEST_CTRL_START_VAR(i3c_test_names[id]);
-
 	if (target_desc == NULL) {
 		CTRL_EXPECT(false, "target not discovered");
 		return false;
@@ -188,21 +187,13 @@ static void ctrl_test_end(void)
 	}
 	CTRL_EXPECT(ret == 0, "CMD_TEST_END failed: %d", ret);
 
-	/* Give target time to run its ztest and emit the TGT token. */
+	/* Give target time to run its ztest (target 在 'E' 到达时按 test_id
+	 * 跑对应套件并输出逐项 PASS/FAIL 行）。 */
 	k_sleep(K_MSEC(10));
 
-	/* 记账，供结尾汇总表使用（zassert 失败会中止当前测试线程，必须先记） */
-	tr_record(current_test_id,
-		  ctrl_failed ? TR_FAIL : TR_PASS,
-		  "%s", ctrl_fail_reason);
-
-	if (ctrl_failed) {
-		I3C_TEST_CTRL_FAIL_VAR(i3c_test_names[current_test_id], ctrl_fail_reason);
-		ctrl_any_failed = true;
-	} else {
-		I3C_TEST_CTRL_PASS_VAR(i3c_test_names[current_test_id]);
-	}
-
+	/* 记账由 ztest_glue 在 zt_run_all 时按链接序批量完成（test_results.h
+	 * 公共模块，GDB 兜底数据源）；此处 zassert 失败会中止当前测试线程，
+	 * ctrl_fail_reason 已由 CTRL_EXPECT 累积并随断言行输出（§13.5）。 */
 	zassert_false(ctrl_failed, "%s", ctrl_fail_reason);
 }
 
@@ -241,7 +232,7 @@ static void *i3c_controller_setup(void)
 {
 	LOG_INF("[CPU2 MASTER] I3C controller test started");
 
-	tr_init(I3C_TEST_COUNT);
+	/* 记账由 ztest_glue 的 zt_run_all() 统一初始化（tr_init + 链接序记账） */
 
 	k_sleep(K_MSEC(20));
 
@@ -614,12 +605,12 @@ ZTEST(i3c_controller, write_delay_read_16)
 		}
 	}
 
-	/* INFO token：扫描结果上报（报告"实际"列取用，§13.4） */
-	printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:write_delay_read_16:"
-	       "critical_delay_ns=%d,first_short_step=%d,master_stop_step=%d\n",
-	       (g_wdr16_critical_step >= 0) ?
-		       g_wdr16_critical_step * DELAY_STEP_NS : 0,
-	       first_short, stop_step);
+	/* INFO：扫描结果上报（报告"实际"列取用，§13.4） */
+	ZT_INFO("write_delay_read_16",
+		"critical_delay_ns=%d,first_short_step=%d,master_stop_step=%d",
+		(g_wdr16_critical_step >= 0) ?
+			g_wdr16_critical_step * DELAY_STEP_NS : 0,
+		first_short, stop_step);
 
 	/* 判定：临界档必须存在——0 档（不延时）都欠载说明时序基线异常 */
 	CTRL_EXPECT(g_wdr16_critical_step >= 0,
@@ -678,15 +669,13 @@ ZTEST(i3c_controller, write_delay_read_16)
 						  rdr, sizeof(rdr), &actual_r);
 		if (ret_r == 0 && actual_r == sizeof(rdr)) {
 			validate_pattern(rdr, actual_r, 0x00, "nack-recovery");
-			printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:"
-			       "write_delay_read_16:nack_recover_ok=1\n");
+			ZT_INFO("write_delay_read_16", "nack_recover_ok=1");
 		} else {
 			CTRL_EXPECT(0, "nack recovery: ret=%d actual=%zu",
 				    ret_r, actual_r);
 		}
 	} else {
-		printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:"
-		       "write_delay_read_16:nack_recover_ok=skip(no-nack)\n");
+		ZT_INFO("write_delay_read_16", "nack_recover_ok=skip(no-nack)");
 	}
 
 	ctrl_test_end();
@@ -770,11 +759,11 @@ ZTEST(i3c_controller, write_delay_read_len)
 			}
 		}
 
-		/* INFO token：每 len 一条（报告"实际"列取用，§13.4） */
-		printk(I3C_TEST_TOKEN_PREFIX ":CTRL:INFO:write_delay_read_len:"
-		       "len=%d,critical_ns=%d,first_short_step=%d,stop_step=%d\n",
-		       len, (critical >= 0) ? critical * DELAY_STEP_NS : 0,
-		       first_short, stop);
+		/* INFO：每 len 一条（报告"实际"列取用，§13.4） */
+		ZT_INFO("write_delay_read_len",
+			"len=%d,critical_ns=%d,first_short_step=%d,stop_step=%d",
+			len, (critical >= 0) ? critical * DELAY_STEP_NS : 0,
+			first_short, stop);
 
 		/* 判定①：临界档存在——len 档连 step 0（不延时）都读不满 =
 		 * 时序基线异常（或续发路径根本跟不上 T-bit 间隔） */
@@ -1575,41 +1564,49 @@ static void ctrl_print_summary(void)
 {
 	int passed = 0, ran = 0;
 
-	I3C_TEST_SUMMARY_BEGIN(CTRL);
-	for (int i = 0; i < I3C_TEST_COUNT; i++) {
-		const char *name = i3c_test_names[i];
+	/* test_results[] 由 ztest_glue 按链接序（SORT_BY_NAME，§10.27）记账，
+	 * 与源码/enum 序可能不一致——逐项名称直接取自 ztest 注册节点
+	 * （t->name），与数组索引一一对应，杜绝张冠李戴。 */
+	for (struct ztest_unit_test *t = _ztest_unit_test_list_start;
+	     t < _ztest_unit_test_list_end; t++) {
+		int idx = (int)(t - _ztest_unit_test_list_start);
+		const char *name = t->name;
 
-		if (test_results[i] < 0) {
-			I3C_TEST_SUMMARY_ITEM(CTRL, name, "NOT_RUN");
+		if (idx >= TR_MAX_COUNT || test_results[idx] < 0) {
+			LOG_INF("SUMMARY: NOT_RUN %s", name);
 			continue;
 		}
 		ran++;
-		if (test_results[i] == 0) {
+		if (test_results[idx] == 0) {
 			passed++;
-			I3C_TEST_SUMMARY_ITEM(CTRL, name, "PASS");
-		} else if (test_reasons[i][0] != '\0') {
-			I3C_TEST_SUMMARY_ITEM_REASON(CTRL, name, "FAIL",
-						     test_reasons[i]);
+			LOG_INF("SUMMARY: PASS %s", name);
+		} else if (test_reasons[idx][0] != '\0') {
+			LOG_INF("SUMMARY: FAIL %s: %s", name, test_reasons[idx]);
 		} else {
-			I3C_TEST_SUMMARY_ITEM(CTRL, name, "FAIL");
+			LOG_INF("SUMMARY: FAIL %s", name);
 		}
 	}
-	I3C_TEST_SUMMARY_END(CTRL, passed, ran);
+	LOG_INF("SUMMARY: %d/%d PASS", passed, ran);
 }
 
 void test_main(void)
 {
-	I3C_TEST_CTRL_BOOT();
+	zt_init("CTRL");
 
-	ztest_run_all(NULL, false, 1, 1);
-	ztest_verify_all_test_suites_ran();
+	zt_run_all();
 
-	/* 通知 target 打印它的汇总表（target 没有本地的"全部结束"信号），
-	 * 稍等让 target 的总结先出完，再打印 controller 自己的，
-	 * 避免两张表在合并观察的串口日志里交错 */
+	/* 跨核收尾（恰一次、全项之后）：'P' 让 target 打印汇总表——target
+	 * 侧 test_main 不返回（§4.1 dispatcher join），没有本地的"全部结束"
+	 * 信号，只能由 controller 收尾时经总线通知。
+	 *
+	 * 时序论证（Task 8 Critical 1）：必须放在 zt_run_all() 返回之后——
+	 * 此时 32 项 ZTEST 已全部断言完（ztest KERNEL main 在 test_main()
+	 * 返回后才打印 PROJECT EXECUTION，故本命令严格晚于全部测试项）；
+	 * 绝不能放 ZTEST_SUITE after 钩子（本树 after 是 per-test 钩子，
+	 * ztest.c:708-710，会提前/多发 → target 端伪失败）。
+	 * PROJECT EXECUTION = 双核完成判定标记（boot_seen 门控，§10.30）。 */
 	(void)ctrl_send_cmd((const uint8_t[]){ CMD_PRINT_SUMMARY }, 1);
 	k_sleep(K_MSEC(20));
 
 	ctrl_print_summary();
-	I3C_TEST_DONE_VAR(ctrl_any_failed ? "FAIL" : "PASS");
 }

@@ -15,7 +15,8 @@ project(cpu0_i3c_controller)
 target_sources(app PRIVATE
     src/main.c
     src/i3c_controller_test.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test_results.c)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test_results.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/ztest_glue.c)
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)

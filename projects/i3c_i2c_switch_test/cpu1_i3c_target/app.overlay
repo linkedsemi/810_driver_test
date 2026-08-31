@@ -1,0 +1,47 @@
+/*
+ * I3C/I2C 模块切换测试：target（cpu1）侧总线配置。
+ *
+ * 被测对象：I3C6（i3c@40094400，I3C target 角色）与 i2c6
+ * （i2c@40084400，I2C slave 角色）共用引脚 PJ08/PJ09，模式由引脚
+ * 复用（pinctrl）区分：
+ *   - "default"     状态 = I3C 引脚复用（i3c6_scl_pj08 / i3c6_sda_pj09）
+ *   - "pinmux_i2c"  状态 = I2C 引脚复用（I2C6_scl_PJ08 / I2C6_sda_PJ09）
+ *
+ * 注意：I2C6 引脚复用节点（I2C6_scl_PJ08 / I2C6_sda_PJ09，pinmux 0x8198/0x8199）
+ * 由 soc dtsi（i2c 统一配置块）提供，本工程直接引用，不再自定义；
+ * 而 lsqsh_pinctrl_fixed_pinmap.dtsi 中同功能小写节点（i2c6_scl_pj08）已被注释。
+ */
+
+/* i2c6 在 soc dtsi 中已有 pinctrl-0（default = I2C 引脚复用），若不置
+ * pinctrl-noinit，i2c6 驱动 init 会把引脚切成 I2C 模式，破坏 i3c6 的
+ * I3C 默认模式。引脚复用由 i3c6 节点的 pinctrl 双状态统一管理。 */
+
+&i3c6 {
+    status = "okay";
+    is-secondary;
+    interrupts = <I3C6_IRQN 7>;
+    tgt-pid = <0x0208 0x13811000>;
+    dcr = <0x4>;
+    bcr = <0x06>;
+    static-address = <0x5a>;
+
+    pinctrl-0 = <
+        &i3c6_scl_pj08
+        &i3c6_sda_pj09
+    >;
+    pinctrl-1 = <
+        &I2C6_scl_PJ08
+        &I2C6_sda_PJ09
+    >;
+    pinctrl-names = "default", "pinmux_i2c";
+};
+
+/* i2c6 复用 I3C6 的引脚（PJ08/PJ09）：pinctrl-noinit 阻止 init 时 apply
+ * soc 的 default 状态（I2C 引脚复用），引脚由 i3c6 节点双状态动态切换。
+ * i2c6 slave 地址（0x50）由固件 i2c_target_register 时指定。
+ * bus-frequency = 400K（与 controller 侧 i2c5 匹配）。 */
+&i2c6 {
+    status = "okay";
+    pinctrl-noinit;
+    bus-frequency = <400000>;
+};

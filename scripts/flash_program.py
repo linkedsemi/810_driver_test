@@ -194,9 +194,17 @@ def main():
     ap.add_argument("--compare", default=None,
                     help="after --dump-out, compare dumped file to this file")
     ap.add_argument("--raw", action="store_true", help="print full CLI output")
+    ap.add_argument("--erase-only", action="store_true",
+                    help="erase flash only (no bins); chip erase unless --erase overrides")
     args = ap.parse_args()
 
     # ---- validate -----------------------------------------------------------
+    if args.erase_only:
+        if args.bin or args.dump_out:
+            ap.error("--erase-only is exclusive with --bin/--dump-out")
+        _warn_active_peers(args.kill_debugserver)
+        return _do_run(args, [])
+
     if args.dump_out:
         if args.bin:
             ap.error("--dump-out is exclusive with --bin (read back only)")
@@ -263,6 +271,9 @@ def _do_run(args, bins):
             print("[fp] session log tail:", flush=True)
             print(log_tail[-2000:], flush=True)
         sys.exit(1)
+    if args.erase_only:
+        print(f"[fp] FP_OK: erase-only (erase={args.erase})", flush=True)
+        return 0
     for path, addr in bins:
         print(f"[fp] FP_OK: {Path(path).name}@{hex(addr)} "
               f"(erase={args.erase}, verify={'y' if args.verify else 'n'})", flush=True)

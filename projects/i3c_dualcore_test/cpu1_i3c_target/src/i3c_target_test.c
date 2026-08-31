@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/ztest.h>
+#include <zephyr/ztest_test.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/i3c.h>
 #include <zephyr/drivers/i3c/target_device.h>
@@ -243,18 +244,15 @@ static struct k_thread dispatcher_thread;
 		} \
 	} while (0)
 
-static const char *tgt_test_name(void)
-{
-	if (current_test_id < I3C_TEST_COUNT) {
-		return i3c_test_names[current_test_id];
-	}
-	return "unknown";
-}
-
 static void tgt_finish(void)
 {
 	/* 记账，供结尾汇总表使用（zassert 失败会中止当前测试线程，必须先记）。
-	 * 走公共 test_results.h 模块，串口不可用时 GDB 读内存兜底。 */
+	 * 走公共 test_results.h 模块，串口不可用时 GDB 读内存兜底。
+	 *
+	 * 索引 = 协议枚举 id：target 侧 test_main 不返回、zt_run_all 不执行
+	 * （§4.1 dispatcher k_thread_join），ztest_glue 不参与记账，此处按
+	 * current_test_id（枚举序）记账；dump_results.py 的 TGT 测试名列表
+	 * 按协议枚举序对齐（与 controller 侧链接序记账分工）。 */
 	if (current_test_id < I3C_TEST_COUNT) {
 		tr_record(current_test_id,
 			  tgt_failed ? TR_FAIL : TR_PASS,
@@ -262,11 +260,7 @@ static void tgt_finish(void)
 	}
 
 	k_sleep(K_MSEC(20));
-	if (tgt_failed) {
-		I3C_TEST_TGT_FAIL_VAR(tgt_test_name(), tgt_fail_reason);
-	} else {
-		I3C_TEST_TGT_PASS_VAR(tgt_test_name());
-	}
+
 	zassert_false(tgt_failed, "%s", tgt_fail_reason);
 }
 
@@ -274,29 +268,24 @@ static void tgt_print_summary(void)
 {
 	int passed = 0, ran = 0;
 
-	I3C_TEST_SUMMARY_BEGIN(TGT);
 	for (int i = 0; i < I3C_TEST_COUNT; i++) {
 		const char *name = i3c_test_names[i];
 
 		if (test_results[i] < 0) {
-			I3C_TEST_SUMMARY_ITEM(TGT, name, "NOT_RUN");
+			LOG_INF("SUMMARY: NOT_RUN %s", name);
 			continue;
 		}
 		ran++;
 		if (test_results[i] == 0) {
 			passed++;
-			I3C_TEST_SUMMARY_ITEM(TGT, name, "PASS");
+			LOG_INF("SUMMARY: PASS %s", name);
 		} else if (test_reasons[i][0] != '\0') {
-			I3C_TEST_SUMMARY_ITEM_REASON(TGT, name, "FAIL",
-						     test_reasons[i]);
+			LOG_INF("SUMMARY: FAIL %s: %s", name, test_reasons[i]);
 		} else {
-			I3C_TEST_SUMMARY_ITEM(TGT, name, "FAIL");
+			LOG_INF("SUMMARY: FAIL %s", name);
 		}
 	}
-	I3C_TEST_SUMMARY_END(TGT, passed, ran);
-
-	/* 通用结束标记：harness 以此判定 target 侧套件完整结束 */
-	I3C_TEST_TGT_DONE_VAR(passed == ran ? "PASS" : "FAIL");
+	LOG_INF("SUMMARY: %d/%d PASS", passed, ran);
 }
 
 static void reset_test_state(uint8_t id)
@@ -960,7 +949,16 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 		case TGT_EVT_TEST_END:
 			current_test_id = evt.test_id;
 			ctrl_result = evt.ctrl_result;
-			ztest_run_test_suite(i3c_target, false, 1, 1, NULL);
+			/* 按项运行同名 ztest 套件：32 项各注册一个单测试套件
+			 * （套件名 == 测试项名 == i3c_test_names[] 字符串），
+			 * 运行期按名称查表（z_ztest_run_test_suite → strcmp）。
+			 * target 无 zt_run_all（test_main 不返回，§4.1），
+			 * 逐项 ztest 输出 = 判定数据源，与 'E' 到达一一对应，
+			 * 保证每次校验的数据新鲜度/时序。 */
+			if (evt.test_id < I3C_TEST_COUNT) {
+				z_ztest_run_test_suite(i3c_test_names[evt.test_id],
+						       false, 1, 1, NULL);
+			}
 			break;
 		default:
 			break;
@@ -986,9 +984,47 @@ void target_dispatcher_run(void)
 	k_thread_join(&dispatcher_thread, K_FOREVER);
 }
 
-/* ========== Target ztest suite ========== */
+/* ========== Target ztest suites ==========
+ *
+ * 32 个单测试套件：套件名 == 测试项名（i3c_test_names[] 的字符串值，
+ * strcmp 查表依赖，必须逐字符一致），dispatcher 按 'E' 携带的 test_id
+ * 运行期调 z_ztest_run_test_suite() 运行对应套件。
+ * 无 setup/before/after/teardown：target 校验全部基于 dispatcher 事件
+ * 驱动的状态（validate_* 函数），ztest 只承担逐项输出与断言。
+ */
 
-ZTEST_SUITE(i3c_target, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(daa_discovery, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_8, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_100, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(read_32_direct, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_read_1, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_read_15, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_read_16, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_read_17, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_read_32, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(ibi, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(hot_join, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(ccc_basic, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_stop_read_1, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_stop_read_15, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_stop_read_16, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_stop_read_17, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_stop_read_32, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(read_underrun_8_16, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(read_underrun_16_32, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(nack_bad_addr, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(back_to_back_8x8, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(big_256, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(ccc_rapid_8, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(read_master_abort, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(ibi_neg_paths, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(api_neg_paths, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(multi_msg_4, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_indexed_read_16, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_delay_read_16, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_delay_read_len, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(setaasa, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(setdasa, NULL, NULL, NULL, NULL, NULL);
 
 static void validate_daa_discovery(void)
 {
@@ -1310,111 +1346,44 @@ static void validate_setdasa(void)
 	validate_aasa_common(I3C_SETDASA_NEW_ADDR);
 }
 
-ZTEST(i3c_target, run_current_test)
-{
-	I3C_TEST_TGT_START_VAR(tgt_test_name());
-
-	switch (current_test_id) {
-	case I3C_TEST_DAA_DISCOVERY:
-		validate_daa_discovery();
-		break;
-	case I3C_TEST_WRITE_8:
-		validate_write_8();
-		break;
-	case I3C_TEST_WRITE_100:
-		validate_write_100();
-		break;
-	case I3C_TEST_READ_32_DIRECT:
-		validate_read_32_direct();
-		break;
-	case I3C_TEST_WRITE_READ_1:
-		validate_write_read_1();
-		break;
-	case I3C_TEST_WRITE_READ_15:
-		validate_write_read_15();
-		break;
-	case I3C_TEST_WRITE_READ_16:
-		validate_write_read_16();
-		break;
-	case I3C_TEST_WRITE_READ_17:
-		validate_write_read_17();
-		break;
-	case I3C_TEST_WRITE_READ_32:
-		validate_write_read_32();
-		break;
-	case I3C_TEST_IBI:
-		validate_ibi();
-		break;
-	case I3C_TEST_HOT_JOIN:
-		validate_hot_join();
-		break;
-	case I3C_TEST_CCC_BASIC:
-		validate_ccc_basic();
-		break;
-	case I3C_TEST_WRITE_STOP_READ_1:
-		validate_write_stop_read_1();
-		break;
-	case I3C_TEST_WRITE_STOP_READ_15:
-		validate_write_stop_read_15();
-		break;
-	case I3C_TEST_WRITE_STOP_READ_16:
-		validate_write_stop_read_16();
-		break;
-	case I3C_TEST_WRITE_STOP_READ_17:
-		validate_write_stop_read_17();
-		break;
-	case I3C_TEST_WRITE_STOP_READ_32:
-		validate_write_stop_read_32();
-		break;
-	case I3C_TEST_READ_UNDERRUN_8_16:
-		validate_read_underrun_8_16();
-		break;
-	case I3C_TEST_READ_UNDERRUN_16_32:
-		validate_read_underrun_16_32();
-		break;
-	case I3C_TEST_NACK_BAD_ADDR:
-		validate_nack_bad_addr();
-		break;
-	case I3C_TEST_BACK_TO_BACK_8X8:
-		validate_back_to_back_8x8();
-		break;
-	case I3C_TEST_BIG_256:
-		validate_big_256();
-		break;
-	case I3C_TEST_CCC_RAPID_8:
-		validate_ccc_rapid_8();
-		break;
-	case I3C_TEST_READ_MASTER_ABORT:
-		validate_read_master_abort();
-		break;
-	case I3C_TEST_IBI_NEG_PATHS:
-		validate_ibi_neg_paths();
-		break;
-	case I3C_TEST_API_NEG_PATHS:
-		validate_api_neg_paths();
-		break;
-	case I3C_TEST_MULTI_MSG_4:
-		validate_multi_msg_4();
-		break;
-	case I3C_TEST_WRITE_INDEXED_READ_16:
-		validate_write_indexed_read_16();
-		break;
-	case I3C_TEST_WRITE_DELAY_READ_16:
-		validate_write_delay_read_16();
-		break;
-	case I3C_TEST_WRITE_DELAY_READ_LEN:
-		validate_write_delay_read_len();
-		break;
-	case I3C_TEST_SETAASA:
-		validate_setaasa();
-		break;
-	case I3C_TEST_SETDASA:
-		validate_setdasa();
-		break;
-	default:
-		TGT_EXPECT(false, "unknown test id %u", current_test_id);
-		break;
+/* 每项一个命名 ZTEST：套件名 == 测试项名，dispatcher 按 test_id 运行对应
+ * 套件；校验在 validate_<item>() 内按 dispatcher 事件驱动的状态进行。 */
+#define TGT_ZTEST(item) \
+	ZTEST(item, item) \
+	{ \
+		validate_##item(); \
+		tgt_finish(); \
 	}
 
-	tgt_finish();
-}
+TGT_ZTEST(daa_discovery)
+TGT_ZTEST(write_8)
+TGT_ZTEST(write_100)
+TGT_ZTEST(read_32_direct)
+TGT_ZTEST(write_read_1)
+TGT_ZTEST(write_read_15)
+TGT_ZTEST(write_read_16)
+TGT_ZTEST(write_read_17)
+TGT_ZTEST(write_read_32)
+TGT_ZTEST(ibi)
+TGT_ZTEST(hot_join)
+TGT_ZTEST(ccc_basic)
+TGT_ZTEST(write_stop_read_1)
+TGT_ZTEST(write_stop_read_15)
+TGT_ZTEST(write_stop_read_16)
+TGT_ZTEST(write_stop_read_17)
+TGT_ZTEST(write_stop_read_32)
+TGT_ZTEST(read_underrun_8_16)
+TGT_ZTEST(read_underrun_16_32)
+TGT_ZTEST(nack_bad_addr)
+TGT_ZTEST(back_to_back_8x8)
+TGT_ZTEST(big_256)
+TGT_ZTEST(ccc_rapid_8)
+TGT_ZTEST(read_master_abort)
+TGT_ZTEST(ibi_neg_paths)
+TGT_ZTEST(api_neg_paths)
+TGT_ZTEST(multi_msg_4)
+TGT_ZTEST(write_indexed_read_16)
+TGT_ZTEST(write_delay_read_16)
+TGT_ZTEST(write_delay_read_len)
+TGT_ZTEST(setaasa)
+TGT_ZTEST(setdasa)

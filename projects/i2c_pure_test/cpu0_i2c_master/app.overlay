@@ -1,0 +1,18 @@
+/*
+ * 纯 I2C 波形质量测试：master（cpu2）侧总线配置。
+ *
+ * i2c5（i2c@40084000）I2C 主机，引脚 I2C5_scl_PJ10 / I2C5_sda_PJ11。
+ * pinctrl-0（default = I2C 引脚复用）由 board 级 lsqsh_evb_pinctrl.dtsi
+ * 宏 DEFINE_PINCTRL_CONSUMER_I2C 默认生成，init 自动应用，overlay 无需
+ * 重复配置。
+ *
+ * bus-frequency = 400K：与 slave 侧 i2c6 匹配。
+ *
+ * 控制台串口（uart5）与内存布局由 810_driver_test 通用配置提供（经
+ * CMakeLists.txt 的 EXTRA_DTC_OVERLAY_FILE 注入）。
+ */
+
+&i2c5 {
+    status = "okay";
+    bus-frequency = <400000>;
+};

@@ -40,10 +40,14 @@ NM = "riscv64-unknown-elf-nm"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 TARGET_ROM_START = 0x100C0000
 
-# trng_test_names[] 枚举序必须与 protocol.h 一致；按 --count 截断
+# 链接序 = ztest_unit_test 段 SORT_BY_NAME 字典序（§10.27：完整段名带尾
+# 下划线比较，数字 '0'-'9' 排在 '_' 之前——勿用 plain nm 名字典序，与
+# 真实链接序可能相反）。与 glue 的 tr_record idx（注册顺序）对齐；每次
+# 增删测试项后必须重新核对：
+#   nm --numeric-sort <elf> | grep _ztest_unit_test__trng__
 TEST_NAMES = [
-    "basic_16", "not_all_zero", "not_all_ff", "isr_busywait",
-    "large_1024", "invalid_args", "monobit_8k", "distinct_32",
+    "basic_16", "distinct_32", "invalid_args", "isr_busywait",
+    "large_1024", "monobit_8k", "not_all_ff", "not_all_zero",
     "throughput_64k",
 ]
 

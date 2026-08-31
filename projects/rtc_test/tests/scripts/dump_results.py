@@ -40,11 +40,14 @@ NM = "riscv64-unknown-elf-nm"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 TARGET_ROM_START = 0x100C0000
 
-# rtc_test_names[] 枚举序必须与 protocol.h 一致；按 --count 截断
+# 顺序必须与 ztest_glue.zt_run_all 的记账序一致：记账索引 = 测试在链接段
+# 中的位置，而 linker.cmd 对 ztest_unit_test 段用 SORT_BY_NAME（实测
+# linker.cmd:109），即按注册名升序；非源码定义序。本序按
+# `nm zephyr.elf | grep z_ztest_unit_test__rtc__` 地址升序核实。
 TEST_NAMES = [
-    "set_get_roundtrip", "time_advances", "invalid_set_args", "alarm_set_get",
-    "alarm_fires", "alarm_invalid_args", "calibration_roundtrip", "calibration_negative",
-    "calibration_null_arg",
+    "alarm_fires", "alarm_invalid_args", "alarm_set_get",
+    "calibration_negative", "calibration_null_arg", "calibration_roundtrip",
+    "invalid_set_args", "set_get_roundtrip", "time_advances",
 ]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址

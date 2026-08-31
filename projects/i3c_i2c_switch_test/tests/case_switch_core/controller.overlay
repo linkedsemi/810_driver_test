@@ -1,0 +1,4 @@
+#include "../../cpu0_i3c_controller/app.overlay"
+
+/* 核心切换 case：无速率差异，使用工程默认配置
+ * （i3c5: i3c-scl-hz=12500000 / i2c-scl-hz=1000000，见 cpu0 app.overlay） */

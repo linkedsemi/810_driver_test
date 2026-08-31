@@ -1,0 +1,68 @@
+/*
+ * I3C/I2C 模块切换测试：controller（cpu2）侧总线配置。
+ *
+ * 被测对象：I3C5（i3c@40094000）与 i2c5（i2c@40084000）共用引脚
+ * PJ10/PJ11，模式由引脚复用（pinctrl）区分：
+ *   - "default"     状态 = I3C 引脚复用（i3c5_scl_pj10 / i3c5_sda_pj11）
+ *   - "pinmux_i2c"  状态 = I2C 引脚复用（I2C5_scl_PJ10 / I2C5_sda_PJ11）
+ * 运行时用 pinctrl_apply_state() 切换（CONFIG_PINCTRL_DYNAMIC）。
+ *
+ * 控制台串口（uart5, PN14/PN13）与内存布局由 810_driver_test 通用配置提供：
+ *   ../common/cpu2_console_uart5.overlay + cpu2_mem_layout.overlay
+ * 经 CMakeLists.txt 的 EXTRA_DTC_OVERLAY_FILE 引入。
+ *
+ * 注意：I2C5 引脚复用节点（I2C5_scl_PJ10 / I2C5_sda_PJ11，pinmux 0x819a/0x819b）
+ * 由 soc dtsi（i2c 统一配置块）提供，本工程直接引用，不再自定义；
+ * 而 lsqsh_pinctrl_fixed_pinmap.dtsi 中同功能小写节点（i2c5_scl_pj10）已被注释。
+ */
+
+/* i2c5 在 soc dtsi 中已有 pinctrl-0（default = I2C 引脚复用），若不置
+ * pinctrl-noinit，i2c5 驱动 init 会把引脚切成 I2C 模式，破坏 i3c5 的
+ * I3C 默认模式。引脚复用由 i3c5 节点的 pinctrl 双状态统一管理。 */
+
+&i3c5_scl_pj10 {
+    drive-strength = <1>;
+    bias-pull-up2;
+};
+
+&i3c5_sda_pj11 {
+    drive-strength = <1>;
+    bias-pull-up2;
+};
+
+&i3c5 {
+    status = "okay";
+    i3c-scl-hz = <12500000>;
+    i2c-scl-hz = <1000000>;
+    interrupts = <I3C5_IRQN 6>;
+
+    tgt-pid = <0x5 0x55>;
+    dcr = <0x4>;
+    bcr = <0x42>;
+
+    pinctrl-0 = <
+        &i3c5_scl_pj10
+        &i3c5_sda_pj11
+    >;
+    pinctrl-1 = <
+        &I2C5_scl_PJ10
+        &I2C5_sda_PJ11
+    >;
+    pinctrl-names = "default", "pinmux_i2c";
+
+    i3ctarget6: i3ctarget@20813811000 {
+        compatible = "vnd,i3c-device";
+        reg = <0 0x0208 0x13811000>;
+        assigned-address = <0x32>;
+        status = "okay";
+    };
+};
+
+/* i2c5 复用 I3C5 的引脚（PJ10/PJ11）：pinctrl-noinit 阻止 init 时 apply
+ * soc 的 default 状态（I2C 引脚复用），引脚由 i3c5 节点双状态动态切换。
+ * bus-frequency = 400K（I2C 模式波形速率，soc dtsi 未定义时默认 100K）。 */
+&i2c5 {
+    status = "okay";
+    pinctrl-noinit;
+    bus-frequency = <400000>;
+};

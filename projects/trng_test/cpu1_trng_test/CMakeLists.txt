@@ -7,7 +7,8 @@ project(cpu1_trng_test)
 target_sources(app PRIVATE
     src/main.c
     src/trng_test.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test_results.c)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test_results.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/ztest_glue.c)
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)

@@ -1,0 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * OTBN selftest 单核测试 overlay：dmac2 供硬件 SHA/AES 的 DMA 路径使用
+ * （与 samples/mbedtls_selftest/boards/lsqsh_evb_cpu1.overlay 一致）。
+ */
+
+&dmac2 {
+	status = "okay";
+};

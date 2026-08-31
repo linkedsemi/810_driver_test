@@ -11,7 +11,7 @@ description: QSH 测试数据对比 skill：ztest 原生输出解析（parse_zte
 
 ## 1. ztest 原生输出解析规则
 
-输入：dbg_run.py / run_*_tests.py 采集的原始行。**解析用公共模块
+输入：dbg_run.py / run_test.py 采集的原始行。**解析用公共模块
 `common/ztest_report.py` 的 `parse_ztest`**（勿自写解析器），返回
 `{"boot_seen", "role", "tests": {name: {result, reason}}, "infos", "execution"}`。
 正则要点（与解析器一致）：
@@ -43,7 +43,7 @@ description: QSH 测试数据对比 skill：ztest 原生输出解析（parse_zte
 | `PROJECT EXECUTION FAILED`（任一核；i3c 含 TGT 侧意外出现） | ❌ 失败（套件内有断言失败） |
 | 无 `START - ` 的 PASS（顺序错乱） | 警惕两轮输出混合，重新采集 |
 
-**i3c_dualcore 双核例外（★ 照 `run_i3c_tests.py` `evaluate_case` 实码）**：
+**i3c_dualcore 双核例外（★ 照 `run_test.py` `evaluate_case` 实码）**：
 该工程 target `test_main` 不返回（CLAUDE.md §4.1 dispatcher join）→ TGT 端口
 **永远没有** `PROJECT EXECUTION` 行，`tgt_done=None` 是设计（Task 9 D1），
 不判 FAIL；完成判定 = **CTRL SUCCESSFUL 且 TGT execution != "FAILED"**，
@@ -86,7 +86,7 @@ python dump_results.py --case ... --raw                        # 打印 gdb 原�
 
 ## 4. 报告生成（★ 归档到会话目录 reports/，CLAUDE.md §12）
 
-回归报告由 run_*_tests.py 自动生成并归档（批量 = run_all.py，§12.5），
+回归报告由 run_test.py 自动生成并归档（批量 = run_all.py，§12.5），
 agent 手工补报告时按同样规范：
 
 - **归档位置（会话目录）**：

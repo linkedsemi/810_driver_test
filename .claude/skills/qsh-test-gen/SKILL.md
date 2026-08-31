@@ -34,7 +34,7 @@ description: QSH 驱动测试代码生成 skill（三大类②自动化测试代
     ├── include/<driver>_test_protocol.h
     ├── scripts/dbg_run.py      # 从样板复制改名，改 TESTS_DIR/banner（解析走公共 parse_ztest）
     ├── scripts/dump_results.py # 从样板复制（GDB 读内存兜底，CLAUDE.md §6.1，必须带 --json；TEST_NAMES 按链接序对齐 §10.27）
-    ├── scripts/run_<driver>_tests.py  # 一键回归（公共 parse_ztest + report_dir，见 §1.6）
+    ├── run_test.py  # 一键回归（公共 parse_ztest + report_dir，见 §1.6）
     ├── COVERAGE.md             # 覆盖矩阵（§13.3 模板，见 §1.6）
     ├── expected/               # 确定性测试的预期数据（NIST 向量等，§13.2）
     ├── case_<速记>/test.sh + overlay/conf 差异
@@ -114,8 +114,7 @@ target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tests/incl
    - 加密类 → 抽 NIST/官方测试向量生成 `expected/nist_vectors.h`
    - 通信类 → 固定 pattern + 状态字（预期字节序列/寄存器值）放 expected/
    - 生成脚本随工程保留（如 `tests/scripts/gen_vectors.py`），保证可复现
-3. **run_<driver>_tests.py** 必须实现（样板为已迁移工程的 run_trng_tests.py /
-   run_i3c_tests.py）：
+3. **run_test.py** 必须实现（样板为已迁移工程的 run_test.py）：
    - **解析层用公共 `common/ztest_report.py` `parse_ztest`**（勿自写解析器），
      判定按 §6.2/§6：单核 = 全项 `PASS - <name>` + `PROJECT EXECUTION
      SUCCESSFUL`；双核 = 同名项双核 PASS + 两核 SUCCESSFUL
@@ -162,7 +161,7 @@ tests/case_<速记>/
    读内存兜底取结果（§6.1 / §12.3；TEST_NAMES 按链接序对齐 §10.27）
 6. 调通后：更新顶层 README.md 接线登记表、写问题总结存档（CLAUDE.md §7）、
    把新坑沉淀进 CLAUDE.md §10
-7. 跑一次 `run_<driver>_tests.py` 一键回归，确认：
+7. 跑一次 `run_test.py` 一键回归，确认：
    - 报告落在 `reports/<日期>-<idx>/<project>_<case>/<driver>_test_report.{md,json}`
      （会话目录），内容含预期/实际列
    - 会话目录最外层 summary.md 有本 case 行（§12.4，key `<project>_<case>`）

@@ -1,129 +1,176 @@
 # 810_driver_test — LSQSH 驱动测试工程集
 
-本目录集中存放基于 **LSQSH EVB（双核 AMP，`lsqsh_evb@2os`）** 的驱动测试工程。
-所有工程共用同一套硬件环境（板卡、接线、调试串口、GDB 加载方式），新增驱动测试时请遵循本文档约定，避免每个工程重复定义硬件配置。
+基于 **LSQSH EVB（双核 AMP，`lsqsh_evb@2os`）** 的驱动批量自动化测试工程集。
 
-## 工程背景（摘录自仓库根 `CLAUDE.md`，根文件用户侧可能缺失）
+- 工程规范与调试细节见 [`CLAUDE.md`](CLAUDE.md)。
+- 根仓库背景见 `d:\zephyr4_0\CLAUDE.md`。
 
-> 仓库根 `d:\zephyr4_0\CLAUDE.md` 描述整个 **Zephyr SoC 适配工程**；本目录可被单独拷贝使用。
-> 若用户侧缺失根文件，按以下摘录理解工程上下文；细节以本目录 `CLAUDE.md`（规范）为准。
+---
 
-- **项目**：LinkedSemi 芯片原厂对 Zephyr RTOS 的 **SoC 适配与维护**工程（QSH 系列
-  BSP、驱动适配、Kconfig）；关键目录 `zephyr/boards/linkedsemi/`、
-  `zephyr/soc/linkedsemi/`、`modules/hal/linkedsemi/`（HAL=LS_SDK）。
-  本目录 `810_driver_test/` 是其 **驱动批量自动化测试工程集**。
-- **测试平台**：QSH 系列（ARM CM33，双核 AMP）。Board 命名规则
-  `lsqsh_evb@{os}@{variant}/{cpu}`：
-  - `{os}`：`1os` 单系统 / `2os` 双系统（测试工程用 `2os`）
-  - `{variant}`：`lsqsh` 标准 / `lsqsh_xip` XIP 闪存
-  - `{cpu}`：`cpu1` 安全核（target）/ `cpu2` 应用核（controller）
-- **构建命令**（测试工程由 case 目录 `./test.sh` 驱动，参考格式）：
-  ```bash
-  west build -p always -b lsqsh_evb@2os/lsqsh/cpu1 linkedsemi_zephyr_project/samples/hello_world
-  ```
-- **West 工作流**：`west init -l linkedsemi_zephyr_project` / `west update` / `west list`。
-  Manifest 双层：`zephyr/west.yml`（上游 + 自定义模块）+ `linkedsemi_zephyr_project/west.yml`（应用层）。
-  自定义模块：`LS_SDK`(hal_linkedsemi)、`mbedtls`(OTBN 硬件加速)、`wolfssl/wolfssh`、
-  `safeclib`、`jtag_asd`。
-- **Plan 管理**：实施计划统一存仓库根 `.claude/plans/`（`<主题>-<简述>.md`，文件头含
-  「完成状态跟踪」表格）；会话中断/超限后，新会话先读最新 plan 再继续推进。
-
-## 目录结构约定
-
-```text
-810_driver_test/
-├── README.md                       # 本文档（硬件环境记录）
-├── common/                         # 板级通用配置（设备树 overlay / 公共脚本）
-│   └── cpu2_console_uart5.overlay  # cpu2 控制台串口配置（所有 cpu2 工程共用）
-├── projects/                       # ★ 所有测试工程统一收在此目录
-│   ├── i3c_dualcore_test/          # I3C 双核测试（首个样板工程）
-│   │   ├── cpu0_i3c_controller/    # cpu2 侧固件（I3C 主机）
-│   │   ├── cpu1_i3c_target/        # cpu1 侧固件（I3C 从机）
-│   │   └── tests/                  # 自动化测试（case_*/ + agent）
-│   ├── trng_test/                  # TRNG 单核测试（cpu1 安全域，无对侧角色）
-│   │   ├── cpu1_trng_test/         # cpu1 侧固件（单核）
-│   │   └── tests/                  # 自动化测试（case_*/ + agent，单核版脚本）
-│   └── <future_driver>_test/       # 后续驱动测试工程……
-└── reports/                        # 测试报告归档（§12，按日期目录组织）
-```
-
-## 硬件环境
-
-### 板卡与核
+## 1. 板级要求
 
 | 项 | 值 |
 |---|---|
 | 板卡 | `lsqsh_evb@2os`（双核双系统 AMP） |
-| cpu1（安全核） | `lsqsh_evb@2os/lsqsh/cpu1`，固件运行于 SRAM |
-| cpu2（应用核） | `lsqsh_evb@2os/lsqsh/cpu2`，固件加载到 RAM 执行 |
+| cpu1（安全核，target） | `lsqsh_evb@2os/lsqsh/cpu1`，SRAM 执行 |
+| cpu2（应用核，controller） | `lsqsh_evb@2os/lsqsh/cpu2`，RAM 加载执行 |
+| cpu1 串口 | uart1（PN04 TX / PN03 RX），115200 8N1 |
+| cpu2 串口 | **uart5**（PN14 TX / PN13 RX），115200 8N1 |
+| GDB server | `127.0.0.1:1025`，由 PC 端 **XuanTie DebugServer** 提供 |
 
-### 调试串口分配（两核各一路，不要混用）
+> cpu2 默认控制台为 uart4，本工程统一改用 uart5（`common/cpu2_console_uart5.overlay`）。
+> 详细 GDB/Flash 配置见 `CLAUDE.md` §0、§15。
 
-| 核 | UART | TX / RX 引脚 | 波特率 | 配置来源 |
-|---|---|---|---|---|
-| cpu1 | uart1 | PN04 / PN03 | 115200 8N1 | 板级默认（`lsqsh_evb_cpu1.dts`） |
-| cpu2 | **uart5** | **PN14 / PN13** | 115200 8N1 | `common/cpu2_console_uart5.overlay` |
+---
 
-> 注意：cpu2 板级默认控制台是 uart4（PA12/PA13），本目录统一改用 uart5。
-> PN14 同时是 cap11 的可选输入脚，启用 `cap` 外设的工程需另行选择串口引脚。
+## 2. 环境准备（每次测试前）
 
-### GDB 加载约定（双核 RAM 执行）
+```bash
+# 1) DebugServer 已启动
+tasklist | grep -i DebugServer
 
-| 项 | 值 |
+# 2) 无 FlashProgrammer 残留
+tasklist | grep -i csky
+
+# 3) 串口空闲
+tasklist | grep -i python
+```
+
+任一项异常，先按 `CLAUDE.md` §2 / `qsh-debug` skill 排查。
+
+---
+
+## 3. 快速开始
+
+### 3.1 编译单个 case
+
+```bash
+cd 810_driver_test/projects/<driver>_test/tests/case_<name>
+./test.sh                 # 只编译
+./test.sh -g              # 编译 + GDB 加载运行
+./test.sh -r              # 仅加载运行
+```
+
+### 3.2 单次烧录 + 采集 + 解析
+
+- **单核工程**（trng / rtc / otbn / mbedtls / gpio_toggle）：
+  ```bash
+  cd 810_driver_test/projects/<driver>_test/tests
+  python scripts/dbg_run.py --case case_<name> --timeout 35
+  ```
+
+- **双核工程**（i2c_pure / i3c_i2c_switch / i3c_dualcore）：
+  ```bash
+  cd 810_driver_test/projects/<driver>_test/tests
+  python run_test.py --case case_<name> --ctrl-uart COM15 --tgt-uart COM16
+  ```
+  双核建议用 `run_test.py`（交互式 GDB），`dbg_run.py` 的 `-ex` 命令链在
+  `restore` cpu2 时容易卡住。
+
+### 3.3 一键全量回归
+
+```bash
+cd 810_driver_test
+python regression/run_all.py                # 全擦 flash + 预检 + 跑全部启用 case
+python regression/run_all.py --no-precheck  # 跳过环境预检（调试用）
+python regression/run_all.py --dry-run      # 只列启用 case，不执行
+```
+
+用例清单在 [`regression/cases.yaml`](regression/cases.yaml)，`#` 开头即屏蔽。
+
+---
+
+## 4. 测试内容
+
+| 工程 | 单/双核 | 是否需要外部接线 | 说明 |
+|---|---|---|---|
+| `trng_test` | 单核 | 否 | 片内 TRNG |
+| `rtc_test` | 单核 | 否 | RTC 计数/闹钟 |
+| `otbn_test` | 单核 | 否 | OTBN 点运算 / RSA / hash |
+| `otbn_selftest` | 单核 | 否 | mbedtls selftest 全量套件 |
+| `mbedtls_test` | 单核 | 否 | 软件/硬件/OTBN 混合加密配置 |
+| `i2c_pure_test` | 双核 | **是** | I2C5（cpu2 master）↔ I2C6（cpu1 slave） |
+| `i3c_i2c_switch_test` | 双核 | **是** | I3C/I2C 动态切换 |
+| `i3c_dualcore_test` | 双核 | **是** | I3C 主从跨核通信 |
+| `gpio_toggle_test` | 单核 | 否 | 示波器观察型，无自动化回归 |
+
+外部接线见下表。
+
+### 外部接线记录
+
+| 工程 | 接线 |
 |---|---|
-| GDB server | `127.0.0.1:1025`（由 PC 进程 **XuanTie DebugServer** 提供：`C:\uaer_app\debug_server\bin\DebugServerConsole.exe`，端口在 `bin\default.ini` 的 `SOCKETPORT=1025`，**必须手动启动**；被 CSKYFlashProgrammer.exe 占用时先杀之。可用 `GDB_SERVER_HOST/PORT` 覆盖） |
-| cpu1（target） | `load` ELF，入口 `0x100c0000`（`TARGET_ROM_START`） |
-| cpu2（controller） | `restore <zephyr.bin> binary 0x10000000`（`CONTROLLER_LOAD_ADDR`），`set $pc=0x100c0000` |
+| `i3c_dualcore_test` | I3C5_SCL(PJ10) ↔ I3C6_SCL(PJ08)，I3C5_SDA(PJ11) ↔ I3C6_SDA(PJ09)，共地，两侧上拉 |
+| `i3c_i2c_switch_test` | 同 `i3c_dualcore_test` |
+| `i2c_pure_test` | 同 `i3c_dualcore_test`（I2C 模式复用） |
+| `gpio_toggle_test` | PJ10/PJ11 输出 1s 方波，示波器挂 I3C5 总线焊点 |
 
-参考实现：`scripts/test_common.sh` 的 `load_and_run()`。
+---
 
-### Flash 烧录约定（XIP 固件固化，详见本目录 CLAUDE.md §15）
+## 5. 结果判读与调试
 
-| 项 | 值 |
-|---|---|
-| CLI | 工程内打包副本优先 `tools/flash_program/CSKYFlashProgramerConsole.exe`（自包含），回退 `C:\user_file\EC_FLASH_PROGRAM\FlashProgrammer\Bins\CSKYFlashProgramerConsole.exe`（注意拼写 "Programer"；GUI 是 "Programmer"） |
-| 算法文件 | 工程内 `tools/flash_program/qsh_flash_algo.elf`（QSH）/ `leo_flash_algo.elf`（LE501x）；回退 `C:\user_file\EC_FLASH_PROGRAM\` 同名文件 |
-| 封装脚本 | `scripts/flash_program.py`（烧/读/校验；`FP_EXE`/`FP_ALGO`/`FP_LOG` 可覆盖路径） |
-| 地址约定 | cpu1 @ `0x08000000`、cpu2 @ `0x08100000`（2os）；1os 只用 cpu1 地址 |
-| 互斥 | 与 DebugServer **互斥占用 CKLink**：烧 flash 时 DebugServer 必须退出；烧完要 GDB 再启 |
-| 用法 | `python scripts/flash_program.py --bin zephyr_flash_xxx.bin@0x08000000 --verify`；双核必须一次会话传两个 `--bin`（全片擦会擦掉另一核） |
-| 启动测试 | `dbg_run.py --xip --bins <file>@<addr>[,<file>@<addr>] --timeout <sec>`（烧录→启动→采集，无两遍烧录法） |
-| 默认测试 | 单核/双核 = **全 RAM**（现有 GDB load 流程，不烧 flash） |
-| XIP 标准组合 | **cpu1 XIP + cpu2 RAM**：cpu1 用 `lsqsh_evb@2os_xip/lsqsh/cpu1` 构建（烧 `0x08000000`，XIP 执行 + boot 引导）；cpu2 用标准 `lsqsh_evb@2os/lsqsh/cpu2` 构建（RAM 固件，产物 `zephyr_flash_*.bin` 烧 `0x08100000`，由 cpu1 boot 搬运启动）；两个 bin 一次会话烧录 |
-| 核心机制 | **只要任一核是 XIP，所有核固件都必须烧进 flash**（另一核即使 RAM 固件也先烧 flash 对应区，由 XIP boot 引导）；**只有单核或双核全 RAM 才直接 CKLink load RAM**（详见本目录 CLAUDE.md §15.6） |
+ztest 原生输出格式：
 
-### 外设接线记录
+```text
+ZT_BOOT <core>
+Running TESTSUITE <suite>
+START - <name>
+ PASS - <name> in X.XXX seconds
+ FAIL - <name> in X.XXX seconds
+PROJECT EXECUTION SUCCESSFUL|FAILED
+```
 
-| 测试工程 | 接线 |
-|---|---|
-| projects/i3c_dualcore_test | I3C5_SCL(PJ10) ↔ I3C6_SCL(PJ08)，I3C5_SDA(PJ11) ↔ I3C6_SDA(PJ09)，共地；两侧均配置上拉 |
-| trng_test | 无外部接线（TRNG 为片内模拟熵源外设 dwtrng@40004000，cpu1 安全域，单核测试） |
+- 单核：全项 `PASS` + 本核 `PROJECT EXECUTION SUCCESSFUL`。
+- 双核：同名项两核各自 `PASS` + 两核各自 `SUCCESSFUL`（`i3c_dualcore_test` 例外见 `CLAUDE.md` §6）。
 
-新增驱动测试工程时，请在此表中追加一行接线说明。
+失败时：
 
-## 新增驱动测试工程 checklist
+1. 看 `--raw` 原始日志中的 `Assertion failed at <file>:<line> (<func>): <msg>`。
+2. 串口被刷掉/无输出时，用 `dump_results.py --case <name> --json` GDB 读内存兜底。
+3. 连接问题先走 `qsh-debug` skill。
 
-1. 在本目录下新建 `<driver>_test/`，按需要分 `cpuX_xxx/` 子工程。
-2. cpu2 侧工程在 `CMakeLists.txt` 的 `find_package(Zephyr)` **之前**加入：
+详细判据见 `CLAUDE.md` §6。
 
+---
+
+## 6. 新增驱动测试工程
+
+1. 在 `projects/` 下新建 `<driver>_test/`，需要时分子工程 `cpuX_xxx/`。
+2. cpu2 侧 `CMakeLists.txt` 在 `find_package(Zephyr)` **之前**加入：
    ```cmake
    set(EXTRA_DTC_OVERLAY_FILE
        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/cpu2_console_uart5.overlay)
    ```
+3. 在本 README「外部接线记录」中登记接线（片内设备写"无"）。
+4. 参考 `qsh-test-gen` skill 生成 case、`run_test.py` 回归脚本、`test.sh` 三模式。
 
-   这样控制台自动落在 uart5，无需再动 `chosen` 和 pinctrl。
-3. cpu1 侧工程无需配置控制台（板级默认 uart1）。
-4. 在本 README 的「外设接线记录」表中登记接线。
-5. 如需一键回归，参考 `scripts/test_common.sh`（通用）+ `projects/i3c_dualcore_test/tests/scripts/` 的 `run_i3c_tests.py` 模式。
+---
 
-## 自动化测试 agent
+## 7. XIP / Flash 固化测试
 
-`projects/i3c_dualcore_test/tests/scripts/run_i3c_tests.py` 为双串口 token 采集 + Markdown/JSON 报告的样板：
+默认测试为 RAM 加载。需要把固件烧进板载 SPI flash 时：
 
 ```bash
-export I3C_CTRL_UART=COMx   # cpu2 uart5 (PN14/PN13)
-export I3C_TGT_UART=COMy    # cpu1 uart1 (PN04/PN03)
-python tests/scripts/run_i3c_tests.py
+python scripts/flash_program.py --bin cpu1.bin@0x08000000 --bin cpu2.bin@0x08100000 --verify
 ```
 
-后续工程可复用同一套 token 约定（`<PREFIX>:<CORE>:START/PASS/FAIL:<name>` + `<PREFIX>:DONE:<result>`）。
+- 与 DebugServer 互斥，烧 flash 前需退出 DebugServer。
+- 详细用法见 `CLAUDE.md` §15。
+
+---
+
+## 8. 目录速览
+
+```text
+810_driver_test/
+├── CLAUDE.md                # 工程规范、调试手册、坑沉淀
+├── README.md                # 本文件（用户速查）
+├── common/                  # 公共 overlay、脚本、结果模块
+├── projects/                # 各驱动测试工程
+├── regression/              # 全量回归入口、case 清单、预检
+│   ├── cases.yaml
+│   ├── run_all.py
+│   └── precheck/
+├── reports/                 # 测试报告归档
+└── scripts/                 # flash_program 等通用脚本
+```

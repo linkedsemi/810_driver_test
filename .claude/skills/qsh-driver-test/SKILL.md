@@ -29,7 +29,7 @@ qsh-driver-test (本 skill：总入口，读它决定下一步)
 |---|---|---|---|
 | ① 调试 | `qsh-debug` | 连接层坑（DebugServer/烧录/串口）+ 断点抓现场 + 分层根因定位 + 探针纪律 | 烧录失败、固件不跑、串口 0 行、驱动行为异常、定位根因 |
 | ② 生成 | `qsh-test-gen` | 新工程/case/协议头/test.sh 模板 + 公共结果模块注入 + 自检调试 | 新建驱动测试工程或 case |
-| ③ 测试 | `qsh-test-run` | 执行层：dbg_run.py、test.sh 三模式、run_*_tests.py 回归 | 构建、烧录跑用例、全量回归 |
+| ③ 测试 | `qsh-test-run` | 执行层：dbg_run.py、test.sh 三模式、run_test.py 回归 | 构建、烧录跑用例、全量回归 |
 | ③ 测试 | `qsh-test-compare` | 分析层：token 解析、双 PASS 判定、报告、回归对比、内存兜底 | 分析结果、写报告、对比修复前后 |
 
 ## 任务路由表
@@ -58,7 +58,7 @@ cd 810_driver_test/projects/i3c_dualcore_test/tests/case_pure_i3c_12m5 && ./test
 # 2. 单 case 烧录 + 采集 + 解析
 cd ../.. && python scripts/dbg_run.py --case case_pure_i3c_12m5 --timeout 35
 # 3. 全量回归
-python scripts/run_i3c_tests.py
+python run_test.py
 ```
 
 ## 环境速查（细节见 CLAUDE.md §0 与 qsh-debug）

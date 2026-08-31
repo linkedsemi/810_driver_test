@@ -1,0 +1,21 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * OTBN 单核测试 overlay：指定 zephyr,entropy = trng1 并使能
+ * （RSA keygen 候选素数生成必须真随机源，见 otbn-rsa-keygen-record.md §6）。
+ * dmac2 供带 DMA 的硬件路径使用。
+ */
+
+/ {
+	chosen {
+		zephyr,entropy = &trng1;
+	};
+};
+
+&trng1 {
+	status = "okay";
+};
+
+&dmac2 {
+	status = "okay";
+};

@@ -71,7 +71,7 @@ taskkill //F //IM DebugServerConsole.exe && cd C:/uaer_app/debug_server/bin && .
 
 > **实测纠正**：detach 不能真正释放连接（任何"连接→detach→退出"的 gdb 都留
 > 残留，**探测连接本身也制造残留**）→ 残留深时 detach 无效，唯一可靠 = 重启
-> DebugServer 进程。**脚本化自愈四步**（run_*_tests.py 的 `clean_gdb_residue`）：
+> DebugServer 进程。**脚本化自愈四步**（run_test.py 的 `clean_gdb_residue`）：
 > ① netstat 找 1025 ESTABLISHED 对端 PID 杀 gdb；② taskkill /F /IM
 > DebugServerConsole.exe；③ netstat 精确杀 1025 LISTENING 兜底；④ Popen 重启 +
 > stdout 重定向日志，**轮询日志出现 `DebuggerServer$` 提示符判就绪**（≤30s），
@@ -106,7 +106,7 @@ riscv64-unknown-elf-gdb \
 - 双核串口：COM15=controller（MCP2200）、COM16=target（CH342，banner 实测口）、
   COM17=CH342 备用（无 banner，空口）、COM14=CKLink 自身（排除）；
   口号以设备管理器为准，按 banner 动态识别。
-- run_i3c_tests.py 必须显式传口号：`--ctrl-uart COM15 --tgt-uart COM16`
+- run_test.py 必须显式传口号：`--ctrl-uart COM15 --tgt-uart COM16`
   （传错 target 口（如 COM17）会 token 全失、走 GDB 内存兜底，仍 210/210 但
   报告 source 全 mem——需重跑）
 
@@ -133,7 +133,7 @@ python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提�
 - **交互式流程（★ §10.25）**：reset+load 后等 "Transfer rate" 再 continue。
   一次性 -ex 链的 continue 在 load 刚完成瞬间发出，DebugServer 状态不佳时
   被静默丢弃 → CPU 停 halt 无 BOOT，detach 恢复运行（回归 3/3 复现）；
-  dbg_run.py / run_*_tests.py 均为交互式（0 失败）。手工 GDB 也照此
+  dbg_run.py / run_test.py 均为交互式（0 失败）。手工 GDB 也照此
 - **免烧重跑 --no-load**：attach → `x/4wx 0x100c0000` sanity（镜像在？非全 0）
   → `set $pc=0x100c0000` 重跑复位向量（重新初始化 .bss/.data，等效软复位）
 
@@ -228,7 +228,7 @@ riscv64-unknown-elf-gdb -q \
 | 单遍烧录行为"慢一拍"（双核） | I-cache 残留 | 两遍烧录法（§3）；单核工程无此问题（reset 已刷 I-cache，§3.1） |
 | 目标停死、异常反复 | 调试期 while(1) 陷阱残留 | 清理探针（§8 / CLAUDE.md §10.6） |
 | 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（§6） |
-| DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~30s 稳定期再烧录；run_i3c_tests.py 已自动重试 |
+| DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~30s 稳定期再烧录；run_test.py 已自动重试 |
 | 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（§10.21） |
 | load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |

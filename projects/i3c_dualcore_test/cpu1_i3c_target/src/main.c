@@ -6,6 +6,7 @@
 
 #include "i3c_target_test.h"
 #include "i3c_dualcore_test_protocol.h"
+#include "ztest_glue.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +22,10 @@ uint8_t tgt_tx_buf[256];
 
 void test_main(void)
 {
-	I3C_TEST_TGT_BOOT();
+	/* BOOT 标记：harness 判定本固件已启动（§6.2 pass-2 判据）。
+	 * 不调用 zt_run_all()——test_main 不得返回（§4.1 dispatcher
+	 * k_thread_join），逐项 ztest 由 dispatcher 按 'E' 事件运行。 */
+	zt_init("TGT");
 
 	LOG_INF("[CPU1 SLAVE] I3C target test started");
 

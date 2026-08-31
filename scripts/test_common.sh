@@ -48,8 +48,20 @@ I3C_CTRL_UART="${I3C_CTRL_UART:-}"
 I3C_TGT_UART="${I3C_TGT_UART:-}"
 CONTROLLER_BOARD="${CONTROLLER_BOARD:-lsqsh_evb@2os/lsqsh/cpu2}"
 TARGET_BOARD="${TARGET_BOARD:-lsqsh_evb@2os/lsqsh/cpu1}"
+# 用户需求#8：单核固件一律用 1os 编译测试（双核路径的 TARGET_BOARD 保持 2os 不动）
+SINGLE_BOARD="${SINGLE_BOARD:-lsqsh_evb@1os/lsqsh/cpu1}"
 CONTROLLER_LOAD_ADDR="${CONTROLLER_LOAD_ADDR:-0x10000000}"
 TARGET_ROM_START="${TARGET_ROM_START:-0x100c0000}"
+# 用户需求#8：单核一律 1os 构建（SINGLE_BOARD），cpu1 入口 = 0x10000000
+# （1os readelf 实测）；TARGET_ROM_START 保持双核 2os cpu1 语义 0x100c0000 不动。
+# 两变量分工（shell 侧入口）：SINGLE_ROM_START = 单核路径
+# （load_and_run_single / print_launch_json_single 用），默认 0x10000000；
+# TARGET_ROM_START = 双核路径，默认 0x100c0000。
+# 注意 Python 脚本是另一套入口：4 个采集脚本（run×2 / dbg_run×2）与
+# dump_results.py 读 TARGET_ROM_START 环境变量、默认 0x10000000（1os 语义；
+# 2os 时需显式 TARGET_ROM_START=0x100c0000 覆盖）——与 shell 侧命名分工
+# 不同，CLAUDE.md 的统一同步由 Task 12 做，本文件只加注释不改名。
+SINGLE_ROM_START="${SINGLE_ROM_START:-0x10000000}"
 # XIP flash 固化（CLAUDE.md §15）：地址信息集中在此掌握，test.sh 直接引用
 CPU1_XIP_ADDR="${CPU1_XIP_ADDR:-0x08000000}"
 CPU2_XIP_ADDR="${CPU2_XIP_ADDR:-0x08100000}"
@@ -132,10 +144,10 @@ _detect_board() {
     local base
     base="$(basename "${src_dir}")"
     case "${base}" in
-        *controller*)
+        *controller*|*master*|*host*)
             echo "${CONTROLLER_BOARD}"
             ;;
-        *target*)
+        *target*|*slave*|*device*)
             echo "${TARGET_BOARD}"
             ;;
         *)
@@ -354,7 +366,7 @@ build_single_test() {
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
     west build -p auto \
         -d "${build_dir}" \
-        -b "${TARGET_BOARD}" \
+        -b "${SINGLE_BOARD}" \
         "${src_dir}" \
         "${extra_args[@]}"
 }
@@ -389,7 +401,7 @@ print_launch_json_single() {
         "set output-radix 16",
         "reset",
         "load",
-        "set \$pc=${TARGET_ROM_START}",
+        "set \$pc=${SINGLE_ROM_START}",
         "set mem inaccessible-by-default on",
         "set print pretty on"
     ],
@@ -414,21 +426,34 @@ load_and_run_single() {
     echo "[${test_name}] Loading cpu1 image into RAM via GDB..."
     echo "    ELF: ${elf}"
 
+    # gdb.exe 是 Windows 原生进程，不吃 MSYS 的 /d/... 路径；转成 D:/...
+    # （win_path 与脚本内 FP_EXE 等同款处理）
+    local elf_win
+    elf_win="$(win_path "${elf}")"
+
     if [ "${AGENT_RUN}" = "y" ]; then
         echo "I3C_AGENT:RUN_START:${test_name}"
     fi
 
+    # 用户需求#7：单核路径按住 cpu2 复位（SYSC_SEC_CPU.APP_CPU_SRST=0x4002200c
+    # 是 W1S/W1C 寄存器：写 2=保持复位（SDK app_cpu_reset 语义）、写 1=释放
+    # （app_cpu_dereset 语义），写 0 无效果）。防他方 RAM 残留镜像串扰本固件
+    # 采集。跑完不释放（后续双核流程自己会写 1 释放）；load_and_run（双核）
+    # 绝对不加。
     local gdb_cmd=(
         riscv64-unknown-elf-gdb
         -ex "target remote ${GDB_SERVER_HOST}:${GDB_SERVER_PORT}"
         -ex "set output-radix 16"
         -ex "set confirm off"
         -ex "set pagination off"
-        -ex "set \$ROM_START = ${TARGET_ROM_START}"
-        -ex "file ${elf}"
+        -ex "set \$ROM_START = ${SINGLE_ROM_START}"
+        -ex "file ${elf_win}"
         -ex "reset"
+        -ex "set memory-write-packet-size 16384"
+        -ex "set remotewritesize 16384"
         -ex "load"
         -ex "set \$pc=\$ROM_START"
+        -ex "set {int}0x4002200c = 2"
         -ex "set mem inaccessible-by-default on"
         -ex "set print pretty on"
         -ex "continue"

@@ -1,0 +1,3 @@
+#include "../../cpu0_i2c_master/app.overlay"
+
+/* 纯 I2C 400K case：无速率差异，使用工程默认配置（i2c5 @400K，见 cpu0 app.overlay） */

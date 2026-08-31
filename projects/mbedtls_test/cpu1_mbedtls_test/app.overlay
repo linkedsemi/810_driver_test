@@ -1,0 +1,21 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * mbedtls 单核测试 overlay（cpu1 安全域）：指定 zephyr,entropy = trng1 并使能
+ * （RSA keygen 候选素数生成与 ECDSA genkey 必须真随机源）。dmac2 供带 DMA
+ * 的硬件加密路径使用。
+ */
+
+/ {
+	chosen {
+		zephyr,entropy = &trng1;
+	};
+};
+
+&trng1 {
+	status = "okay";
+};
+
+&dmac2 {
+	status = "okay";
+};

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot debug runner: GDB-load both cores, capture UART, parse tokens.
+"""One-shot debug runner: GDB-load both cores, capture UART, parse ztest output.
 
 Usage:
     python tests/dbg_run.py [--case case_pure_i3c_6m25] [--timeout 15] [--raw]
@@ -8,7 +8,7 @@ Usage:
 
 XIP mode (--xip): instead of GDB RAM-loading, program the given bin(s) to the
 on-board SPI flash via scripts/flash_program.py (CSKYFlashProgramerConsole),
-reset/run from flash and capture UART - same token parsing/SUMMARY as RAM
+reset/run from flash and capture UART - same ztest parsing/SUMMARY as RAM
 mode.  Flash programming needs exclusive CKLink access: the XuanTie
 DebugServer must not be connected while programming (see CLAUDE.md §10/§15);
 pass --gdb-reset to reset via DebugServer AFTER programming (it is free then).
@@ -16,10 +16,17 @@ pass --gdb-reset to reset via DebugServer AFTER programming (it is free then).
 UART role discovery (dynamic):
     - By default all non-CKLink COM ports are opened; after the flash/reset
       the firmware prints its banner on the matching UART:
-          "CPU2 MASTER" / "i3c_master_test"  -> controller (uart5)
-          "CPU1 SLAVE"  / "i3c_slave_test"   -> target (uart1)
+          "CPU2 MASTER" / "i3c_master_test"  -> controller (uart5, cpu2)
+          "CPU1 SLAVE"  / "i3c_slave_test"   -> target (uart1, cpu1)
       so port roles are resolved from actual output, no hardcoding.
     - Explicit override: --ctrl-uart COM16 --tgt-uart COM17.
+
+ztest-native output (migration from token framework):
+    逐项判定打印在串口（" PASS - write_read_16 in X.XXX seconds" 等，经
+    CONFIG_ZTEST_VERBOSE_OUTPUT=y 门控，§10.26），SUMMARY 段用公共解析器
+    common/ztest_report.parse_ztest 汇总（§4.5 记账数组仍可用 dump_results.py
+    GDB 兜底读取）。dbg_run.py 是调试工具，不判定 PASS/FAIL，退出码恒 0
+    （唯一非零退出 = flash 失败；§10.21）。
 
 Assumes firmware is already built under tests/<case>/build/{controller,target}
 (RAM mode) or a zephyr_flash_*.bin exists (XIP mode).
@@ -40,6 +47,11 @@ TESTS_DIR = Path(__file__).resolve().parents[1]
 # dbg_run.py at 810_driver_test/projects/<p>/tests/scripts/ -> parents[4] = 810_driver_test
 DRIVER_TEST_ROOT = Path(__file__).resolve().parents[4]
 FP_SCRIPT = DRIVER_TEST_ROOT / "scripts" / "flash_program.py"
+
+# 公共解析层：810_driver_test/common/（trng 样板同款路径）
+sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))
+from ztest_report import parse_ztest  # noqa: E402
+
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 TARGET_ROM_START = "0x100c0000"
@@ -48,23 +60,15 @@ CONTROLLER_LOAD_ADDR = "0x10000000"
 CTRL_BANNERS = ("CPU2 MASTER", "i3c_master_test")
 TGT_BANNERS = ("CPU1 SLAVE", "i3c_slave_test")
 
-# Zephyr console shell 重绘提示符会向串口发 ANSI 转义，token 行首可能混入
-# （如 \x1b[1;32muart:~$ \x1b[8D\x1b[J），先剥离再匹配。
+# Zephyr console shell 重绘提示符会向串口发 ANSI 转义，行首可能混入
+# （如 \x1b[1;32muart:~$ \x1b[8D\x1b[J），采集时先剥离再入 lines（§10.5）。
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-DEFAULT_PREFIX = "I3C_TEST"
 
-
-def make_token_res(prefix):
-    """Build token regexes for a given token prefix (XIP mode may run
-    arbitrary firmware, so the prefix is configurable via --prefix)."""
-    return (
-        re.compile(rf"{prefix}:(CTRL|TGT):(START|PASS|FAIL):(\w+)(?::(.*))?\s*"),
-        re.compile(rf"{prefix}:(CTRL|TGT):SUMMARY:(.*)"),
-        re.compile(rf"{prefix}:DONE:(PASS|FAIL)"),
-    )
-
-
-TOKEN_RE, SUMMARY_RE, DONE_RE = make_token_res(DEFAULT_PREFIX)
+# 本工程总线级调试关键字：I3C 事件/收发细节行，SUMMARY 段逐行高亮打印
+# （"* " 前缀），便于单次调试时直接定位行为问题。
+DEBUG_KEYWORDS = ("Slave stop", "prefill", "SERRWARN", "URUN",
+                  "write_requested", "non-opcode", "drain bailed",
+                  "read failed", "read actual")
 
 
 def reader(ser, lines, stop):
@@ -127,7 +131,12 @@ def start_capture(names, ports):
 
 
 def finish_summary(ports, sers, threads, ctrl_uart, tgt_uart, raw):
-    """Stop capture, identify roles by banner, print SUMMARY (+ raw dump)."""
+    """Stop capture, identify roles by banner, print ztest SUMMARY (+ raw dump).
+
+    SUMMARY 用 parse_ztest：ZT_BOOT / 逐项 PASS|FAIL / INFO 数值 /
+    PROJECT EXECUTION 汇总展示（不判定成败——dbg_run 是调试工具，§10.21）。
+    另逐行高亮本工程总线级调试关键字（DEBUG_KEYWORDS）。
+    """
     for name in ports:
         ports[name]["stop"].set()
     for t in threads:
@@ -158,17 +167,28 @@ def finish_summary(ports, sers, threads, ctrl_uart, tgt_uart, raw):
     if "?" in role.values():
         print("  (WARNING: un-identified port(s); no firmware banner seen there)", flush=True)
 
-    print("\n===== SUMMARY =====")
+    print("\n===== SUMMARY (ztest-native) =====")
     for name, p in ports.items():
         print(f"--- {name} ({role[name]}): {len(p['lines'])} lines ---")
+        parsed = parse_ztest(p["lines"], ctrl_banners=CTRL_BANNERS,
+                             tgt_banners=TGT_BANNERS)
+        if parsed["boot_seen"]:
+            print(f"  ZT_BOOT seen (banner role={parsed['role']})")
+        for tname in sorted(parsed["tests"]):
+            t = parsed["tests"][tname]
+            reason = f" -- {t['reason']}" if t["reason"] else ""
+            print(f"  {tname}: {t['result']}{reason}")
+        for tname in sorted(parsed["infos"]):
+            kv = ", ".join(f"{k}={v}" for k, v in sorted(parsed["infos"][tname].items()))
+            print(f"  INFO {tname}: {kv}")
+        if parsed["execution"] is not None:
+            print(f"  PROJECT EXECUTION: {parsed['execution']}")
+        if not parsed["boot_seen"] and not parsed["tests"] \
+                and parsed["execution"] is None:
+            print("  (no ztest output parsed on this port)")
+        # key debug lines（总线级关键字高亮，非判定内容）
         for ln in p["lines"]:
-            if TOKEN_RE.search(ln) or SUMMARY_RE.search(ln) or DONE_RE.search(ln):
-                print("  " + ln)
-        # key debug lines
-        for ln in p["lines"]:
-            if any(k in ln for k in ("Slave stop", "prefill", "SERRWARN", "URUN",
-                                     "write_requested", "non-opcode", "drain bailed",
-                                     "read failed", "read actual")):
+            if any(k in ln for k in DEBUG_KEYWORDS):
                 print("  * " + ln)
 
     if raw:
@@ -187,10 +207,6 @@ def run_xip(args):
     flash programmer's --reset-and-run (already passed unless --no-reset-run)
     resets the board on the spot.
     """
-    global TOKEN_RE, SUMMARY_RE, DONE_RE
-    if args.prefix != DEFAULT_PREFIX:
-        TOKEN_RE, SUMMARY_RE, DONE_RE = make_token_res(args.prefix)
-
     if not args.bins:
         sys.exit("ERROR: --xip requires --bins FILE@ADDR[,FILE@ADDR]")
     bins = []
@@ -250,8 +266,6 @@ def main():
     ap.add_argument("--raw", action="store_true", help="dump all captured lines")
     ap.add_argument("--ctrl-uart", default=None, help="controller UART, e.g. COM16")
     ap.add_argument("--tgt-uart", default=None, help="target UART, e.g. COM17")
-    ap.add_argument("--prefix", default=DEFAULT_PREFIX,
-                    help="token prefix for parsing (default I3C_TEST)")
     ap.add_argument("--xip", action="store_true",
                     help="XIP mode: program flash via flash_program.py, then reset/run")
     ap.add_argument("--bins", default=None,
@@ -266,10 +280,6 @@ def main():
 
     if args.xip:
         return run_xip(args)
-
-    global TOKEN_RE, SUMMARY_RE, DONE_RE
-    if args.prefix != DEFAULT_PREFIX:
-        TOKEN_RE, SUMMARY_RE, DONE_RE = make_token_res(args.prefix)
 
     build = TESTS_DIR / args.case / "build"
     target_elf = (build / "target" / "zephyr" / "zephyr.elf").as_posix()
