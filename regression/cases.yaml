@@ -3,7 +3,7 @@
 # gpio_toggle_test = 示波器观察型，无自动化回归（无 run_*_tests.py），默认屏蔽
 cases:
   # - projects\trng_test\tests\case_default
-  # - projects\rtc_test\tests\case_default
+  - projects\rtc_ls_test\tests\case_default
   # - projects\otbn_test\tests\case_default
   # - projects\otbn_selftest\tests\case_default
   # - projects\i2c_pure_test\tests\case_pure_i2c_400k

@@ -2,16 +2,18 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * RTC 单核测试入口（cpu1 安全域）。
- * 纯 ztest：test_main 打印角色 banner 后 zt_init + zt_run_all
- * （common/ztest_glue），不返回（同 ztest 语义）。
+ *
+ * 主动自驱动模式（同 trng_test controller 侧）：test_main() 里
+ * 顺序跑完所有 ZTEST（ztest_run_all），结尾打 SUMMARY + DONE token。
+ * ZTEST 框架线程即主线程，全程不返回，无 LOG_PANIC 死窗风险。
  */
+
+#include "rtc_test.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/rtc.h>
 #include <zephyr/logging/log.h>
-
-#include "ztest_glue.h"
 
 LOG_MODULE_REGISTER(rtc_test, LOG_LEVEL_INF);
 
@@ -20,8 +22,7 @@ const struct device *rtc_dev = DEVICE_DT_GET(DT_NODELABEL(rtc));
 
 void test_main(void)
 {
-	LOG_INF("[CPU1 RTC] RTC test started");   /* 角色 bannerp（harness 依赖） */
+	LOG_INF("[CPU1 RTC] RTC test started");
 
-	zt_init("TGT");
-	zt_run_all();
+	rtc_test_run();
 }
