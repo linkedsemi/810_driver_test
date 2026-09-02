@@ -6,6 +6,7 @@
  * 被测驱动：zephyr/drivers/rtc/rtc_ls.c（linkedsemi_ls_rtc，rtc@4006fc00）
  *   - 硬件 RTC 寄存器（reg_rtcv2_type.h），cyc-1hz=32768（属性），CALIB 补偿
  *   - set_time：先 rtc_en=0 → 写 TIME/CAL → 翻转 SET_TGGL → rtc_en=1；
+ *     TGGL 后硬件异步载入 CUR（us~ms），返回后不可立即 get_time，调用方需自行等待
  *     is_valid_time() 校验非法时间返回 -EINVAL（秒/分/时/日/月/年/周逐项检查）
  *   - get_time：CURTIME/CURCAL 稳定读（CURCAL 两次一致才取），硬件 1-60 编码
  *     回读 >0 时 -1（驱动已处理）
@@ -143,7 +144,8 @@ ZTEST(rtc, set_get_roundtrip)
 	if (ret == 0) {
 		struct rtc_time g = { 0 };
 
-		/* set 后装载延时已在 rtc_ls_set_time() 内完成 */
+		/* 硬件载入 ms 级异步；set 后短暂延时再 get（见 rtc_ls_set_time 注释） */
+		k_sleep(K_MSEC(5));
 		ret = rtc_get_time(rtc_dev, &g);
 		RTC_TEST_EXPECT(ret == 0, "rtc_get_time ret %d", ret);
 		if (ret == 0) {
