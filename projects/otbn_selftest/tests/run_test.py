@@ -53,6 +53,7 @@ DRIVER_NAME = "otbn_selftest"          # §12.4 summary 行 `<driver>_test` 前�
 REPORT_BASE = f"{DRIVER_NAME}_report"   # otbn_selftest_report.{md,json}（避免 _test_test 重复）
 
 sys.path.insert(0, str(REPORTS_ROOT.parent / "common"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 from ztest_report import parse_ztest   # noqa: E402
 from report_dir import (allocate_session_dir, case_dir_for,  # noqa: E402
                         update_summary)

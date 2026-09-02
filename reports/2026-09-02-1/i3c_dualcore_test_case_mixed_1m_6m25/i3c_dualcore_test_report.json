@@ -1,0 +1,304 @@
+{
+  "timestamp": "2026-09-02T20:45:31.671612",
+  "board": "lsqsh_evb@2os",
+  "overall": "PASS",
+  "cases": [
+    {
+      "name": "case_mixed_1m_6m25",
+      "result": "PASS",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done": null,
+      "mem_unavailable": false,
+      "tests": [
+        {
+          "name": "api_neg_paths",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "back_to_back_8x8",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "big_256",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ccc_basic",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ccc_rapid_8",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "daa_discovery",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "hot_join",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ibi",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ibi_neg_paths",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "multi_msg_4",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "nack_bad_addr",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_32_direct",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_master_abort",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_underrun_16_32",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_underrun_8_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "setaasa",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "setdasa",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_100",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_8",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_delay_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:critical_delay_ns=8150, first_short_step=164, master_stop_step=168, nack_recover_ok=1",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_delay_read_len",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:critical_ns=8650, first_short_step=-1, len=64, stop_step=174",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_indexed_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_15",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_17",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_1",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_32",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_15",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_17",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_1",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_32",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        }
+      ]
+    }
+  ]
+}

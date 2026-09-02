@@ -1,8 +1,0 @@
-/*
- * GPIO 基础翻转测试（cpu1 单核）——无设备树改动。
- *
- * PJ10/PJ11（I3C5 的 SCL/SDA 引脚）由固件经 HAL io_* 接口直接配置为
- * GPIO 推挽输出（per_func_disable_all + io_cfg_output），不经 pinctrl。
- * 板级 dts 中 i2c5/i3c5 默认 disabled（lsqsh_evb_cpu1.dts 已注释），
- * 引脚无其他占用。
- */
