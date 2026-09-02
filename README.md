@@ -85,7 +85,7 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | 工程 | 单/双核 | 是否需要外部接线 | 说明 |
 |---|---|---|---|
 | `trng_test` | 单核 | 否 | 片内 TRNG |
-| `rtc_test` | 单核 | 否 | RTC 计数/闹钟 |
+| `rtc_ls_test` | 单核 | 否 | RTC (rtc_ls) 计数/闹钟/日历进位 |
 | `otbn_test` | 单核 | 否 | OTBN 点运算 / RSA / hash |
 | `otbn_selftest` | 单核 | 否 | mbedtls selftest 全量套件 |
 | `mbedtls_test` | 单核 | 否 | 软件/硬件/OTBN 混合加密配置 |

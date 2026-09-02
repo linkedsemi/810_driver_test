@@ -40,7 +40,7 @@ GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 # 工程 → run 脚本（tests/scripts/ 下，调用前逐一存在性校验）
 PROJECT_SCRIPT = {
     "trng_test": "run_test.py",
-    "rtc_test": "run_test.py",
+    "rtc_ls_test": "run_test.py",
     "otbn_test": "run_test.py",
     "otbn_selftest": "run_test.py",
     "i2c_pure_test": "run_test.py",

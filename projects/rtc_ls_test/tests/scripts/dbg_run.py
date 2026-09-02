@@ -28,21 +28,25 @@ from pathlib import Path
 import serial
 import serial.tools.list_ports as list_ports
 
-# tests/scripts/dbg_run.py -> parents[1] = rtc_test/tests
+# tests/scripts/dbg_run.py -> parents[1] = trng_test/tests
 TESTS_DIR = Path(__file__).resolve().parents[1]
-
-sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))
-from ztest_report import parse_ztest   # noqa: E402
+import os
 
 GDB = "riscv64-unknown-elf-gdb"
-GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = "0x10000000"
+# WSL→Windows DebugServer 常用宿主机 IP；可用环境变量覆盖
+GDB_HOST = os.environ.get("GDB_SERVER_HOST", "127.0.0.1")
+GDB_PORT = os.environ.get("GDB_SERVER_PORT", "1025")
+TARGET_ROM_START = "0x100c0000"
 
 TGT_BANNERS = ("CPU1 RTC", "rtc_test", "RTC test")
 
 # Zephyr console shell 重绘提示符会向串口发 ANSI 转义，token 行首可能混入
 # （如 \x1b[1;32muart:~$ \x1b[8D\x1b[J），先剥离再匹配。
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+TOKEN_RE = re.compile(r"RTC_TEST:(TGT):(START|PASS|FAIL):(\w+)(?::(.*))?\s*")
+INFO_RE = re.compile(r"RTC_TEST:(TGT):INFO:(\w+):(.+)")
+SUMMARY_RE = re.compile(r"RTC_TEST:(TGT):SUMMARY:(.*)")
+DONE_RE = re.compile(r"RTC_TEST:DONE:(PASS|FAIL)")
 
 
 def reader(ser, lines, stop):
@@ -86,13 +90,14 @@ def discover_ports(explicit=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", default="case_default")
-    ap.add_argument("--timeout", type=float, default=15)
+    ap.add_argument("--timeout", type=float, default=150,
+                    help="capture 秒数（calendar_rollover 约需 90s+）")
     ap.add_argument("--raw", action="store_true", help="dump all captured lines")
     ap.add_argument("--tgt-uart", default=None, help="target UART, e.g. COM16")
     args = ap.parse_args()
 
-    build = TESTS_DIR / args.case / "build"
-    target_elf = (build / "target" / "zephyr" / "zephyr.elf").as_posix()
+    build = TESTS_DIR / args.case / "build" / "target"
+    target_elf = (build / "zephyr" / "zephyr.elf").as_posix()
     if not Path(target_elf).exists():
         sys.exit(f"ERROR: not built: {target_elf}")
 
@@ -117,10 +122,6 @@ def main():
             threads.append(t)
         return sers, threads
 
-    # 用户需求#7：单核测试按住 cpu2 复位（SYSC_SEC_CPU.APP_CPU_SRST=
-    # 0x4002200c 是 W1S/W1C 寄存器：写 2=保持复位、写 1=释放、写 0 无效果），
-    # 防他方 RAM 残留镜像串扰本固件采集；跑完不释放（双核流程自会写 1 释放）。
-    # 与 scripts/test_common.sh load_and_run_single 同款（T6 已加）。
     gdb_cmd = [
         GDB,
         "-ex", f"target remote {GDB_HOST}:{GDB_PORT}",
@@ -128,11 +129,8 @@ def main():
         "-ex", "set pagination off",
         "-ex", f"file {target_elf}",
         "-ex", "reset",
-        "-ex", "set memory-write-packet-size 16384",
-        "-ex", "set remotewritesize 16384",
         "-ex", "load",
         "-ex", f"set $pc={TARGET_ROM_START}",
-        "-ex", "set {int}0x4002200c = 2",
         "-ex", "continue",
     ]
 
@@ -226,14 +224,10 @@ def main():
 
     print("\n===== SUMMARY =====")
     for name, p in ports.items():
-        r = parse_ztest(p["lines"], tgt_banners=TGT_BANNERS)
-        print(f"--- {name} ({role[name]}): {len(p['lines'])} lines "
-              f"boot={r['boot_seen']} exec={r['execution']} ---")
-        for tname, t in sorted(r["tests"].items()):
-            extra = f"  reason: {t['reason']}" if t["reason"] else ""
-            print(f"  {tname:<20} {t['result']}{extra}")
-        for tname, kv in sorted(r["infos"].items()):
-            print(f"  {tname:<20} INFO " + ", ".join(f"{k}={v}" for k, v in kv.items()))
+        print(f"--- {name} ({role[name]}): {len(p['lines'])} lines ---")
+        for ln in p["lines"]:
+            if TOKEN_RE.search(ln) or INFO_RE.search(ln) or SUMMARY_RE.search(ln) or DONE_RE.search(ln):
+                print("  " + ln)
         # key debug lines
         for ln in p["lines"]:
             if any(k in ln for k in ("alarm_set_time", "set time is illegal", "RTC test",

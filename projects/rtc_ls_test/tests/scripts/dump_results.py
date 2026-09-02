@@ -26,6 +26,7 @@ test_reasons[][]：失败原因）。本脚本连 DebugServer 直接读内存，
     {"TGT": {"<name>": "PASS|FAIL|NOT_RUN", ...}, "reasons": {"<name>": "失败原因"}}
 """
 import argparse
+import os
 import json
 import re
 import shutil
@@ -37,17 +38,15 @@ from pathlib import Path
 TESTS_DIR = Path(__file__).resolve().parents[1]
 GDB = "riscv64-unknown-elf-gdb"
 NM = "riscv64-unknown-elf-nm"
-GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
+GDB_HOST = os.environ.get("GDB_SERVER_HOST", "127.0.0.1")
+GDB_PORT = os.environ.get("GDB_SERVER_PORT", "1025")
 TARGET_ROM_START = 0x100C0000
 
-# 顺序必须与 ztest_glue.zt_run_all 的记账序一致：记账索引 = 测试在链接段
-# 中的位置，而 linker.cmd 对 ztest_unit_test 段用 SORT_BY_NAME（实测
-# linker.cmd:109），即按注册名升序；非源码定义序。本序按
-# `nm zephyr.elf | grep z_ztest_unit_test__rtc__` 地址升序核实。
+# rtc_test_names[] 枚举序必须与 protocol.h 一致；按 --count 截断
 TEST_NAMES = [
-    "alarm_fires", "alarm_invalid_args", "alarm_set_get",
-    "calibration_negative", "calibration_null_arg", "calibration_roundtrip",
-    "invalid_set_args", "set_get_roundtrip", "time_advances",
+    "set_get_roundtrip", "time_advances", "invalid_set_args", "alarm_set_get",
+    "alarm_fires", "alarm_invalid_args", "calibration_roundtrip", "calibration_negative",
+    "calibration_null_arg", "calendar_rollover",
 ]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址
@@ -117,8 +116,8 @@ def main():
         if shutil.which(tool) is None:
             sys.exit(f"ERROR: {tool} not in PATH (Xuantie toolchain?)")
 
-    build = TESTS_DIR / args.case / "build"
-    elf = (build / "target" / "zephyr" / "zephyr.elf").as_posix()
+    build = TESTS_DIR / args.case / "build" / "target"
+    elf = (build / "zephyr" / "zephyr.elf").as_posix()
     if not Path(elf).exists():
         sys.exit(f"ERROR: not built: {elf}")
 
