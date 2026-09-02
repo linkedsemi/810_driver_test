@@ -10,27 +10,42 @@ LSQSH EVB 双核（`lsqsh_evb@2os`）驱动测试工程集 `810_driver_test/`。
 本 skill 只做路由和总览。任务按**三大类**组织：
 
 ```text
-① 驱动 debug 调试     → qsh-debug      （驱动有问题时：环境链路/断点抓现场/分层定位/探针纪律）
+① 驱动 debug 调试     → qsh-debug      （QSH 环境实操：连接层/烧录/串口/速查）
+                       └─ embedded-debug（通用方法论：分层定位/断点/探针纪律/坑沉淀）
 ② 测试代码生成       → qsh-test-gen    （新建工程/case：模板生成 + 自检调试）
 ③ 自动化测试         → qsh-test-run    （执行：构建/烧录/采集/回归）
                      └─ qsh-test-compare（结果：解析/判定/报告/对比/内存兜底）
 ```
 
+**本地 skill 库成员**（`810_driver_test/.claude/skills/`，全部平铺一层）：
+
+| skill | 定位 | 适用 |
+|---|---|---|
+| `qsh-driver-test`（本 skill） | 总入口 + 路由 | 任何 810 任务先读它 |
+| `qsh-debug` | 三大类① QSH 环境实操（主环境 Zephyr） | 烧录失败/固件不跑/串口无数据/驱动异常；scons/HAL 低频验证见其附 `ref-scons-hal-verify.md` |
+| `embedded-debug` | 通用调试方法论（跨硬件环境） | 任何嵌入式工程的定位 bug；QSH 调试的方法论层 |
+| `debug-knowledge` | 调试领域知识库（按域装载/自动填充） | mcu/zephyr/linux/riscv/arm 的既往招式查询或沉淀 |
+| `qsh-test-gen` / `qsh-test-run` / `qsh-test-compare` | 三大类②③ | 新建工程/跑用例/分析结果 |
+| `skill-registry` | 外部插件/MCP 能力目录 | 新环境需要 superpowers/claude-mem 等时查表 |
+| `env-adapter` | 跨环境引导接线 + 通用入口 | 新环境/非 810/不确定调哪个时，探测环境+接线+路由 |
+
 ## Skill 调用关系
 
 ```text
 qsh-driver-test (本 skill：总入口，读它决定下一步)
- ├─ ① 驱动有问题（调试）  → qsh-debug（§0 调试总流程 → 连接 → 断点抓现场 → 分层定位）
+ ├─ ① 驱动有问题（调试）  → qsh-debug（连接/烧录/串口实操）→ embedded-debug（分层定位/断点方法）
  ├─ ② 新建工程/case     → qsh-test-gen（生成后回 qsh-debug 调试验证）
  └─ ③ 跑测试/分析结果    → qsh-test-run（执行）→ qsh-test-compare（结果/报告）
 ```
 
 | 大类 | Skill | 用途 | 典型任务 |
 |---|---|---|---|
-| ① 调试 | `qsh-debug` | 连接层坑（DebugServer/烧录/串口）+ 断点抓现场 + 分层根因定位 + 探针纪律 | 烧录失败、固件不跑、串口 0 行、驱动行为异常、定位根因 |
+| ① 调试 | `qsh-debug` | QSH 环境实操：连接层坑（DebugServer/烧录/串口）+ QSH 速查 | 烧录失败、固件不跑、串口 0 行、驱动行为异常 |
+| ① 调试 | `embedded-debug` | 通用方法论：分层定位、断点抓现场、探针纪律、坑沉淀 | 跨工程/不依赖环境的根因定位（被 qsh-debug 引用） |
 | ② 生成 | `qsh-test-gen` | 新工程/case/协议头/test.sh 模板 + 公共结果模块注入 + 自检调试 | 新建驱动测试工程或 case |
 | ③ 测试 | `qsh-test-run` | 执行层：dbg_run.py、test.sh 三模式、run_test.py 回归 | 构建、烧录跑用例、全量回归 |
 | ③ 测试 | `qsh-test-compare` | 分析层：token 解析、双 PASS 判定、报告、回归对比、内存兜底 | 分析结果、写报告、对比修复前后 |
+| 外部 | `skill-registry` | 插件/MCP 能力目录（superpowers/claude-mem 等启用法） | 新环境取用外部能力、查外部 skill 来源 |
 
 ## 任务路由表
 
@@ -38,7 +53,11 @@ qsh-driver-test (本 skill：总入口，读它决定下一步)
 |---|---|---|
 | 构建某个 case / 跑某个测试 | ③ | `qsh-test-run` §2/§3 |
 | 连不上 / 烧不进 / 串口没数据 | ① | `qsh-debug` §2/§7 |
-| 驱动行为异常 / 定位根因 | ① | `qsh-debug` §0 总流程 → §5 分层定位 → §6 断点抓现场 |
+| 驱动行为异常 / 定位根因 | ① | `qsh-debug` §0 总流程 → **embedded-debug §1 分层定位 / §2 断点抓现场**（QSH 实操 qsh-debug §5/§6） |
+| 跨环境/通用嵌入式调试方法（非 QSH） | ① | `embedded-debug`（全篇） |
+| scons/HAL 示例验证（低频非主环境，scons 构建抓串口/GDB） | ① | `qsh-debug` §附（`ref-scons-hal-verify.md`） |
+| 查外部插件/MCP 能力怎么启用 | — | `skill-registry` §4 |
+| 环境迁移/新工程引导/不确定调哪个 skill | — | `env-adapter`（探测环境 + 接线 + 路由） |
 | 全量回归 + 报告 | ③ | `qsh-test-run` §4 → `qsh-test-compare` §4 |
 | 新增驱动测试工程 | ② | `qsh-test-gen` §1（先读 CLAUDE.md） |
 | 新增 case（不改 C 代码） | ② | `qsh-test-gen` §2 |

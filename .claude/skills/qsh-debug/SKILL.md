@@ -1,25 +1,23 @@
 ---
 name: qsh-debug
-description: QSH 驱动 debug 调试 skill（三大类之一）：驱动有问题时的完整调试方法学——连接层（DebugServer/GDB 烧录/串口识别与坑）、断点抓现场（nm 裸地址断点/寄存器/内存分析）、分层根因定位（应用层→驱动层→硬件层）、探针纪律与清理。烧录失败/固件不跑/串口无数据/驱动行为异常/定位根因时调用。测试执行见 qsh-test-run，代码生成见 qsh-test-gen。
+description: QSH 驱动 debug 调试 skill（三大类之一，QSH/810 环境实例化）：连接层坑（DebugServer/GDB 烧录/串口识别与清理）、双核两遍烧录法与单核单遍烧录+写包提速、串口动态识别采集、QSH 常见问题速查表。驱动有问题时的分层根因定位/断点抓现场/探针纪律等**通用方法论见 embedded-debug**，本 skill 只管 QSH 这套硬件环境的"怎么连/怎么烧/怎么抓"实操。测试执行见 qsh-test-run，代码生成见 qsh-test-gen。
 ---
 
-# QSH 驱动 debug 调试（三大类之一：驱动有问题时）
+# QSH 驱动 debug 调试（三大类之一：驱动有问题时，QSH 环境实操）
 
-**覆盖"驱动有问题时"的全部调试工作**：环境链路（连得上、烧得进、抓得到）
-+ 现场抓取（断点/寄存器/内存）+ 根因定位（分层方法学）+ 探针清理。
-构建/跑用例流程在 `qsh-test-run`，工程规范以 `810_driver_test/CLAUDE.md` 为准。
+**覆盖"驱动有问题时"在本环境（LSQSH EVB 双核）的全部实操**：环境链路（连得上、
+烧得进、抓得到）+ 串口识别采集。分层根因定位、断点抓现场、探针纪律、坑沉淀准则等
+**与硬件环境无关的方法论，统一在 `embedded-debug`**；本 skill 保留 QSH 专属的坑与
+命令模板。构建/跑用例流程在 `qsh-test-run`，工程规范以 `810_driver_test/CLAUDE.md` 为准。
 
 ## 0. 调试总流程（先走流程，再动手）
 
 ```text
 1. 确认环境   §1-3：DebugServer 在跑、能烧录、串口有 banner（全 ? 先清连接残留）
 2. 复现抓现象  qsh-test-run §3：dbg_run.py + token/SUMMARY；--raw 看原始日志
-3. 分层定位   §4（自上而下，每层排除后再下沉）：
-   ├─ 应用层：测试固件回调/协议解析/记账（token reason 已给线索）
-   ├─ 驱动层：ISR 分发、数据路径、状态机（读驱动源码确认机制，勿猜）
-   └─ 硬件层：寄存器现场（断点+读寄存器）+ 总线波形（示波器/逻辑分析仪）
-4. 断点抓现场 §5：断在"状态被破坏之前"，一轮只抓一个时刻
-5. 修复 → 验证 → 探针清理（§8）→ 沉淀（§9 + CLAUDE.md §10）
+3. 分层定位   embedded-debug §1（自上而下应用→驱动→硬件；QSH 补充见 §5 注）
+4. 断点抓现场 embedded-debug §2 方法 + 本 skill §6 QSH 命令模板
+5. 修复 → 验证 → 探针清理（embedded-debug §4 + 本 skill §8）→ 沉淀（embedded-debug §6）
 ```
 
 ## 1. 链路与真相（实测，多次纠正过，勿再写错）
@@ -166,39 +164,28 @@ print(s.read(512))
 - token 匹配用 `re.search()` 不用 `^`/`.match()`（行首可能有 `uart:~$ `）
 - 串口只在 capture 轮开（prime 轮输出丢弃，否则两轮混排造成测试顺序错乱假象）
 
-## 5. 分层根因定位方法学
+## 5. 分层根因定位（方法论 → embedded-debug §1；本段只留 QSH 补充）
 
-**自上而下，每层确认排除后再下沉一层；驱动行为先读源码确认机制，不要猜。**
+分层方法（自上而下应用→驱动→硬件、读源码勿猜、区分谁先错、警惕弱校验假 PASS）
+见 **embedded-debug §1**。QSH/810 语境下的补充线索：
 
-### 5.1 应用层（测试固件）
-- token reason 已给线索（如 `read actual 0, URUNNACK`）→ 查固件回调/协议解析
-- 固件记账变量（`dbg_*_cnt`/`TGT_DBG` 汇总行）区分"谁先错"：controller 读
-  到 0 还是 target 没发数据
-- 注意校验逻辑缺陷造成的假 PASS（target 只校验部分字段——见 qsh-test-compare §2）
+- **驱动层**：I3C target ISR 的分发顺序 = 中断标志位判定顺序（RXPEND → STOP/
+  ERRWARN → MATCHED → TXSEND），判定顺序决定事件优先级；"回调里无条件赋值/覆盖"
+  类代码常是覆盖 bug 源头（把对侧设置的参数在 stop/end 回调里无条件重置）
+- **硬件层寄存器**：基址/偏移查驱动 reg 头文件；关键位域含义查
+  `<driver>/ls_<x>/reg_<x>.h`（如 SERRWARN 的 TERM/URUN/URUNNACK 位 → 区分
+  "master 提前终止"还是"硬件欠载"）；寄存器读全对但波形异常 → 示波器，见
+  embedded-debug §3.3
+- 应用层（token reason/记账变量）线索见 `qsh-test-compare`（假 PASS 识别 §2）
 
-### 5.2 驱动层（zephyr/drivers/<driver>/）
-- 读 ISR 分发顺序：中断标志位判定顺序决定事件优先级（如 I3C target ISR 的
-  RXPEND → STOP/ERRWARN → MATCHED → TXSEND 顺序）
-- 读数据路径与状态机：数据缓冲模型、FIFO 续写、状态迁移守卫
-- 关注"回调里无条件赋值/覆盖"类代码——常是覆盖 bug 源头（把对侧设置的
-  参数在 stop/end 回调里无条件重置），用断点对比"请求时刻 vs 结束时刻"
-  的变量值即可证实（§6）
+## 6. 断点抓现场（QSH 命令模板；方法 → embedded-debug §2）
 
-### 5.3 硬件层（寄存器 + 波形）
-- 外设寄存器直接 `x/wx <基址+偏移>` 读（基址/偏移从 reg 头文件确认）
-- 关键寄存器位域含义查 `<driver>/ls_<x>/reg_<x>.h`（如 SERRWARN 的
-  TERM/URUN/URUNNACK 位 → 能区分"master 提前终止"还是"硬件欠载"）
-- 总线时序问题用示波器/逻辑分析仪配合（GPIO 标记法见 CLAUDE.md §4.3）
-
-## 6. 断点抓现场法（★ 定位硬件/驱动状态的关键手段）
-
-**核心原则：断在"状态被破坏之前"**。反例：断点在结果记账函数（如
-`tr_record`）命中时，stop/end 回调早已把计数器清零、长度恢复默认——抓到的
-是测试结束后的状态，不是现场。正例：断在请求到达回调（如 target 的读请求
-回调），命中时 FIFO/长度变量还是请求时刻的真实值。
+**断在"状态被破坏之前"、一轮只抓一个时刻**（方法见 embedded-debug §2）。
+QSH 双核固件的裸地址断点模板（目标固件无调试信息时用 nm 查符号地址，
+链接地址 = 加载地址）：
 
 ```bash
-# 目标固件无调试信息时：nm 查符号地址（链接地址=加载地址），裸地址断点
+# 找符号地址
 riscv64-unknown-elf-nm <build>/target/zephyr/zephyr.elf | grep <symbol>
 riscv64-unknown-elf-gdb -q \
   -ex "target remote 127.0.0.1:1025" -ex "file <target>/zephyr/zephyr.elf" \
@@ -211,7 +198,7 @@ riscv64-unknown-elf-gdb -q \
 ```
 
 要点：
-- **一轮断点只抓一个时刻**；命中后读现场、`detach` 让目标继续跑，避免影响时序
+- 一轮断点只抓一个时刻；命中后读现场、`detach` 让目标继续跑，避免影响时序
 - 变量用 `x/dw`/`x/dh`（有符号），寄存器用 `x/wx`，数组用 `x/Nbx`
 - 临时调试脚本（如 probe_*.py）用完必须清理（§8）
 - 需要验证"哪个分支被执行"时，直接断在该分支代码处而非回调入口
@@ -227,41 +214,32 @@ riscv64-unknown-elf-gdb -q \
 | PermissionError 开串口 | 端口被占用 | `tasklist \| grep python` → taskkill |
 | 单遍烧录行为"慢一拍"（双核） | I-cache 残留 | 两遍烧录法（§3）；单核工程无此问题（reset 已刷 I-cache，§3.1） |
 | 目标停死、异常反复 | 调试期 while(1) 陷阱残留 | 清理探针（§8 / CLAUDE.md §10.6） |
-| 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（§6） |
+| 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（embedded-debug §2） |
 | DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~30s 稳定期再烧录；run_test.py 已自动重试 |
 | 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（§10.21） |
 | load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
 
-## 8. 探针纪律（用户要求，防污染其他工程）
+## 8. 探针纪律（方法 → embedded-debug §4；本段留 QSH 实例）
 
-- 调试插桩（`log_dbg_*`/`to_dbg_*`/GPIO 标记/while(1) 陷阱/临时 probe 脚本）
-  **调试完必须清理**：log_core.c / kernel/timeout.c / `__assert.h` 等被插桩
-  文件用 `git checkout` 恢复；驱动/固件手工删除后 `grep` 确认无残留。
-- **功能修复与调试残留要区分**：驱动/SoC 层的功能修复（如 MPIL workaround、
-  PMP_W 写保护）必须保留；调试残留一律删。用 `git diff` 逐文件甄别。
-- 详见 CLAUDE.md §10.6。
+通用纪律（插桩必清、功能修复 vs 调试残留区分）见 **embedded-debug §4**。
+QSH/810 实例：
 
-### 8.1 驱动注释规范（★ 职责边界：只写本层语义，不写外部历史）
+- 被插桩的共享文件用 `git checkout` 恢复：`log_core.c` / `kernel/timeout.c` /
+  `__assert.h` 等；驱动/固件手工删除后 `grep` 确认无残留
+- **功能修复必须保留**（不是调试残留）：MPIL workaround（soc_isr_stacking_e906.c
+  unstack 恢复 MPIL）、pmp.c 的 PMP_W（XIP 区可写）；调试残留一律删
+  （`log_dbg_*`/`to_dbg_*`/GPIO 标记/while(1) 陷阱/临时 probe 脚本）。用 `git diff`
+  逐文件甄别
+- 注释边界规范（只写本层语义）见 embedded-debug §5 与 CLAUDE.md §4.6
 
-调试驱动时**新增/修改注释必须遵守 CLAUDE.md §4.6**：只描述**本层（驱动）
-的行为语义与契约**，不得把属于外部系统（Zephyr OS 框架、历史 bug、调试
-过程）的原因写进驱动注释。判断标准："如果这段代码换到别的工程/别的 OS
-配置下，这条注释还成立吗？"不成立就不该写在本层。
+## 9. 坑沉淀
 
-- **应该写**：协议语义（"TERM/URUN 在读欠载是 controller 主动提前终止的
-  合法行为"）、硬件行为（"STOP 分支必须 FLUSHTB 清空 TX FIFO"）、设计约束
-  （"opcode 用 ASCII 助记符避免与 CCC 命令码混淆"）。
-- **不应该写**：OS 层问题（"panic_mode 已修，ztest 不触发 LOG_PANIC"）、
-  调试历史（"之前 LOG_ERR 阻塞 10ms 造成 8ms 死窗"）、环境问题（"Windows
-  gdb stdout 管道块缓冲"）。
-- **外部原因的归处**：反复会踩的通用坑 → §7 速查表 / CLAUDE.md §10；
-  一次性定位闭环的 bug → 问题总结 .md（CLAUDE.md §7）；调试临时注释 →
-  按 §8 探针纪律清理，不得随功能代码提交。
+- 只沉淀会反复遇到的通用坑 → embedded-debug §6 + CLAUDE.md §10/速查表；
+  一次性定位闭环的 bug → 问题总结 .md 存档（CLAUDE.md §7），不进速查
 
-## 9. 坑沉淀要求
+## 附：scons / HAL 示例验证（低频非主环境）
 
-按 CLAUDE.md §7 沉淀准则：**只沉淀会反复遇到的通用坑**（连接残留、I-cache、
-ISR 禁 LOG 等）到 §7 速查表 + 顶层 CLAUDE.md §10；**一次性问题**（本次修复后
-不会再遇到的具体 bug/现象）只写问题总结存档（.md），不加入速查表/§10。
-定位闭环的问题按 CLAUDE.md §7 写问题总结存档。
+主开发环境是 **Zephyr**；如确需验证 `modules/hal/linkedsemi/examples`（`scons ic=qsh`）的
+HAL 示例（uart_capture 采集 / `_run.gdb` 冷启动 / dump ret-pass 判读），见同目录
+[ref-scons-hal-verify.md](ref-scons-hal-verify.md)。本 skill 正文面向 zephyr 主环境调试。

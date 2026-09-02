@@ -4,6 +4,8 @@
 > 后续每个驱动测试工程都应**按本规范自动生成**，保持结构、协议、脚本、命名完全一致。
 > 新 agent 上手路径：先读本文件 → 按任务调 `.claude/skills/` 下对应 skill；
 > 遇到具体问题，先查 §4 速查表，再查 §10 完整坑清单。
+> **迁移提示**：本文件是 810 工程级指南，**不随 `.claude/` 迁走**；skill 库便携说明/成员/接线/路由在
+> `.claude/CLAUDE.md` + `.claude/plans/skill-library-unification.md`（随 `.claude` 整体迁移）。
 
 ---
 
@@ -187,14 +189,22 @@ python scripts/dbg_run.py --case case_<name> --timeout 35
 
 ### 4.1 Skill 路由
 
-本工程任务按三大类组织：
+本工程任务按三大类组织。本地 skill 库 = 本目录 `.claude/skills/`（平铺一层，为后续
+抽离跨环境库的统一库体）；路由见下表：
 
 | 用户诉求 | 调哪个 skill | 内容 |
 |---|---|---|
-| 驱动行为异常 / 烧录失败 / 串口没数据 / 定位根因 | `qsh-debug` | 连接层 → 断点抓现场 → 分层根因定位（应用→驱动→硬件） |
+| 驱动行为异常 / 烧录失败 / 串口没数据 / 定位根因 | `qsh-debug` | QSH 环境实操：连接层 / 烧录 / 串口 / 速查表 |
+| 跨环境通用嵌入式调试方法（不依赖硬件环境） | `embedded-debug` | 分层根因定位、断点抓现场、探针纪律、坑沉淀（qsh-debug 的方法论层） |
+| scons/HAL 示例验证（低频，非主环境） | `qsh-debug` §附（`ref-scons-hal-verify.md`） | HAL 流实操：scons 构建 / uart_capture / _run.gdb / dump 判读 |
 | 构建 / 烧录 / 跑用例 / 全量回归 | `qsh-test-run` | dbg_run.py / test.sh / run_*_tests.py 用法、回归执行 |
 | 分析结果 / 写报告 / 回归对比 / 串口无输出取结果 | `qsh-test-compare` | parse_ztest、双 PASS 判定、报告生成、dump_results.py 内存兜底 |
 | 新建测试工程 / 新 case | `qsh-test-gen` | 目录骨架、协议头、固件模板、公共结果模块注入 |
+| 调试领域招式查询/沉淀（mcu/zephyr/linux/riscv/arm，非 QSH 专属） | `debug-knowledge` | 按域索引装载既往招式；可复用调试法自动填充入库 |
+| 查外部插件/MCP 能力（superpowers/claude-mem 等）怎么启用 | `skill-registry` | 外部能力目录 + 新环境启用法 |
+| 环境迁移/新工程引导/不确定调哪个 skill | `env-adapter` | 探测环境类型 + junction 接线 + 路由（非 810/新环境总入口） |
+
+> 调试流程次序：`qsh-debug §0` 总流程 → 连接/烧录实操（qsh-debug）→ 分层定位/断点方法（embedded-debug）→ QSH 速查（qsh-debug §7）。
 
 ### 4.2 常见现象速查表（最高频 10 条）
 
