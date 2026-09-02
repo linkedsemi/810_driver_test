@@ -1,0 +1,304 @@
+{
+  "timestamp": "2026-09-02T11:04:32.808609",
+  "board": "lsqsh_evb@2os",
+  "overall": "FAIL",
+  "cases": [
+    {
+      "name": "case_mixed_400k_6m25",
+      "result": "FAIL",
+      "ctrl_done": null,
+      "tgt_done": null,
+      "mem_unavailable": false,
+      "tests": [
+        {
+          "name": "api_neg_paths",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "back_to_back_8x8",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "big_256",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "ccc_basic",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "ccc_rapid_8",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "daa_discovery",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "hot_join",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "ibi",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "ibi_neg_paths",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "multi_msg_4",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "nack_bad_addr",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "read_32_direct",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "read_master_abort",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "read_underrun_16_32",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "read_underrun_8_16",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "setaasa",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "setdasa",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_100",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_8",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_delay_read_16",
+          "ctrl": "PASS",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_delay_read_len",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_indexed_read_16",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_read_15",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_read_16",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_read_17",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_read_1",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_read_32",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_stop_read_15",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_stop_read_16",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_stop_read_17",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_stop_read_1",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "write_stop_read_32",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        }
+      ]
+    }
+  ]
+}

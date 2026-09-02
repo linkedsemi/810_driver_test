@@ -9,7 +9,7 @@
 **预期数据约定**（协议头 `tests/include/i3c_i2c_switch_test_protocol.h` 为单一事实源）：
 - 写 pattern：`W <len> <0x00,0x01,...,0xlen-1>`（递增序列，target 逐字节校验）
 - 读 pattern：`TGT_READ_PATTERN_BASE(0xAA) + i`（target 预填 `tgt_tx_buf[256]`）
-- 命令通道：I3C 模式经 i3c5 私有写（target 0x32）；I2C 模式经 i2c5 写（slave 0x50）
+- 命令通道：I3C 模式经 i3c5 私有写（target 0x32）；I2C 模式经 i2c5 写（slave 0x58）
 
 | 测试项 | 驱动路径(函数+分支) | 维度 | 预期数据 | 预期来源 | 状态 |
 |--------|--------------------|------|----------|----------|------|

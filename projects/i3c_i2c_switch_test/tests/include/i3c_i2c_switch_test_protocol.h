@@ -26,10 +26,10 @@ extern "C" {
  *   cpu2 (controller 侧): I3C5 控制器 + i2c5 I2C 主机（同一模块两个驱动视图）
  *   cpu1 (target 侧):     I3C6 目标 + i2c6 I2C 从机（同一模块两个驱动视图）
  *   I3C 模式：i3c5 <-> i3c6（DAA + 私有读写，target 地址 0x32）
- *   I2C 模式：i2c5 <-> i2c6（master <-> slave，slave 地址 0x50）
+ *   I2C 模式：i2c5 <-> i2c6（master <-> slave，slave 地址 0x58）
  *
  * 命令下发：I3C 模式下经 i3c_transfer 私有写（target 0x32），
- *           I2C 模式下经 i2c_transfer 写（slave 0x50），首字节均为 opcode。
+ *           I2C 模式下经 i2c_transfer 写（slave 0x58），首字节均为 opcode。
  * opcode 用可打印 ASCII：逻辑分析仪上能直接认出命令含义。
  *
  * ztest 原生化说明：token 打印宏已随旧框架删除，本头只保留总线协议事实
@@ -48,7 +48,7 @@ extern "C" {
 #define CMD_PRINT_SUMMARY    'P'	/* 0x50：target 判定收尾（旧框架：打印 SUMMARY 后结束） */
 
 /* I2C 模式对端地址（i2c6 slave 注册地址） */
-#define I2C_SWITCH_SLAVE_ADDR 0x50U
+#define I2C_SWITCH_SLAVE_ADDR 0x58U
 /* i2c6 从机注册地址（切换测试与 master 侧 I2C_SWITCH_SLAVE_ADDR 一致） */
 #define I2C_TGT_SLAVE_ADDR I2C_SWITCH_SLAVE_ADDR
 
@@ -58,8 +58,8 @@ extern "C" {
 /* 切换时序（pinmux 切换 us 级，留足余量避免总线竞态）：
  * target 收到切换命令后延时 TGT_SWITCH_DELAY_MS 再切；
  * controller 发完命令后延时 CTRL_SWITCH_DELAY_MS 再切（必须 > TGT）。 */
-#define TGT_SWITCH_DELAY_MS  100
-#define CTRL_SWITCH_DELAY_MS 250
+#define TGT_SWITCH_DELAY_MS  5
+#define CTRL_SWITCH_DELAY_MS 8
 
 /* pinctrl "pinmux_i2c" 状态的 ID：私有状态从 PINCTRL_STATE_PRIV_START 起
  * （pinctrl-names 第 2 个状态），固件据此验证 IO 区分机制的配置。 */
@@ -104,6 +104,32 @@ static const char * const i3c_i2c_test_names[I3C_I2C_TEST_COUNT] = {
 	[TEST_I2C_NACK_BAD_ADDR] = "i2c_nack_bad_addr",
 	[TEST_SWITCH_STRESS] = "switch_stress",
 };
+
+/* 兼容旧 token 宏（ztest 迁移后不再输出 token，保留空宏避免编译错误） */
+#define I3C_I2C_TOKEN_PREFIX "I3C_I2C_TEST"
+#define I3C_I2C_START_CORE_VAR(core, name)       do {} while (0)
+#define I3C_I2C_PASS_CORE_VAR(core, name)        do {} while (0)
+#define I3C_I2C_FAIL_CORE_VAR(core, name, reason) do {} while (0)
+#define I3C_I2C_INFO_CORE(core, name, kv)        do {} while (0)
+#define I3C_I2C_BOOT_CORE(core)                  do {} while (0)
+#define I3C_I2C_DONE_CORE_VAR(core, result)      do {} while (0)
+#define I3C_I2C_SUMMARY_BEGIN(core)              do {} while (0)
+#define I3C_I2C_SUMMARY_ITEM(core, name, result) do {} while (0)
+#define I3C_I2C_SUMMARY_ITEM_REASON(core, name, result, reason) do {} while (0)
+#define I3C_I2C_SUMMARY_END(core, passed, ran)   do {} while (0)
+#define I3C_I2C_CTRL_BOOT()                      do {} while (0)
+#define I3C_I2C_CTRL_DONE_VAR(result)            do {} while (0)
+#define I3C_I2C_CTRL_START_VAR(name)             do {} while (0)
+#define I3C_I2C_CTRL_PASS_VAR(name)              do {} while (0)
+#define I3C_I2C_CTRL_FAIL_VAR(name, reason)      do {} while (0)
+#define I3C_I2C_TGT_BOOT()                       do {} while (0)
+#define I3C_I2C_TGT_DONE_VAR(result)             do {} while (0)
+#define I3C_I2C_TGT_START_VAR(name)              do {} while (0)
+#define I3C_I2C_TGT_PASS_VAR(name)               do {} while (0)
+#define I3C_I2C_TGT_FAIL_VAR(name, reason)       do {} while (0)
+#define I3C_I2C_TGT_START(name)                  do {} while (0)
+#define I3C_I2C_TGT_PASS(name)                   do {} while (0)
+#define I3C_I2C_TGT_FAIL(name, reason)           do {} while (0)
 
 #ifdef __cplusplus
 }

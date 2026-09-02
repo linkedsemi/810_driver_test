@@ -1,0 +1,44 @@
+{
+  "driver": "rtc_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@2os/lsqsh/cpu1",
+  "env": "tgt_uart=auto, timeout=30s",
+  "timestamp": "2026-09-02T10:53:34",
+  "results": {
+    "set_get_roundtrip": "FAIL",
+    "time_advances": "PASS",
+    "invalid_set_args": "PASS",
+    "alarm_set_get": "PASS",
+    "alarm_fires": "FAIL",
+    "alarm_invalid_args": "PASS",
+    "calibration_roundtrip": "PASS",
+    "calibration_negative": "PASS",
+    "calibration_null_arg": "PASS"
+  },
+  "infos": {
+    "monobit_8k": {
+      "ones": "32941",
+      "percent": "50.26"
+    }
+  },
+  "reasons": {
+    "set_get_roundtrip": "ztest fail_count",
+    "time_advances": "",
+    "invalid_set_args": "",
+    "alarm_set_get": "",
+    "calibration_roundtrip": "",
+    "calibration_negative": "",
+    "calibration_null_arg": ""
+  },
+  "notes": {
+    "set_get_roundtrip": "src=mem",
+    "time_advances": "src=mem",
+    "invalid_set_args": "src=mem",
+    "alarm_set_get": "src=mem",
+    "alarm_fires": "src=token",
+    "alarm_invalid_args": "src=token",
+    "calibration_roundtrip": "src=mem",
+    "calibration_negative": "src=mem",
+    "calibration_null_arg": "src=mem"
+  }
+}

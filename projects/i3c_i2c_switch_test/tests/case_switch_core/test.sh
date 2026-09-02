@@ -12,11 +12,11 @@
 #
 # CPU0 (controller, I3C5 + i2c5):
 #   - Runs the full sequence above; drives the command channel in I3C mode
-#     (i3c_transfer private write, target 0x32) or I2C mode (i2c_write, slave 0x50).
+#     (i3c_transfer private write, target 0x32) or I2C mode (i2c_write, slave 0x58).
 #   - pinctrl_apply_state() switches the shared pins between I3C and I2C functions.
 #
 # CPU1 (target, I3C6 + i2c6):
-#   - Registers i3c6 target (dynamic address 0x32) and i2c6 slave (address 0x50)
+#   - Registers i3c6 target (dynamic address 0x32) and i2c6 slave (address 0x58)
 #     simultaneously; both share one byte-level parse state machine.
 #   - Applies the pinmux switch on 'S'/'Y' commands after a delay.
 #

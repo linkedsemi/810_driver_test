@@ -12,21 +12,10 @@
  * I3C 与 I2C 两种模式的 target 回调共用同一套逐字节解析状态机：
  *   - 命令通道：'B' <id> 开始记账 / 'E' <id> 结账 / 'W' <len> <data> 写 pattern 校验
  *   - 切换通道：'S' 切 I2C / 'Y' 切回 I3C（经延时后应用，避总线竞态）
- *   - 收尾通道：'P' 通知判定收尾
+ *   - 收尾通道：'P' 打印 SUMMARY
  *
- * ISR 回调（write_received 等）只解析记账 + 塞事件队列（CLAUDE.md §4.2
- * ISR 禁 LOG），事件处理都在 dispatcher 线程上下文。
- *
- * ztest 原生框架版：
- *   - dispatcher 线程处理 BEGIN/END/SWITCH/SUMMARY 事件，END 时把该 id 的
- *     结账结果写入 tgt_item_* 快照（按总线枚举 id 索引）并置完成标记；
- *   - 10 个 ZTEST 测试项等各自的完成标记（STRESS 等满 SWITCH_STRESS_ROUNDS
- *     轮结账；'P' 可提前唤醒并按其时快照判定），断言快照结果；
- *   - 每项结账同时按 **ztest 链接下标** 写 test_results（GDB 兜底数据源）：
- *     下标由 ztest_unit_test 段按测试名运行时解析（tgt_link_index），
- *     与 ztest_glue 的链接序记账口径一致（§10.27）；
- *   - pinctrl_states 无总线命令：自检在 dispatcher 启动前完成（旧固件同序），
- *     结果同样写入快照 + 链接下标记账。
+ * ISR 回调（write_received 等）只解析记账 + 塞事件队列，所有 token 打印
+ * 都在 dispatcher 线程上下文（CLAUDE.md §4.2 ISR 禁 LOG）。
  */
 
 #include "i3c_i2c_target_test.h"
@@ -42,8 +31,6 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
-#include <zephyr/ztest.h>
-#include <zephyr/ztest_test.h>
 
 LOG_MODULE_REGISTER(i3c_i2c_target_test_impl, LOG_LEVEL_INF);
 
@@ -53,12 +40,12 @@ LOG_MODULE_REGISTER(i3c_i2c_target_test_impl, LOG_LEVEL_INF);
  * I3C 侧读回调据此判 END0（最后字节）；I2C 侧长度由 controller 的 STOP 决定。 */
 #define TGT_TX_LEN 16U
 
-/* 事件队列：ISR 只塞队列（K_NO_WAIT），dispatcher 线程消费 */
+/* 事件队列：ISR 只塞队列（K_NO_WAIT），dispatcher 线程消费并打印 */
 enum tgt_evt_type {
 	TGT_EVT_BEGIN,		/* 'B' <id>：开始记账 */
 	TGT_EVT_END,		/* 'E' <id>：结账 */
 	TGT_EVT_SWITCH,		/* 'S'/'Y'：切换 pinmux（id=1 切 I2C，0 切回 I3C） */
-	TGT_EVT_SUMMARY,	/* 'P'：判定收尾 */
+	TGT_EVT_SUMMARY,	/* 'P'：打印 SUMMARY */
 };
 
 struct tgt_event {
@@ -70,9 +57,12 @@ K_MSGQ_DEFINE(tgt_event_msgq, sizeof(struct tgt_event), 8, 4);
 
 /* ============ 共享状态（ISR 记账，dispatcher 消费） ============ */
 
+/* 纯 I2C case（CONFIG_I3C_I2C_PURE_I2C_TEST）禁用 i3c6，无 pinctrl 结构体 */
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 PINCTRL_DT_DEV_CONFIG_DECLARE(DT_NODELABEL(i3c6));
 static const struct pinctrl_dev_config *tgt_pcfg =
 	PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i3c6));
+#endif
 
 /* 读序列索引：每次写匹配复位 0，read 回调逐字节推进 */
 static volatile uint16_t tgt_tx_idx;
@@ -98,42 +88,6 @@ static volatile uint8_t tgt_cur_id;
 static volatile uint8_t tgt_last_id;
 static volatile bool tgt_failed;
 static char tgt_fail_reason[TR_REASON_LEN];
-
-/* dispatcher → ztest 测试项的结账快照（按总线枚举 id 索引）：
- * done = 该 id 已可判定（普通项首笔 'E'，STRESS 满 SWITCH_STRESS_ROUNDS 笔） */
-static volatile bool tgt_item_done[I3C_I2C_TEST_COUNT];
-static volatile bool tgt_item_failed[I3C_I2C_TEST_COUNT];
-static char tgt_item_reason[I3C_I2C_TEST_COUNT][TR_REASON_LEN];
-static volatile uint8_t tgt_end_count[I3C_I2C_TEST_COUNT];
-
-/* 'P' 到达标记：controller 套件 after 钩子下发的收尾通知（I1） */
-static volatile bool tgt_summary_evt;
-
-/* ============ 链接序下标解析（GDB 兜底记账口径，§10.27） ============ */
-
-/* ztest_unit_test 段链接序（SORT_BY_NAME）≠ 总线枚举 id 序。dispatcher
- * 结账记账必须写链接下标槽位（ztest_glue 同口径），否则套件未正常收尾时
- * GDB 兜底读出的结果张冠李戴。运行时按测试名查段内偏移，避免固件内
- * 硬编码第二张顺序表（增删测试项后自动跟随，构建后仍须 nm 复核）。 */
-static int tgt_link_index(const char *name)
-{
-	for (struct ztest_unit_test *t = _ztest_unit_test_list_start;
-	     t < _ztest_unit_test_list_end; t++) {
-		if (t->name != NULL && strcmp(t->name, name) == 0) {
-			return (int)(t - _ztest_unit_test_list_start);
-		}
-	}
-	return -1;
-}
-
-static void tgt_record_at_link(uint8_t id, bool passed, const char *reason)
-{
-	int idx = tgt_link_index(i3c_i2c_test_names[id]);
-
-	if (idx >= 0 && idx < TR_MAX_COUNT) {
-		tr_record(idx, passed ? TR_PASS : TR_FAIL, "%s", reason);
-	}
-}
 
 /* ============ 逐字节解析（ISR 上下文：只记账 + 塞队列） ============ */
 
@@ -205,8 +159,9 @@ static void tgt_reset_rx(void)
 	tgt_wr_idx = 0;
 }
 
-/* ============ I3C6 target 回调 ============ */
+/* ============ I3C6 target 回调（纯 I2C case 无 I3C 侧） ============ */
 
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 /* I3C 读字节：tx_idx < TGT_TX_LEN 时供数据，最后字节返回 1（驱动标 END0）；
  * 已预填 FIFO（16B 整满）时返回 0 字节并声明数据结束（样板同语义）。 */
 static int tgt_i3c_read_byte(uint8_t *val)
@@ -285,6 +240,7 @@ static int tgt_i3c_stop_cb(struct i3c_target_config *config)
 	tgt_i3c_prefill_tx();
 	return 0;
 }
+#endif /* !CONFIG_I3C_I2C_PURE_I2C_TEST */
 
 /* ============ I2C6 slave 回调（逐字节，与 I3C 回调共用解析状态机） ============ */
 
@@ -334,13 +290,15 @@ static int tgt_i2c_stop_cb(struct i2c_target_config *config)
 	return 0;
 }
 
-/* ============ dispatcher 线程：事件处理 ============ */
+/* ============ dispatcher 线程：事件处理（token 打印唯一位置） ============ */
 
 static void tgt_handle_begin(uint8_t id)
 {
 	if (id >= I3C_I2C_TEST_COUNT) {
 		return;
 	}
+
+	I3C_I2C_TGT_START_VAR(i3c_i2c_test_names[id]);
 
 	tgt_cur_id = id;
 	tgt_tx_idx = 0;
@@ -360,12 +318,8 @@ static void tgt_handle_end(uint8_t id)
 	}
 
 	if (id != tgt_cur_id) {
-		/* 结账 id 与当前记账 id 不符：旧语义直接记 FAIL 并完成该 id */
-		tgt_item_failed[id] = true;
-		strncpy(tgt_item_reason[id], "end_id_mismatch",
-			TR_REASON_LEN - 1);
-		tgt_item_done[id] = true;
-		tgt_record_at_link(id, false, "end_id_mismatch");
+		I3C_I2C_TGT_FAIL_VAR(i3c_i2c_test_names[id], "end_id_mismatch");
+		tr_record(id, TR_FAIL, "end_id_mismatch");
 		return;
 	}
 
@@ -375,21 +329,16 @@ static void tgt_handle_end(uint8_t id)
 			 "write_data_mismatch");
 	}
 
-	/* 快照累计结果（STRESS 每轮 'E' 都刷新累计值，旧 tr_record 同语义） */
-	tgt_item_failed[id] = tgt_failed;
-	strncpy(tgt_item_reason[id], tgt_fail_reason, TR_REASON_LEN - 1);
-	tgt_item_reason[id][TR_REASON_LEN - 1] = '\0';
-	tgt_record_at_link(id, !tgt_failed, tgt_fail_reason);
-
-	/* 完成判定：普通项首笔 'E' 即完成；STRESS 要集满
-	 * SWITCH_STRESS_ROUNDS 笔（最后一笔可能因总线故障缺失 → 该项
-	 * 测试等 'P' 收尾，与旧固件"末笔 E 丢失 target 无 DONE"行为同构） */
-	if (++tgt_end_count[id] >=
-	    (id == TEST_SWITCH_STRESS ? SWITCH_STRESS_ROUNDS : 1U)) {
-		tgt_item_done[id] = true;
+	if (tgt_failed) {
+		I3C_I2C_TGT_FAIL_VAR(i3c_i2c_test_names[id], tgt_fail_reason);
+		tr_record(id, TR_FAIL, "%s", tgt_fail_reason);
+	} else {
+		I3C_I2C_TGT_PASS_VAR(i3c_i2c_test_names[id]);
+		tr_record(id, TR_PASS, "");
 	}
 }
 
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 static void tgt_apply_switch(bool to_i2c)
 {
 	uint32_t state_id = to_i2c ? PINCTRL_STATE_PINMUX_I2C
@@ -401,6 +350,31 @@ static void tgt_apply_switch(bool to_i2c)
 		snprintk(tgt_fail_reason, sizeof(tgt_fail_reason),
 			 "pinctrl_apply_state(%s):%d", to_i2c ? "i2c" : "i3c", ret);
 	}
+}
+#endif
+
+static void tgt_print_summary(void)
+{
+	uint8_t passed = 0;
+
+	I3C_I2C_SUMMARY_BEGIN(TGT);
+	for (int i = 0; i < I3C_I2C_TEST_COUNT; i++) {
+		switch (test_results[i]) {
+		case TR_PASS:
+			I3C_I2C_SUMMARY_ITEM(TGT, i3c_i2c_test_names[i], "PASS");
+			passed++;
+			break;
+		case TR_FAIL:
+			I3C_I2C_SUMMARY_ITEM_REASON(TGT, i3c_i2c_test_names[i],
+						     "FAIL", test_reasons[i]);
+			break;
+		default:
+			I3C_I2C_SUMMARY_ITEM(TGT, i3c_i2c_test_names[i], "NOT_RUN");
+			break;
+		}
+	}
+	I3C_I2C_SUMMARY_END(TGT, passed, I3C_I2C_TEST_COUNT);
+	I3C_I2C_TGT_DONE_VAR(passed == I3C_I2C_TEST_COUNT ? "PASS" : "FAIL");
 }
 
 static void dispatcher_entry(void *p1, void *p2, void *p3)
@@ -425,12 +399,17 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 			tgt_handle_end(ev.id);
 			break;
 		case TGT_EVT_SWITCH:
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 			/* 延时再切：保证 controller 已停止总线操作（协议时序） */
 			k_sleep(K_MSEC(TGT_SWITCH_DELAY_MS));
 			tgt_apply_switch(ev.id != 0);
+#else
+			/* 纯 I2C case 无切换命令（'S'/'Y' 不应到达） */
+			break;
+#endif
 			break;
 		case TGT_EVT_SUMMARY:
-			tgt_summary_evt = true;
+			tgt_print_summary();
 			break;
 		}
 	}
@@ -438,26 +417,28 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 
 /* ============ 公共 init / dispatcher 入口 ============ */
 
-/* pinctrl_states：双核各自自主验证（不经总线命令），验证 IO 区分机制静态配置。
- * dispatcher 启动前执行（旧固件同序），结果写入快照 + 链接下标记账。 */
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
+/* pinctrl_states：双核各自自主验证（不经总线命令），验证 IO 区分机制静态配置 */
 static void tgt_self_check_pinctrl_states(void)
 {
+	I3C_I2C_TGT_START("pinctrl_states");
+
 	bool ok = (tgt_pcfg->state_cnt == 2) &&
 		  (tgt_pcfg->states[0].id == PINCTRL_STATE_DEFAULT) &&
 		  (tgt_pcfg->states[1].id == PINCTRL_STATE_PINMUX_I2C);
 
-	tgt_item_failed[TEST_PINCTRL_STATES] = !ok;
-	if (!ok) {
-		snprintk(tgt_item_reason[TEST_PINCTRL_STATES], TR_REASON_LEN,
+	if (ok) {
+		I3C_I2C_TGT_PASS("pinctrl_states");
+		tr_record(TEST_PINCTRL_STATES, TR_PASS, "");
+	} else {
+		snprintk(tgt_fail_reason, sizeof(tgt_fail_reason),
 			 "states:%u[%u,%u]", tgt_pcfg->state_cnt,
 			 tgt_pcfg->states[0].id, tgt_pcfg->states[1].id);
-	} else {
-		tgt_item_reason[TEST_PINCTRL_STATES][0] = '\0';
+		I3C_I2C_TGT_FAIL_VAR("pinctrl_states", tgt_fail_reason);
+		tr_record(TEST_PINCTRL_STATES, TR_FAIL, "%s", tgt_fail_reason);
 	}
-	tgt_item_done[TEST_PINCTRL_STATES] = true;
-	tgt_record_at_link(TEST_PINCTRL_STATES, ok,
-			   tgt_item_reason[TEST_PINCTRL_STATES]);
 }
+#endif
 
 void target_test_init(void)
 {
@@ -474,6 +455,14 @@ void target_test_init(void)
 		.address = I2C_TGT_SLAVE_ADDR,
 		.callbacks = &i2c_cb,
 	};
+
+	tgt_reset_rx();
+	tgt_failed = false;
+	tgt_fail_reason[0] = '\0';
+
+	tr_init(I3C_I2C_TEST_COUNT);
+
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 	static struct i3c_target_callbacks i3c_cb = {
 		.write_requested_cb = tgt_i3c_write_requested_cb,
 		.write_received_cb = tgt_i3c_write_received_cb,
@@ -486,12 +475,7 @@ void target_test_init(void)
 		.callbacks = &i3c_cb,
 	};
 
-	tgt_reset_rx();
-	tgt_failed = false;
-	tgt_fail_reason[0] = '\0';
-
 	int ret = i3c_target_register(tgt_i3c_dev, &i3c_cfg);
-
 	if (ret != 0) {
 		LOG_ERR("i3c_target_register failed: %d", ret);
 	}
@@ -503,6 +487,12 @@ void target_test_init(void)
 	if (ret != 0) {
 		LOG_ERR("i2c_target_register failed: %d", ret);
 	}
+#else
+	int ret = i2c_target_register(tgt_i2c_dev, &i2c_cfg);
+	if (ret != 0) {
+		LOG_ERR("i2c_target_register failed: %d", ret);
+	}
+#endif
 }
 
 void target_dispatcher_run(void)
@@ -510,83 +500,14 @@ void target_dispatcher_run(void)
 	static K_THREAD_STACK_DEFINE(dispatcher_stack, 4096);
 	static struct k_thread dispatcher_thread;
 
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 	tgt_self_check_pinctrl_states();
+#endif
 
 	k_thread_create(&dispatcher_thread, dispatcher_stack,
 			K_THREAD_STACK_SIZEOF(dispatcher_stack),
 			dispatcher_entry, NULL, NULL, NULL,
 			7, 0, K_NO_WAIT);
-	/* ztest 模式：不 join——dispatcher 常驻处理总线事件，test_main 返回后
-	 * 由 ztest 套件线程继续运行（旧 §4.1 "test_main 不得返回"已随框架迁移
-	 * 撤销，Task 7 同款）。 */
-}
-
-/* ============ ztest 套件（10 项，与 controller 同名双 PASS 判定） ============ */
-
-ZTEST_SUITE(switch_tgt, NULL, NULL, NULL, NULL, NULL);
-
-/* 单项测试体公共实现：等本项结账快照（或 'P' 收尾）后判定。
- * 'P' 到达但本项无结账 → 记 FAIL "no_end_received"（controller 侧流程
- * 异常终止）；断言失败即测试失败（§13.5 可归因）。 */
-static void tgt_test_item(enum i3c_i2c_test_id id)
-{
-	while (!tgt_item_done[id] && !tgt_summary_evt) {
-		k_sleep(K_MSEC(20));
-	}
-
-	if (tgt_item_failed[id]) {
-		zassert_true(false, "%s", tgt_item_reason[id]);
-	} else if (!tgt_item_done[id]) {
-		zassert_true(false, "no_end_received");
-	}
-}
-
-ZTEST(switch_tgt, pinctrl_states)
-{
-	tgt_test_item(TEST_PINCTRL_STATES);
-}
-
-ZTEST(switch_tgt, i3c_baseline)
-{
-	tgt_test_item(TEST_I3C_BASELINE);
-}
-
-ZTEST(switch_tgt, switch_i3c_to_i2c)
-{
-	tgt_test_item(TEST_SWITCH_I3C_TO_I2C);
-}
-
-ZTEST(switch_tgt, i2c_rw_1)
-{
-	tgt_test_item(TEST_I2C_RW_1);
-}
-
-ZTEST(switch_tgt, i2c_rw_16)
-{
-	tgt_test_item(TEST_I2C_RW_16);
-}
-
-ZTEST(switch_tgt, i2c_rw_17)
-{
-	tgt_test_item(TEST_I2C_RW_17);
-}
-
-ZTEST(switch_tgt, i2c_rw_100)
-{
-	tgt_test_item(TEST_I2C_RW_100);
-}
-
-ZTEST(switch_tgt, switch_i2c_to_i3c)
-{
-	tgt_test_item(TEST_SWITCH_I2C_TO_I3C);
-}
-
-ZTEST(switch_tgt, i2c_nack_bad_addr)
-{
-	tgt_test_item(TEST_I2C_NACK_BAD_ADDR);
-}
-
-ZTEST(switch_tgt, switch_stress)
-{
-	tgt_test_item(TEST_SWITCH_STRESS);
+	/* 同步 join：test_main 不得返回（CLAUDE.md §4.1） */
+	k_thread_join(&dispatcher_thread, K_FOREVER);
 }

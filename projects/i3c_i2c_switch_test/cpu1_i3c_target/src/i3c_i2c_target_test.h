@@ -16,7 +16,9 @@ extern "C" {
 #endif
 
 /* i3c6：I3C target（I3C 模式）；i2c6：I2C slave（I2C 模式，同一模块两个驱动视图） */
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 extern const struct device *tgt_i3c_dev;
+#endif
 extern const struct device *tgt_i2c_dev;
 
 /* 读预填数据缓冲（0xAA + i），i3c/i2c 读回调共用 */

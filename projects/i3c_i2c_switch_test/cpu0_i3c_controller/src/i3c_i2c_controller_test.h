@@ -27,15 +27,6 @@ struct i3c_device_desc *ctrl_wait_for_target(void);
 int ctrl_i3c_write(struct i3c_device_desc *target, const uint8_t *buf, size_t len);
 int ctrl_i3c_read(struct i3c_device_desc *target, uint8_t *buf, size_t len);
 
-/* 启动功能流程 dispatcher 线程（10 项按旧固件功能顺序执行，每项完成后
- * 置完成快照唤醒对应 ZTEST 测试项）；test_main 在 zt_run_all() 前调用 */
-void ctrl_flow_start(void);
-
-/* 收尾通知 'P'：test_main 在 zt_run_all() 返回后调用（I1：ztest_run_all
- * 无论断言成败都会返回，成败路径均下发；不能放 suite after——本树 after
- * 是 per-test 钩子，Task 8 审查 Critical 1）。不 zassert、失败忽略。 */
-void ctrl_send_summary(void);
-
 #ifdef __cplusplus
 }
 #endif

@@ -61,8 +61,8 @@ TARGET_ROM_START = "0x100c0000"      # cpu1 入口（§3，与 test_common.sh �
 CONTROLLER_LOAD_ADDR = "0x10000000"  # cpu2 RAM 基址（§3）
 DEBUGSERVER_EXE = r"C:\uaer_app\debug_server\bin\DebugServerConsole.exe"
 
-CTRL_UART = os.environ.get("PRE_CTRL_UART", "COM15")
-TGT_UART = os.environ.get("PRE_TGT_UART", "COM16")
+CTRL_UART = os.environ.get("PRE_CTRL_UART", "COM10")
+TGT_UART = os.environ.get("PRE_TGT_UART", "COM11")
 CTRL_BANNER = "[PRE CK CTRL]"
 TGT_BANNER = "[PRE CK TGT]"
 CHECKS: List[Tuple[str, bool, str]] = []   # [(name, passed, detail)]

@@ -24,8 +24,8 @@ CASES_FILE = Path(__file__).resolve().parent / "cases.yaml"
 PRECHECK = ROOT / "regression" / "precheck" / "run_precheck.py"
 
 # 双核工程 UART（COM 号以设备管理器为准；批量注入，run 脚本要求显式）
-CTRL_UART = "COM15"
-TGT_UART = "COM16"
+CTRL_UART = "COM10"
+TGT_UART = "COM11"
 
 # DebugServer（§0/§10.17）：1025 由 PC 进程 XuanTie DebugServer 提供；
 # 重启 = 四步自愈（杀残留 gdb → taskkill /IM → netstat 兜底 → Popen + 日志轮询）。

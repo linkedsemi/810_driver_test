@@ -17,18 +17,6 @@
  * 每项测试 begin/end 经命令通道通知 target 记账（'B' <id> / 'E' <id>），
  * 双核各自独立判定，CTRL+TGT 双 PASS 才算过（CLAUDE.md §6）。
  * pinctrl_states 例外：双方自主验证，不发 'B'/'E'。
- *
- * ztest 原生框架版：功能顺序 ≠ ztest 链接序（SORT_BY_NAME 字典序），
- * 故整个 10 项流程由 dispatcher 线程按旧固件功能顺序原样执行（非致命
- * 失败累计 + 继续，与旧 test_main 语义逐点一致），每项结束后置
- * ctrl_item_done[id] 唤醒对应 ZTEST 测试项；'P'（收尾通知）由 test_main
- * 在 zt_run_all() 返回后下发（ctrl_send_summary，I1：ztest_run_all 无论
- * 断言成败都会返回，成败路径均下发——不能放 suite after 钩子：本树
- * after 是 per-test 钩子，链接序首项结束即触发 'P'，会与仍在跑的
- * switch_stress 并发访问总线，Task 8 审查 Critical 1 修正）。'E' 全部由
- * dispatcher 线程下发——zassert 失败的长跳转只发生在 ztest 测试线程，
- * 不会跳过任何 'E'。
- * 结果记账由 ztest_glue 按 ztest stats + 链接序自动完成（§4.5）。
  */
 
 #include "i3c_i2c_controller_test.h"
@@ -47,7 +35,6 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
-#include <zephyr/ztest.h>
 
 LOG_MODULE_REGISTER(i3c_i2c_master_test_impl, LOG_LEVEL_INF);
 
@@ -63,21 +50,19 @@ static struct i3c_device_desc *target_desc;
 
 /* pinctrl 配置（i3c5 节点双状态：default=I3C, pinmux_i2c=I2C）。
  * 应用侧引用驱动生成的 pinctrl 配置需显式 extern 声明
- * （PINCTRL_DT_DEV_CONFIG_DECLARE，CONFIG_PINCTRL_NON_STATIC）。 */
+ * （PINCTRL_DT_DEV_CONFIG_DECLARE，CONFIG_PINCTRL_NON_STATIC）。
+ * 纯 I2C case（CONFIG_I3C_I2C_PURE_I2C_TEST）禁用 i3c5，无 pinctrl 结构体。 */
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 PINCTRL_DT_DEV_CONFIG_DECLARE(DT_NODELABEL(i3c5));
 static const struct pinctrl_dev_config *ctrl_pcfg =
 	PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i3c5));
+#endif
 
 /* 当前测试的失败累计：begin 时同 id 不清（STRESS 任一轮失败即败） */
 static enum i3c_i2c_test_id ctrl_cur_id;
 static enum i3c_i2c_test_id ctrl_last_id = I3C_I2C_TEST_COUNT;
 static bool ctrl_failed;
 static char ctrl_fail_reason[TR_REASON_LEN];
-
-/* dispatcher → ztest 测试项的完成通知（按枚举 id 索引） */
-static volatile bool ctrl_item_done[I3C_I2C_TEST_COUNT];
-static volatile bool ctrl_item_failed[I3C_I2C_TEST_COUNT];
-static char ctrl_item_reason[I3C_I2C_TEST_COUNT][TR_REASON_LEN];
 
 /* I2C 读的最大长度（i2c_rw_100 用） */
 #define I2C_RW_MAX 100U
@@ -108,10 +93,12 @@ static void ctrl_set_fail(const char *reason_fmt, ...)
 	va_end(ap);
 }
 
-/* ============ 测试 begin/end（'B'/'E' 命令，无 token 打印） ============ */
+/* ============ 测试 begin/end（'B'/'E' 命令 + token + 结果记账） ============ */
 
 static void ctrl_test_begin(enum i3c_i2c_test_id id, bool via_bus)
 {
+	I3C_I2C_CTRL_START_VAR(i3c_i2c_test_names[id]);
+
 	ctrl_cur_id = id;
 	if (id != ctrl_last_id) {
 		/* 新测试清失败累计；同 id 多轮 begin（STRESS）不清 */
@@ -138,26 +125,69 @@ static void ctrl_test_end(enum i3c_i2c_test_id id, bool via_bus)
 			ctrl_set_fail("send_end");
 		}
 	}
+
+	if (ctrl_failed) {
+		I3C_I2C_CTRL_FAIL_VAR(i3c_i2c_test_names[id], ctrl_fail_reason);
+		tr_record(id, TR_FAIL, "%s", ctrl_fail_reason);
+	} else {
+		I3C_I2C_CTRL_PASS_VAR(i3c_i2c_test_names[id]);
+		tr_record(id, TR_PASS, "");
+	}
 }
 
-/* 单项流程结束：快照本项结果 + 唤醒对应 ZTEST 测试（dispatcher 线程调用）。
- * STRESS 每轮 end 都会写 ctrl_failed（累计），但 done 只在整个流程
- * 结束后置位——测试项看到的是全轮累计结果（旧语义）。 */
-static void ctrl_item_finish(enum i3c_i2c_test_id id)
+/* ============ 切换辅助（pinmux apply + 模式跟踪，纯 I2C 无切换） ============ */
+
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
+/* ==== 临时调试探针：快照 GPIOJ 全部 pad 配置 + 功能路由位 ====
+ * [0]  PU1_PU0   @0x4006f2a4  APP_PMU IO_CFG[9]（GPIOJ：PJ10/11 = i3c5 引脚）
+ * [1]  PD_PU2    @0x4006f2a8
+ * [2]  IEN1_IEN0 @0x4006f2ac
+ * [3]  DS1_DS0   @0x4006f2b0
+ * [4]  AE_DS2    @0x4006f2b4
+ * [5]  OD_FIR    @0x4006f2b8
+ * [6]  SL_ST     @0x4006f2bc
+ * [7]  IO_FUNC[1][4] @0x400610b0  FUNC1(I2C) 使能位 GPIOJ 高半区 bit26/27
+ * [8]  IO_FUNC[2][4] @0x400610d0  FUNC2(I3C) 使能位 GPIOJ 高半区 bit26/27
+ * [9]  FUNC_SEL[9][2] @0x4008fcd8  FUNC1 alt 码（PJ10=byte2, PJ11=byte3）
+ * 采样点：ctrl_apply_pinctrl 进入(pre)/返回(post) 各一次 + boot 一次。
+ * write 失败时另存 dbg_err（10 个 pad 字 + I3C EVR/SER 错误码）。
+ * 调试完必须删除（探针纪律 §8）。 */
+static volatile uint32_t dbg_snap[26][10];
+static volatile int dbg_snap_idx;
+static volatile uint32_t dbg_err[12];
+static volatile int dbg_err_valid;
+
+static void dbg_snapshot_regs(void)
 {
-	ctrl_item_failed[id] = ctrl_failed;
-	strncpy(ctrl_item_reason[id], ctrl_fail_reason, TR_REASON_LEN - 1);
-	ctrl_item_reason[id][TR_REASON_LEN - 1] = '\0';
-	ctrl_item_done[id] = true;
+	if (dbg_snap_idx < 26) {
+		volatile uint32_t *d = dbg_snap[dbg_snap_idx];
+
+		d[0] = *(volatile uint32_t *)0x4006f2a4;
+		d[1] = *(volatile uint32_t *)0x4006f2a8;
+		d[2] = *(volatile uint32_t *)0x4006f2ac;
+		d[3] = *(volatile uint32_t *)0x4006f2b0;
+		d[4] = *(volatile uint32_t *)0x4006f2b4;
+		d[5] = *(volatile uint32_t *)0x4006f2b8;
+		d[6] = *(volatile uint32_t *)0x4006f2bc;
+		d[7] = *(volatile uint32_t *)0x400610b0;
+		d[8] = *(volatile uint32_t *)0x400610d0;
+		d[9] = *(volatile uint32_t *)0x4008fcd8;
+		dbg_snap_idx++;
+	}
 }
 
-/* ============ 切换辅助（pinmux apply + 模式跟踪） ============ */
+/* test_main 用的公开入口 */
+void dbg_snapshot_regs_pub(void) { dbg_snapshot_regs(); }
 
 static int ctrl_apply_pinctrl(bool to_i2c)
 {
 	uint32_t state_id = to_i2c ? PINCTRL_STATE_PINMUX_I2C
 				   : PINCTRL_STATE_DEFAULT;
-	int ret = pinctrl_apply_state(ctrl_pcfg, state_id);
+	int ret;
+
+	dbg_snapshot_regs();	/* 探针：apply 前 */
+	ret = pinctrl_apply_state(ctrl_pcfg, state_id);
+	dbg_snapshot_regs();	/* 探针：apply 后 */
 
 	if (ret == 0) {
 		ctrl_mode = to_i2c ? MODE_I2C : MODE_I3C;
@@ -184,6 +214,7 @@ static bool ctrl_switch_to(bool to_i2c)
 	}
 	return true;
 }
+#endif
 
 /* ============ 基本读写（按当前模式） ============ */
 
@@ -239,8 +270,9 @@ static void ctrl_basic_rw(void)
 	}
 }
 
-/* ============ 各测试项 ============ */
+/* ============ 各测试项（纯 I2C case 无 I3C/切换项） ============ */
 
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
 static void ctrl_test_pinctrl_states(void)
 {
 	ctrl_test_begin(TEST_PINCTRL_STATES, false);
@@ -404,143 +436,126 @@ static void ctrl_test_switch_stress(void)
 		}
 	}
 }
+#endif /* !CONFIG_I3C_I2C_PURE_I2C_TEST */
 
-/* ============ 功能流程（dispatcher 线程，旧 test_main 功能序原样执行） ============ */
+#ifdef CONFIG_I3C_I2C_PURE_I2C_TEST
+/* ============ 纯 I2C 波形测试（i2c_wave） ============ */
 
-static void ctrl_flow_entry(void *p1, void *p2, void *p3)
+/* 波形观察轮数与轮间间隔：每轮一次 16B 写+读传输（400K 下 ~0.3ms 波形
+ * 爆发），轮间间隔便于示波器/逻辑分析仪抓拍；总时长 ~10s。 */
+#define PURE_I2C_ROUNDS 100
+#define PURE_I2C_ROUND_DELAY_MS 100
+
+static void ctrl_test_i2c_wave(void)
 {
-	ARG_UNUSED(p1);
-	ARG_UNUSED(p2);
-	ARG_UNUSED(p3);
+	uint8_t wbuf[2 + 16];
+	uint8_t rbuf[16];
 
+	ctrl_test_begin(TEST_I2C_WAVE, true);
+
+	for (int round = 0; round < PURE_I2C_ROUNDS; round++) {
+		wbuf[0] = CMD_WRITE_PATTERN;
+		wbuf[1] = 16;
+		for (size_t i = 0; i < 16; i++) {
+			wbuf[2 + i] = (uint8_t)i;
+		}
+
+		if (i2c_write(ctrl_i2c_dev, wbuf, sizeof(wbuf),
+			      I2C_TGT_SLAVE_ADDR) != 0) {
+			ctrl_set_fail("write:round%d", round);
+			break;
+		}
+		if (i2c_read(ctrl_i2c_dev, rbuf, sizeof(rbuf),
+			     I2C_TGT_SLAVE_ADDR) != 0) {
+			ctrl_set_fail("read:round%d", round);
+			break;
+		}
+		for (size_t i = 0; i < 16; i++) {
+			if (rbuf[i] != (uint8_t)(TGT_READ_PATTERN_BASE + i)) {
+				ctrl_set_fail("byte[%u]:0x%02X!=0x%02X",
+					      (unsigned)i, rbuf[i],
+					      TGT_READ_PATTERN_BASE + i);
+				break;
+			}
+		}
+		if (ctrl_failed) {
+			break;
+		}
+
+		k_sleep(K_MSEC(PURE_I2C_ROUND_DELAY_MS));
+	}
+
+	I3C_I2C_INFO_CORE(CTRL, i3c_i2c_test_names[TEST_I2C_WAVE],
+			  "rounds=100,delay_ms=100");
+	ctrl_test_end(TEST_I2C_WAVE, true);
+}
+#endif /* CONFIG_I3C_I2C_PURE_I2C_TEST */
+
+/* ============ SUMMARY ============ */
+
+static void ctrl_print_summary(void)
+{
+	uint8_t passed = 0;
+
+	I3C_I2C_SUMMARY_BEGIN(CTRL);
+	for (int i = 0; i < I3C_I2C_TEST_COUNT; i++) {
+		switch (test_results[i]) {
+		case TR_PASS:
+			I3C_I2C_SUMMARY_ITEM(CTRL, i3c_i2c_test_names[i], "PASS");
+			passed++;
+			break;
+		case TR_FAIL:
+			I3C_I2C_SUMMARY_ITEM_REASON(CTRL, i3c_i2c_test_names[i],
+						     "FAIL", test_reasons[i]);
+			break;
+		default:
+			I3C_I2C_SUMMARY_ITEM(CTRL, i3c_i2c_test_names[i], "NOT_RUN");
+			break;
+		}
+	}
+	I3C_I2C_SUMMARY_END(CTRL, passed, I3C_I2C_TEST_COUNT);
+}
+
+/* ============ test_main ============ */
+
+void test_main(void)
+{
+	I3C_I2C_CTRL_BOOT();
+
+	LOG_INF("[CPU2 I3C_I2C_CTRL] controller test started");
+
+	tr_init(I3C_I2C_TEST_COUNT);
+
+#ifdef CONFIG_I3C_I2C_PURE_I2C_TEST
+	/* 纯 I2C 波形 case：无 I3C 阶段，初始即 I2C 模式 */
+	ctrl_mode = MODE_I2C;
+	target_desc = NULL;
+
+	ctrl_test_i2c_wave();
+#else
 	ctrl_mode = MODE_I3C;
 	target_desc = NULL;
 
+	/* 探针：boot 初始状态（i3c5 init 已把引脚配成 I3C） */
+	dbg_snapshot_regs_pub();
+
 	ctrl_test_pinctrl_states();
-	ctrl_item_finish(TEST_PINCTRL_STATES);
-
 	ctrl_test_i3c_baseline();
-	ctrl_item_finish(TEST_I3C_BASELINE);
-
 	ctrl_test_switch_i3c_to_i2c();
-	ctrl_item_finish(TEST_SWITCH_I3C_TO_I2C);
-
 	ctrl_test_i2c_rw(TEST_I2C_RW_1, 1);
-	ctrl_item_finish(TEST_I2C_RW_1);
-
 	ctrl_test_i2c_rw(TEST_I2C_RW_16, 16);
-	ctrl_item_finish(TEST_I2C_RW_16);
-
 	ctrl_test_i2c_rw(TEST_I2C_RW_17, 17);
-	ctrl_item_finish(TEST_I2C_RW_17);
-
 	ctrl_test_i2c_rw(TEST_I2C_RW_100, 100);
-	ctrl_item_finish(TEST_I2C_RW_100);
-
 	ctrl_test_i2c_nack_bad_addr();
-	ctrl_item_finish(TEST_I2C_NACK_BAD_ADDR);
-
 	ctrl_test_switch_i2c_to_i3c();
-	ctrl_item_finish(TEST_SWITCH_I2C_TO_I3C);
-
 	ctrl_test_switch_stress();
-	ctrl_item_finish(TEST_SWITCH_STRESS);
-}
+#endif
 
-void ctrl_flow_start(void)
-{
-	/* 流程含 i2c/i3c 驱动调用链 + 局部 100B 缓冲（旧固件在 10KB main
-	 * 栈上跑），dispatcher 线程独立给 8KB 静态栈 */
-	static K_THREAD_STACK_DEFINE(flow_stack, 8192);
-	static struct k_thread flow_thread;
+	/* 通知 target 打印总结（此时处于 I3C 模式，'P' 走 i3c 帧），
+	 * 稍等让 target 的总结先出完再打印自己的 */
+	(void)ctrl_send_cmd((const uint8_t[]){ CMD_PRINT_SUMMARY }, 1);
+	k_sleep(K_MSEC(5));
 
-	k_thread_create(&flow_thread, flow_stack, K_THREAD_STACK_SIZEOF(flow_stack),
-			ctrl_flow_entry, NULL, NULL, NULL,
-			7, 0, K_NO_WAIT);
-}
-
-/* ============ 完成通知 'P'（test_main 在 zt_run_all() 后调用） ============ */
-
-/* 收尾通知 'P'：ztest_run_all 返回 = 10 个 ZTEST 快照全部齐（每项快照 =
- * dispatcher 完成对应功能项，等快照的测试体全部结束），与旧固件"功能流程
- * 全部完成才发 'P'"时序等价（样板 i3c_dualcore_test 同款模式，Task 8 审查
- * Critical 1 指定修法 b）。不 zassert、失败忽略（target 侧判定结构自带兜底）。
- * ★ 不能放 suite after 钩子：本树 ztest 的 after 是 per-test 钩子（每项测试
- * 后调用），链接序首项结束即触发 'P'，此时 switch_stress 仍在跑——并发访问
- * 总线 + target 端 switch_stress 每轮伪失败（no_end_received）。 */
-void ctrl_send_summary(void)
-{
-	const uint8_t cmd = CMD_PRINT_SUMMARY;
-
-	(void)ctrl_send_cmd(&cmd, 1);
-	/* 发 'P' 后留 20ms 让 target 先完成收尾（旧固件同款时序） */
-	k_sleep(K_MSEC(20));
-}
-
-/* ============ ztest 套件（10 项，与 target 同名双 PASS 判定） ============ */
-
-ZTEST_SUITE(switch_ctrl, NULL, NULL, NULL, NULL, NULL);
-
-/* 单项测试体公共实现：等 dispatcher 完成本项流程后按快照判定。
- * 断言失败即测试失败（zassert 打印 Assertion failed 详情，harness 归因
- * 进报告 reason 列，§13.5）。 */
-static void ctrl_test_item(enum i3c_i2c_test_id id)
-{
-	while (!ctrl_item_done[id]) {
-		k_sleep(K_MSEC(20));
-	}
-
-	if (ctrl_item_failed[id]) {
-		zassert_true(false, "%s", ctrl_item_reason[id]);
-	}
-}
-
-ZTEST(switch_ctrl, pinctrl_states)
-{
-	ctrl_test_item(TEST_PINCTRL_STATES);
-}
-
-ZTEST(switch_ctrl, i3c_baseline)
-{
-	ctrl_test_item(TEST_I3C_BASELINE);
-}
-
-ZTEST(switch_ctrl, switch_i3c_to_i2c)
-{
-	ctrl_test_item(TEST_SWITCH_I3C_TO_I2C);
-}
-
-ZTEST(switch_ctrl, i2c_rw_1)
-{
-	ctrl_test_item(TEST_I2C_RW_1);
-}
-
-ZTEST(switch_ctrl, i2c_rw_16)
-{
-	ctrl_test_item(TEST_I2C_RW_16);
-}
-
-ZTEST(switch_ctrl, i2c_rw_17)
-{
-	ctrl_test_item(TEST_I2C_RW_17);
-}
-
-ZTEST(switch_ctrl, i2c_rw_100)
-{
-	ctrl_test_item(TEST_I2C_RW_100);
-}
-
-ZTEST(switch_ctrl, switch_i2c_to_i3c)
-{
-	ctrl_test_item(TEST_SWITCH_I2C_TO_I3C);
-}
-
-ZTEST(switch_ctrl, i2c_nack_bad_addr)
-{
-	ctrl_test_item(TEST_I2C_NACK_BAD_ADDR);
-}
-
-ZTEST(switch_ctrl, switch_stress)
-{
-	ctrl_test_item(TEST_SWITCH_STRESS);
+	ctrl_print_summary();
+	I3C_I2C_CTRL_DONE_VAR(ctrl_failed ? "FAIL" : "PASS");
 }

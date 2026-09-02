@@ -15,16 +15,10 @@
  *   I3C 模式：i3c_transfer 私有写（target 动态地址 0x32）
  *   I2C 模式：i2c_write（slave 地址 0x50）
  * 首字节为 opcode（ASCII 助记符），见 i3c_i2c_switch_test_protocol.h。
- *
- * ztest 原生框架版：test_main 打印角色 banner 后 zt_init + ctrl_flow_start
- * （功能流程 dispatcher 线程）+ zt_run_all（common/ztest_glue）。套件内
- * 10 个 ZTEST 项与 10 个功能项一一对应，等待 dispatcher 的完成快照后
- * 断言（§4.5 记账由 ztest_glue 自动完成）。
  */
 
 #include "i3c_i2c_controller_test.h"
 #include "i3c_i2c_switch_test_protocol.h"
-#include "ztest_glue.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -50,6 +44,29 @@ int ctrl_i3c_write(struct i3c_device_desc *target, const uint8_t *buf, size_t le
 	};
 
 	int ret = i3c_transfer(target, &msg, 1);
+
+	if (ret != 0) {
+		/* 探针：write 失败时抓 pad 配置 + I3C 控制器错误码
+		 * （i3c_transfer 返回时 ERRF 已被驱动清掉，但 SER 的
+		 *  ANACK/DNACK/DOVR 类型位保留到下一次帧开始才更新）。
+		 * 调试完必须删除（探针纪律 §8）。 */
+		extern volatile uint32_t dbg_err[12];
+		extern volatile int dbg_err_valid;
+
+		dbg_err[0] = *(volatile uint32_t *)0x4006f2a4;	/* PU1_PU0 */
+		dbg_err[1] = *(volatile uint32_t *)0x4006f2a8;	/* PD_PU2  */
+		dbg_err[2] = *(volatile uint32_t *)0x4006f2ac;	/* IEN     */
+		dbg_err[3] = *(volatile uint32_t *)0x4006f2b0;	/* DS1_DS0 */
+		dbg_err[4] = *(volatile uint32_t *)0x4006f2b4;	/* AE_DS2  */
+		dbg_err[5] = *(volatile uint32_t *)0x4006f2b8;	/* OD_FIR  */
+		dbg_err[6] = *(volatile uint32_t *)0x4006f2bc;	/* SL_ST   */
+		dbg_err[7] = *(volatile uint32_t *)0x400610b0;	/* IO_FUNC[1][4] */
+		dbg_err[8] = *(volatile uint32_t *)0x400610d0;	/* IO_FUNC[2][4] */
+		dbg_err[9] = *(volatile uint32_t *)0x4008fcd8;	/* FUNC_SEL[9][2] */
+		dbg_err[10] = *(volatile uint32_t *)0x40094158;	/* EVR     */
+		dbg_err[11] = *(volatile uint32_t *)0x40094160;	/* SER     */
+		dbg_err_valid = (int)ret;	/* 非 0 = 有效，同时记录返回码 */
+	}
 
 	return ret;
 }
@@ -90,16 +107,4 @@ struct i3c_device_desc *ctrl_wait_for_target(void)
 	}
 
 	return NULL;
-}
-
-void test_main(void)
-{
-	LOG_INF("[CPU2 I3C_I2C_CTRL] controller test started");   /* 角色 banner（harness 依赖，逐字保留） */
-
-	zt_init("CTRL");
-	ctrl_flow_start();
-	zt_run_all();
-	/* 10 个 ZTEST 快照齐 = 10 功能项完成 → 发 'P' 收尾（I1，样板
-	 * i3c_dualcore_test 同款：ztest_run_all 返回后发完成命令） */
-	ctrl_send_summary();
 }
