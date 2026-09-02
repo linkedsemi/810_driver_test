@@ -92,6 +92,7 @@ static char tgt_fail_reason[TR_REASON_LEN];
 /* ============ 逐字节解析（ISR 上下文：只记账 + 塞队列） ============ */
 
 static volatile bool tgt_evt_overflow;	/* 事件队列满（不应发生，协议单帧 ≤ 4 事件） */
+static volatile bool tgt_done;		/* SUMMARY 后置 true，dispatcher 退出 */
 
 static void tgt_queue_event(enum tgt_evt_type type, uint8_t id)
 {
@@ -410,7 +411,11 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 			break;
 		case TGT_EVT_SUMMARY:
 			tgt_print_summary();
+			tgt_done = true;
 			break;
+		}
+		if (tgt_done) {
+			break;	/* SUMMARY 已打印，dispatcher 退出，test_main 继续 */
 		}
 	}
 }

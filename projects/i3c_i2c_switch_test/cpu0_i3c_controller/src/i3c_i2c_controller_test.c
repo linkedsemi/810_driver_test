@@ -22,6 +22,7 @@
 #include "i3c_i2c_controller_test.h"
 #include "i3c_i2c_switch_test_protocol.h"
 #include "test_results.h"
+#include "ztest_glue.h"
 
 #include <stdbool.h>
 #include <stdarg.h>
@@ -154,8 +155,10 @@ static void ctrl_test_end(enum i3c_i2c_test_id id, bool via_bus)
  * 调试完必须删除（探针纪律 §8）。 */
 static volatile uint32_t dbg_snap[26][10];
 static volatile int dbg_snap_idx;
-static volatile uint32_t dbg_err[12];
-static volatile int dbg_err_valid;
+/* dbg_err/dbg_err_valid 必须是全局符号：main.c 的 ctrl_i3c_write 在写失败时
+ * 经 extern 引用它们另存 pad 字 + I3C EVR/SER 错误码（static 会链接失败）。 */
+volatile uint32_t dbg_err[12];
+volatile int dbg_err_valid;
 
 static void dbg_snapshot_regs(void)
 {
@@ -520,7 +523,7 @@ static void ctrl_print_summary(void)
 
 void test_main(void)
 {
-	I3C_I2C_CTRL_BOOT();
+	zt_init("CTRL");
 
 	LOG_INF("[CPU2 I3C_I2C_CTRL] controller test started");
 
@@ -557,5 +560,5 @@ void test_main(void)
 	k_sleep(K_MSEC(5));
 
 	ctrl_print_summary();
-	I3C_I2C_CTRL_DONE_VAR(ctrl_failed ? "FAIL" : "PASS");
+	printk("PROJECT EXECUTION %s\n", ctrl_failed ? "FAILED" : "SUCCESSFUL");
 }

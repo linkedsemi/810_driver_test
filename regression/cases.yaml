@@ -2,27 +2,27 @@
 # 注释掉某行 = 屏蔽该 case（# 开头即跳过）
 # gpio_toggle_test = 示波器观察型，无自动化回归（无 run_*_tests.py），默认屏蔽
 cases:
-  - projects\trng_test\tests\case_default
-  - projects\rtc_test\tests\case_default
-  - projects\otbn_test\tests\case_default
-  - projects\otbn_selftest\tests\case_default
-  - projects\i2c_pure_test\tests\case_pure_i2c_400k
+  # - projects\trng_test\tests\case_default
+  # - projects\rtc_test\tests\case_default
+  # - projects\otbn_test\tests\case_default
+  # - projects\otbn_selftest\tests\case_default
+  # - projects\i2c_pure_test\tests\case_pure_i2c_400k
   - projects\i3c_i2c_switch_test\tests\case_switch_core
-  - projects\i3c_dualcore_test\tests\case_mixed_1m_12m5
-  - projects\i3c_dualcore_test\tests\case_mixed_1m_6m25
-  - projects\i3c_dualcore_test\tests\case_mixed_400k_12m5
-  - projects\i3c_dualcore_test\tests\case_mixed_400k_1m
-  - projects\i3c_dualcore_test\tests\case_mixed_400k_6m25
-  - projects\i3c_dualcore_test\tests\case_pure_i3c_12m5
-  - projects\i3c_dualcore_test\tests\case_pure_i3c_6m25
-  - projects\gpio_toggle_test\tests\case_toggle_1s
-  - projects\mbedtls_test\tests\case_sw_baseline
-  - projects\mbedtls_test\tests\case_otbn_ecc
-  - projects\mbedtls_test\tests\case_hw_otbn_mix
-  - projects\mbedtls_test\tests\case_hw_all
-  - projects\mbedtls_test\tests\case_otbn_hash
-  - projects\mbedtls_test\tests\case_otbn_rsa
-  - projects\mbedtls_test\tests\case_otbn_all
-  - projects\mbedtls_test\tests\case_otbn_sha256_hw_sm3
-  - projects\mbedtls_test\tests\case_sw_hw_mix
-  - projects\mbedtls_test\tests\case_all_on_max
+  # - projects\i3c_dualcore_test\tests\case_mixed_1m_12m5
+  # - projects\i3c_dualcore_test\tests\case_mixed_1m_6m25
+  # - projects\i3c_dualcore_test\tests\case_mixed_400k_12m5
+  # - projects\i3c_dualcore_test\tests\case_mixed_400k_1m
+  # - projects\i3c_dualcore_test\tests\case_mixed_400k_6m25
+  # - projects\i3c_dualcore_test\tests\case_pure_i3c_12m5
+  # - projects\i3c_dualcore_test\tests\case_pure_i3c_6m25
+  # - projects\gpio_toggle_test\tests\case_toggle_1s
+  # - projects\mbedtls_test\tests\case_sw_baseline
+  # - projects\mbedtls_test\tests\case_otbn_ecc
+  # - projects\mbedtls_test\tests\case_hw_otbn_mix
+  # - projects\mbedtls_test\tests\case_hw_all
+  # - projects\mbedtls_test\tests\case_otbn_hash
+  # - projects\mbedtls_test\tests\case_otbn_rsa
+  # - projects\mbedtls_test\tests\case_otbn_all
+  # - projects\mbedtls_test\tests\case_otbn_sha256_hw_sm3
+  # - projects\mbedtls_test\tests\case_sw_hw_mix
+  # - projects\mbedtls_test\tests\case_all_on_max

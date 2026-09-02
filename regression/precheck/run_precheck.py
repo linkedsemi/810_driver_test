@@ -61,11 +61,14 @@ TARGET_ROM_START = "0x100c0000"      # cpu1 入口（§3，与 test_common.sh �
 CONTROLLER_LOAD_ADDR = "0x10000000"  # cpu2 RAM 基址（§3）
 DEBUGSERVER_EXE = r"C:\uaer_app\debug_server\bin\DebugServerConsole.exe"
 
-CTRL_UART = os.environ.get("PRE_CTRL_UART", "COM10")
-TGT_UART = os.environ.get("PRE_TGT_UART", "COM11")
+CTRL_UART = os.environ.get("PRE_CTRL_UART") or None   # None = auto-discover
+TGT_UART  = os.environ.get("PRE_TGT_UART")  or None
 CTRL_BANNER = "[PRE CK CTRL]"
 TGT_BANNER = "[PRE CK TGT]"
 CHECKS: List[Tuple[str, bool, str]] = []   # [(name, passed, detail)]
+# 自动发现结果（由 gdb_flash_and_capture 填充，check_dual_boot / main 读取）
+_discovered_ctrl: Optional[str] = None
+_discovered_tgt: Optional[str] = None
 
 # Zephyr console shell 重绘提示符会向串口发 ANSI 转义，token 行首可能混入
 # （§10.5），先剥离再匹配（trng dbg_run.py 同款）。
@@ -329,19 +332,28 @@ def _boot_seen(lines: List[str], banner: str, boot_tag: str) -> bool:
 
 
 def gdb_flash_and_capture(timeout: int):
-    """单遍双核 load + 双串口采集。
+    """单遍双核 load + 多串口自动采集（CTRL/TGT 角色按 banner 自动识别）。
 
+    若 CTRL_UART/TGT_UART 已由环境变量显式指定，直接用；否则打开所有
+    非 CKLink 串口并行采集，capture 结束后按 banner 匹配分出 CTRL/TGT
+    （找不到的留 None，由上层判 FAIL）。
     返回 (ctrl_lines, tgt_lines, load_ok, gdb_tail)。
-    load_ok = 会话 A 见 "Loading section" 且会话 B 见 "Restoring"。
+    同时写入全局 _discovered_ctrl/_discovered_tgt 供 check_dual_boot 等使用。
     """
+    global _discovered_ctrl, _discovered_tgt
+
     print(f"[precheck] gdb 会话 A: load {TARGET_ELF.name} (cpu1)", flush=True)
     out_a = _gdb_session_a()
     load_ok = "Loading section" in out_a
     if not load_ok:
         return [], [], False, out_a
 
-    # 双串口采集（会话 B continue 后固件独立跑；token 是实时流，边跑边收）
-    names = [CTRL_UART, TGT_UART]
+    # ---- 确定要打开的串口 ----
+    if CTRL_UART and TGT_UART:
+        names = [CTRL_UART, TGT_UART]
+    else:
+        names = serial_enumerate()
+
     sers = {}
     for name in names:
         try:
@@ -361,12 +373,19 @@ def gdb_flash_and_capture(timeout: int):
           f"capture {timeout}s", flush=True)
     proc = _gdb_session_b_proc()
     deadline = time.time() + timeout
+
+    # 提前退出判据：若角色已知，双核 banner 齐了即停；否则至少跑满 timeout
+    def _early_stop() -> bool:
+        if CTRL_UART and TGT_UART:
+            return (_boot_seen(ports.get(CTRL_UART, {}).get("lines", []), CTRL_BANNER, "ZT_BOOT CTRL")
+                    and _boot_seen(ports.get(TGT_UART, {}).get("lines", []), TGT_BANNER, "ZT_BOOT TGT"))
+        return False
+
     while time.time() < deadline:
         if proc.poll() is not None:
             break
-        if (_boot_seen(ports[CTRL_UART]["lines"], CTRL_BANNER, "ZT_BOOT CTRL")
-                and _boot_seen(ports[TGT_UART]["lines"], TGT_BANNER, "ZT_BOOT TGT")):
-            break  # 双核 banner 齐了，提前收尾
+        if _early_stop():
+            break
         time.sleep(0.2)
 
     # 干净退出（interrupt → detach → quit），避免连接残留（§10.1）
@@ -393,23 +412,52 @@ def gdb_flash_and_capture(timeout: int):
     for ser in sers.values():
         ser.close()
 
-    return (ports[CTRL_UART]["lines"], ports[TGT_UART]["lines"],
-            load_ok, (out_a + out_b)[-600:])
+    # ---- banner 角色自动识别 ----
+    def _has_banner(lines: List[str], banner: str) -> bool:
+        return any(banner in ln for ln in lines)
+
+    if CTRL_UART and TGT_UART:
+        ctrl_port, tgt_port = CTRL_UART, TGT_UART
+    else:
+        ctrl_port = tgt_port = None
+        for name in names:
+            lines = ports.get(name, {}).get("lines", [])
+            if ctrl_port is None and _has_banner(lines, CTRL_BANNER):
+                ctrl_port = name
+            if tgt_port is None and _has_banner(lines, TGT_BANNER):
+                tgt_port = name
+
+    _discovered_ctrl = ctrl_port
+    _discovered_tgt = tgt_port
+    print(f"[precheck] role discovery: CTRL={ctrl_port}  TGT={tgt_port}", flush=True)
+
+    ctrl_lines = ports.get(ctrl_port, {}).get("lines", []) if ctrl_port else []
+    tgt_lines  = ports.get(tgt_port,  {}).get("lines", []) if tgt_port  else []
+    return (ctrl_lines, tgt_lines, load_ok, (out_a + out_b)[-600:])
 
 
 # ---- 四级检查 ----
 
 def check_serial() -> bool:
-    """枚举非 CKLink 串口；CTRL/TGT 端口必须存在且可打开（串口被占用 = FAIL）。"""
+    """串口预检：显式指定时检查对应端口存在且可开；自动发现时只检查有足够端口。"""
     ports = serial_enumerate()
-    ok = CTRL_UART in ports and TGT_UART in ports
-    detail = f"ports={ports} CTRL={CTRL_UART} TGT={TGT_UART}"
-    if ok:
-        ok_ctrl, e_ctrl = _serial_openable(CTRL_UART)
-        ok_tgt, e_tgt = _serial_openable(TGT_UART)
-        if not (ok_ctrl and ok_tgt):
-            ok = False
-            detail += f" open: CTRL={ok_ctrl}({e_ctrl}) TGT={ok_tgt}({e_tgt})"
+    if CTRL_UART and TGT_UART:
+        ok = CTRL_UART in ports and TGT_UART in ports
+        detail = f"ports={ports} CTRL={CTRL_UART} TGT={TGT_UART}"
+        if ok:
+            ok_ctrl, e_ctrl = _serial_openable(CTRL_UART)
+            ok_tgt, e_tgt = _serial_openable(TGT_UART)
+            if not (ok_ctrl and ok_tgt):
+                ok = False
+                detail += f" open: CTRL={ok_ctrl}({e_ctrl}) TGT={ok_tgt}({e_tgt})"
+    else:
+        ok = len(ports) >= 2
+        detail = f"ports={ports} (auto-discover, need >= 2)"
+        if ok:
+            bad = [n for n in ports if not _serial_openable(n)[0]]
+            if bad:
+                ok = False
+                detail += f" 不可开: {bad}"
     CHECKS.append(("串口枚举", ok, detail))
     return ok
 
@@ -451,8 +499,14 @@ def check_dual_boot(timeout: int) -> bool:
                and any("ZT_BOOT CTRL" in ln for ln in ctrl_lines))
     ok_tgt = (any(TGT_BANNER in ln for ln in tgt_lines)
               and any("ZT_BOOT TGT" in ln for ln in tgt_lines))
-    CHECKS.append(("CTRL boot", ok_ctrl, f"{len(ctrl_lines)} lines"))
-    CHECKS.append(("TGT boot", ok_tgt, f"{len(tgt_lines)} lines"))
+    # 自动发现模式下，把发现结果同步到全局（main 写 JSON 时读取）
+    global CTRL_UART, TGT_UART
+    if _discovered_ctrl:
+        CTRL_UART = _discovered_ctrl
+    if _discovered_tgt:
+        TGT_UART = _discovered_tgt
+    CHECKS.append(("CTRL boot", ok_ctrl, f"{CTRL_UART} {len(ctrl_lines)} lines"))
+    CHECKS.append(("TGT boot", ok_tgt, f"{TGT_UART} {len(tgt_lines)} lines"))
     return ok_ctrl and ok_tgt
 
 
@@ -488,6 +542,14 @@ def main() -> int:
     if ok:
         ok = check_dual_boot(args.timeout)
     write_report(args.session_dir)
+    # 预检通过后写端口映射 JSON（run_all 读取后注入给各 case run 脚本）
+    if ok and args.session_dir and CTRL_UART and TGT_UART:
+        import json
+        mapping_path = Path(args.session_dir) / "port_mapping.json"
+        mapping_path.parent.mkdir(parents=True, exist_ok=True)
+        mapping_path.write_text(json.dumps(
+            {"ctrl": CTRL_UART, "tgt": TGT_UART}, indent=2), encoding="utf-8")
+        print(f"[precheck] port_mapping -> {mapping_path}", flush=True)
     for name, passed, detail in CHECKS:
         print(f"[precheck] {'PASS' if passed else 'FAIL'} {name}: {detail}")
     return 0 if ok else 2

@@ -21,20 +21,20 @@
  * I3C 默认模式。引脚复用由 i3c5 节点的 pinctrl 双状态统一管理。 */
 
 &i3c5_scl_pj10 {
-    drive-strength = <1>;
-    bias-pull-up2;
+    drive-strength = <2>;
+    bias-pull-up6;
 };
 
 &i3c5_sda_pj11 {
-    drive-strength = <1>;
-    bias-pull-up2;
+    drive-strength = <2>;
+    bias-pull-up6;
 };
 
 &i3c5 {
     status = "okay";
     i3c-scl-hz = <1000000>;
     // i2c-scl-hz = <1000000>;
-    interrupts = <I3C5_IRQN 6>;
+    interrupts = <I3C5_IRQN 7>;
 
     tgt-pid = <0x5 0x55>;
     dcr = <0x4>;

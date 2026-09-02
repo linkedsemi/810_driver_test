@@ -12,6 +12,7 @@ agent 只负责启动；单 case FAIL 不阻断后续 case；预检 FAIL 才中�
 """
 import argparse
 import datetime
+import os
 import subprocess
 import sys
 import tempfile
@@ -23,9 +24,10 @@ REPORTS_ROOT = ROOT / "reports"
 CASES_FILE = Path(__file__).resolve().parent / "cases.yaml"
 PRECHECK = ROOT / "regression" / "precheck" / "run_precheck.py"
 
-# 双核工程 UART（COM 号以设备管理器为准；批量注入，run 脚本要求显式）
-CTRL_UART = "COM10"
-TGT_UART = "COM11"
+# 双核工程 UART：None = 由 precheck 自动发现后从 port_mapping.json 读取；
+# 环境变量可强制覆盖（同 precheck PRE_CTRL_UART / PRE_TGT_UART）。
+CTRL_UART = os.environ.get("PRE_CTRL_UART") or None
+TGT_UART  = os.environ.get("PRE_TGT_UART")  or None
 
 # DebugServer（§0/§10.17）：1025 由 PC 进程 XuanTie DebugServer 提供；
 # 重启 = 四步自愈（杀残留 gdb → taskkill /IM → netstat 兜底 → Popen + 日志轮询）。
@@ -267,6 +269,28 @@ def main():
         # A4-①: precheck 的探测连接/load 会话必留残留（T1，§10.17）→
         # case 循环前必须清一次（若 --no-precheck 则上面的 A4-② 覆盖）
         clean_gdb_residue()
+
+    # ---- 读取端口映射（precheck 自动发现 或 环境变量指定） ----
+    import json as _json
+    global CTRL_UART, TGT_UART
+    _mapping_file = session / "port_mapping.json"
+    if not CTRL_UART or not TGT_UART:
+        if _mapping_file.exists():
+            _m = _json.loads(_mapping_file.read_text(encoding="utf-8"))
+            CTRL_UART = CTRL_UART or _m.get("ctrl")
+            TGT_UART  = TGT_UART  or _m.get("tgt")
+            print(f"[run_all] port mapping from precheck: CTRL={CTRL_UART} TGT={TGT_UART}")
+        else:
+            # --no-precheck 且无环境变量：做一次最小发现（不 load，只看在线口）
+            _ports = [p.device for p in __import__("serial.tools.list_ports", fromlist=["comports"]).comports()
+                      if "32bf" not in (p.hwid or "").lower() and "cklink" not in (p.description or "").lower()]
+            if len(_ports) >= 2:
+                # 无法在无固件情况下识别角色，按顺序猜（用户应通过 precheck 或环境变量指定）
+                CTRL_UART, TGT_UART = _ports[0], _ports[1]
+                print(f"[run_all] --no-precheck, 无映射文件，按枚举顺序猜: CTRL={CTRL_UART} TGT={TGT_UART}（建议跑一次 precheck）")
+            else:
+                print("[run_all] ERROR: 无足够串口且无 port_mapping.json，双核工程无法运行", file=sys.stderr)
+                return 2
 
     logs = session / "logs"
     logs.mkdir(exist_ok=True)
