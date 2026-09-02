@@ -140,7 +140,7 @@ def _build_config(bins, erase, verify, timeout, reset_and_run, algo,
                 "EraseType": erase,
                 "EraseRangStart": 0,
                 "EraseRangLength": 4096,
-                "ConnectType": 0,
+                "ConnectType": 1,    # hard reset：普通连接在 DebugServer 会话后可能卡死
                 "Timeout": timeout,
                 "ResetAndRun": reset_and_run,
                 "ResetType": 1,

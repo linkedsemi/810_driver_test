@@ -26,6 +26,7 @@ LSQSH EVB 双核（`lsqsh_evb@2os`）驱动测试工程集 `810_driver_test/`。
 | `embedded-debug` | 通用调试方法论（跨硬件环境） | 任何嵌入式工程的定位 bug；QSH 调试的方法论层 |
 | `debug-knowledge` | 调试领域知识库（按域装载/自动填充） | mcu/zephyr/linux/riscv/arm 的既往招式查询或沉淀 |
 | `qsh-test-gen` / `qsh-test-run` / `qsh-test-compare` | 三大类②③ | 新建工程/跑用例/分析结果 |
+| `qsh-test-validate` | ②③ 之间的门禁 | 新建/修改工程后合规性验证 + 编译验证（回归前预检） |
 | `skill-registry` | 外部插件/MCP 能力目录 | 新环境需要 superpowers/claude-mem 等时查表 |
 | `env-adapter` | 跨环境引导接线 + 通用入口 | 新环境/非 810/不确定调哪个时，探测环境+接线+路由 |
 
@@ -34,8 +35,8 @@ LSQSH EVB 双核（`lsqsh_evb@2os`）驱动测试工程集 `810_driver_test/`。
 ```text
 qsh-driver-test (本 skill：总入口，读它决定下一步)
  ├─ ① 驱动有问题（调试）  → qsh-debug（连接/烧录/串口实操）→ embedded-debug（分层定位/断点方法）
- ├─ ② 新建工程/case     → qsh-test-gen（生成后回 qsh-debug 调试验证）
- └─ ③ 跑测试/分析结果    → qsh-test-run（执行）→ qsh-test-compare（结果/报告）
+ ├─ ② 新建工程/case     → qsh-test-gen（生成后 → qsh-test-validate 验证合规 → qsh-debug 调试验证）
+ └─ ③ 跑测试/分析结果    → qsh-test-validate（回归前预检）→ qsh-test-run（执行）→ qsh-test-compare（结果/报告）
 ```
 
 | 大类 | Skill | 用途 | 典型任务 |
@@ -61,6 +62,8 @@ qsh-driver-test (本 skill：总入口，读它决定下一步)
 | 全量回归 + 报告 | ③ | `qsh-test-run` §4 → `qsh-test-compare` §4 |
 | 新增驱动测试工程 | ② | `qsh-test-gen` §1（先读 CLAUDE.md） |
 | 新增 case（不改 C 代码） | ② | `qsh-test-gen` §2 |
+| 新建/修改工程后验证合规性 | ②③ | `qsh-test-validate`（静态检查 + 编译验证） |
+| 回归前预检工程合法性 | ③ | `qsh-test-validate`（快速静态扫） |
 | 结果 PASS/FAIL 判定 | ③ | `qsh-test-compare` §2（双核双 PASS 才算过） |
 | 修复前后对比 | ③ | `qsh-test-compare` §5 |
 | 串口 token 被刷掉 / 无串口取结果 | ③ | `qsh-test-compare` §3（dump_results.py GDB 读内存兜底） |

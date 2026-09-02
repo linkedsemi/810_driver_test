@@ -36,6 +36,7 @@ TGT_UART  = os.environ.get("PRE_TGT_UART")  or None
 DEBUGSERVER_EXE = Path(r"C:\uaer_app\debug_server\bin\DebugServerConsole.exe")
 DEBUGSERVER_LOG = Path(tempfile.gettempdir()) / "debug_server.log"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
+GDB = "riscv64-unknown-elf-gdb"
 
 # 工程 → run 脚本（tests/scripts/ 下，调用前逐一存在性校验）
 PROJECT_SCRIPT = {
@@ -212,16 +213,131 @@ def read_cases():
     return out
 
 
+def _probe_cklink():
+    """快速探测 CKLink 是否可用（5s 超时）。
+
+    用 DebugServer 尝试监听 1025 → GDB 连一次 → 看是否进 "Remote debugging"。
+    返回 True = CKLink 正常，False = 需要用户拔插 USB。
+    """
+    # 先确保证 DebugServer 在跑（probe 需要它）
+    ds_was_running = any(st == "LISTENING" for st, _, _ in _netstat_1025())
+    if not ds_was_running:
+        try:
+            subprocess.Popen(
+                [str(DEBUGSERVER_EXE)],
+                cwd=str(DEBUGSERVER_EXE.parent),
+                stdout=open(DEBUGSERVER_LOG, "w", encoding="utf-8", errors="replace"),
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        except Exception:
+            return False
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                with open(DEBUGSERVER_LOG, encoding="utf-8", errors="replace") as f:
+                    if "DebuggerServer$" in f.read() or "DebuggerServer>" in f.read():
+                        break
+            except Exception:
+                pass
+            time.sleep(0.5)
+        else:
+            return False
+        time.sleep(1)
+
+    # GDB 探测连接
+    try:
+        proc = subprocess.run(
+            [GDB, "-batch", "-ex", "target remote 127.0.0.1:1025", "-ex", "detach", "-ex", "quit"],
+            capture_output=True, text=True, timeout=8,
+            encoding="utf-8", errors="replace",
+        )
+        # -batch 模式不打印 "Remote debugging"，改判 "detached" 或 退出码 0
+        combined = proc.stdout + proc.stderr
+        ok = proc.returncode == 0 and ("detached" in combined.lower()
+                                        or "remote target" in combined.lower())
+    except Exception:
+        ok = False
+
+    # 探测完杀掉临时 DebugServer（erase 需要无 DebugServer 状态）
+    if not ds_was_running:
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "DebugServerConsole.exe"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10)
+        except Exception:
+            pass
+        time.sleep(3)  # CKLink USB 释放需要时间，太短会导致后续 erase 卡住
+    return ok
+
+
 def erase_flash_once():
-    """flash 全片擦除：DebugServer 必须先退出（CKLink 互斥，§15）。"""
+    """flash 全片擦除：DebugServer 必须先退出（CKLink 互斥，§15）。
+
+    预清理残留进程 → 直接擦除 → 重启 DebugServer。
+    CKLink 健康性由 cleanup_cklink()（回归结束时）保证，不在此探测
+    （实测：探测的启停 DebugServer 会干扰 CKLink 状态，反而导致擦除卡死）。
+    """
     print("[run_all] === flash 全片擦除 ===")
+
+    # 预清理残留进程
+    _kill_residual_gdb()
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "DebugServerConsole.exe"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=10)
+    except Exception:
+        pass
+    time.sleep(1)
+    for state, local_pid, _ in _netstat_1025():
+        if state == "LISTENING" and local_pid.isdigit():
+            try:
+                subprocess.run(["taskkill", "/F", "/PID", local_pid],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10)
+            except Exception:
+                pass
+
+    # 执行擦除
     rc = subprocess.call([sys.executable, str(ROOT / "scripts" / "flash_program.py"),
-                          "--erase-only", "--kill-debugserver"])
+                          "--erase-only", "--timeout", "20"])
     if rc != 0:
         print("[run_all] flash 擦除失败，批量中止")
         return rc
     restart_debugserver()
     return 0
+
+
+def cleanup_cklink():
+    """回归结束后释放 CKLink（§10.17 / §15 互斥）。
+
+    回归全程 DebugServer 常驻（case 循环中按需重启），跑完后必须杀掉，
+    否则下次 erase_flash_once 时 CKLink 仍被占 → flash 卡死 180s。
+    """
+    print("[run_all] === 释放 CKLink（杀 DebugServer + 残留 gdb）===")
+    _kill_residual_gdb()
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "DebugServerConsole.exe"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=10)
+    except Exception:
+        pass
+    # 精确杀 1025 上的进程（/IM 偶发杀不净）
+    for state, local_pid, _ in _netstat_1025():
+        if local_pid.isdigit():
+            try:
+                subprocess.run(["taskkill", "/F", "/PID", local_pid],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10)
+            except Exception:
+                pass
+    # 确认 1025 已释放
+    time.sleep(1)
+    remaining = [(s, p) for s, p, _ in _netstat_1025() if s == "LISTENING"]
+    if remaining:
+        print(f"[run_all] WARNING: 1025 仍有 LISTENING: {remaining}", file=sys.stderr)
+    else:
+        print("[run_all] CKLink 已释放")
 
 
 def main():
@@ -242,6 +358,16 @@ def main():
             proj = c.parents[1].name
             print(f"  {proj:<22} {c.name:<26} -> {PROJECT_SCRIPT.get(proj, '??')}")
         return 0
+
+    # ★ try/finally：任何退出路径都释放 CKLink（§15 互斥）
+    try:
+        return _run_all(args, cases)
+    finally:
+        cleanup_cklink()
+
+
+def _run_all(args, cases):
+    """run_all 主逻辑（由 main 的 try/finally 保护退出时释放 CKLink）。"""
 
     # Step 3b：flash 全片擦除（A5：--dry-run 返回后、分配会话目录之前；
     # --no-precheck 不动擦除——擦除恒做，--no-erase 逃生门）

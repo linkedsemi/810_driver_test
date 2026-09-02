@@ -165,6 +165,9 @@ PROJECT EXECUTION SUCCESSFUL|FAILED       # ztest 原生，本核套件完成标
 | 构建缓存旧地址 | rm -rf build 全量重建 |
 | load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | 单核 dbg_run.py 默认已开 16384（41x，§3）；手动 gdb 照 §3 发两条 `set`；E22 = stub 不接受，立即失败不卡死 |
 | 单核工程 interrupt 后二次 load 无输出挂死 | 会话内二次 load 静默挂死（§10.24） | 改单遍烧录（§3）；同镜像迭代用 `--no-load` 免烧重跑 |
+| flash_program.py 卡死 80s（`ConnectType=0`） | DebugServer 会话后芯片处于调试 halt 状态，普通连接无法重连 | **flash_program.py 已改为 `ConnectType: 1`（硬复位连接）**，实测解决（2026-09-02） |
+| 回归结束后下次 erase 卡死 | DebugServer 回归期间常驻，结束后未释放 CKLink | **run_all.py 已加 `cleanup_cklink()`（try/finally）**，回归结束必杀 DebugServer |
+| 构建报 `pthread_cond_t` 类型冲突 | `CONFIG_NEWLIB_LIBC=y` 与 Zephyr POSIX types 冲突 | 改为 `=n`（Zephyr minimal libc 足够），全工程统一 |
 
 ## 7. 坑沉淀要求
 

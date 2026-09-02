@@ -79,6 +79,9 @@ target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tests/incl
    - CMakeLists 注入 `../../../common/ztest_glue.c` + `../../../common/
      test_results.c` + include dir（工程在 projects/ 下）；prj.conf 必带
      **`CONFIG_ZTEST_VERBOSE_OUTPUT=y`**（§10.26，=n 则逐项输出被抑制）
+   - **`CONFIG_NEWLIB_LIBC=n`**（★ 2026-09-02 实测：`=y` 与 Zephyr POSIX
+     types 冲突——`pthread_cond_t` 类型重定义导致构建失败；全工程统一 `=n`，
+     minimal libc 已覆盖 snprintf/strlen 等常用函数）
    - `dump_results.py` 的 TEST_NAMES 按**链接序**（SORT_BY_NAME，§10.27）
      与 glue 记账 idx 对齐：`nm --numeric-sort <elf> | grep
      _ztest_unit_test__<suite>__`

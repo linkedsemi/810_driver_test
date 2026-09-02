@@ -32,7 +32,7 @@ riscv64-unknown-elf-gdb ──TCP 127.0.0.1:1025──► XuanTie DebugServerCon
 | 结论 | 说明 |
 |---|---|
 | 1025 端口由 **PC 进程** 提供 | `C:\uaer_app\debug_server\bin\DebugServerConsole.exe`，端口在 `bin\default.ini` 的 `SOCKETPORT=1025`。**不是 CKLink 固件内置**，DebugServer 不启动就没有 1025 |
-| 在线判定 = GDB 连一次 | `riscv64-unknown-elf-gdb -ex "target remote 127.0.0.1:1025" ...` 出现 "Remote debugging" 即通。**不要用 netstat 判离线**（用户明确纠正过） |
+| 在线判定 = GDB 连一次 | `riscv64-unknown-elf-gdb -ex "target remote 127.0.0.1:1025" ...` 出现 "Remote debugging" 即通。**不要用 netstat 判离线**（用户明确纠正过）。**★ -batch 模式不打印 "Remote debugging"**：改判 `detached` 或 `Remote target`（`re.search(r"detached|remote target", combined, re.I)`），或判退出码 0 即可（2026-09-02 实测） |
 | 连接地址写 `127.0.0.1:1025` | 用户指定格式；脚本内 `GDB_HOST, GDB_PORT = "127.0.0.1", "1025"` |
 
 ## 2. DebugServer 启动 / 冲突 / 残留
@@ -51,6 +51,12 @@ taskkill //F //PID <pid>       # 杀后重启 DebugServer
 ```
 > 互斥是双向的：烧 flash 前 DebugServer 也必须退出（`flash_program.py` 会
 > 检测警告，`--kill-debugserver` 强制杀）。
+> **★ ConnectType=1（硬复位连接）**：DebugServer 会话后芯片处于调试 halt 状态，
+> `ConnectType=0`（普通连接）无法重连 → flash_program.py 卡死 80s。已改为
+> `ConnectType: 1`（硬复位），实测解决（2026-09-02）。
+> **多 CKLink 设备**：Device Manager 出现多个 CKLink（含 Unknown 状态）时，
+> flash programmer 可能枚举到异常设备卡死 → 禁用异常 USB 设备，或用 `--cklink`
+> 指定正常设备的 serial number。
 
 ### 2.3 gdb 被杀后连接残留（★高频坑）
 `continue` 超时被 kill（如 dbg_run.py 的 prime/capture 轮）后，DebugServer 仍
