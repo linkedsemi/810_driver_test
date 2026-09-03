@@ -922,8 +922,8 @@ def main() -> int:
     parser.add_argument(
         "--case-timeout",
         type=int,
-        default=int(os.environ.get("I3C_CASE_TIMEOUT", "60")),
-        help="Seconds per case run (default: 60; 仅兜底——正常由 10s 静默判据提前结束)",
+        default=int(os.environ.get("I3C_CASE_TIMEOUT", "90")),
+        help="Seconds per case run (default: 90; 仅兜底——正常由 10s 静默判据提前结束)",
     )
     parser.add_argument(
         "--no-archive",

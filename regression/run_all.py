@@ -434,6 +434,8 @@ def _run_all(args, cases):
                "--session-dir", str(session)]
         if proj in DUAL_CORE:
             cmd += ["--ctrl-uart", CTRL_UART, "--tgt-uart", TGT_UART]
+        else:
+            cmd += ["--tgt-uart", TGT_UART]  # 单核工程也传 TGT 串口
         if proj == "i3c_dualcore_test" and proj in built_projects:
             cmd.append("--skip-build")   # 同会话首个 i3c case 已全量构建，无混旧镜像
         built_projects.add(proj)

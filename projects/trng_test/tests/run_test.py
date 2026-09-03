@@ -63,7 +63,7 @@ def log(msg):
 
 def build_case(case):
     """复刻 test_common.sh build_single_test：位置参数 src + -DDTC_OVERLAY_FILE=。"""
-    build = SAMPLE_ROOT / "tests" / case / "build"
+    build = SAMPLE_ROOT / "tests" / case / "build" / "target"
     src = SAMPLE_ROOT / "cpu1_trng_test"
     overlay = src / "app.overlay"
     try:
