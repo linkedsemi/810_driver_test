@@ -1,0 +1,106 @@
+{
+  "timestamp": "2026-09-03T00:43:46.921595",
+  "board": "lsqsh_evb@2os",
+  "overall": "PASS",
+  "cases": [
+    {
+      "name": "case_switch_core",
+      "result": "PASS",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done": "SUCCESSFUL",
+      "mem_unavailable": false,
+      "tests": [
+        {
+          "name": "i2c_nack_bad_addr",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "i2c_rw_100",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "i2c_rw_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "i2c_rw_17",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "i2c_rw_1",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "i3c_baseline",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "pinctrl_states",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "switch_i2c_to_i3c",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "switch_i3c_to_i2c",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "switch_stress",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        }
+      ]
+    }
+  ]
+}

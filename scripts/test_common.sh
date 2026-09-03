@@ -185,7 +185,7 @@ build_test() {
     fi
 
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
-    west build -p auto \
+    west build -p always \
         -d "${build_dir}" \
         -b "${board}" \
         "${src_dir}" \
@@ -364,7 +364,7 @@ build_single_test() {
     fi
 
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
-    west build -p auto \
+    west build -p always \
         -d "${build_dir}" \
         -b "${SINGLE_BOARD}" \
         "${src_dir}" \

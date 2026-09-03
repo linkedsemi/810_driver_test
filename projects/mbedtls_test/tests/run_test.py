@@ -35,6 +35,7 @@ import tempfile
 import re
 import subprocess
 import sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import threading
 import time
 from datetime import datetime
@@ -210,7 +211,7 @@ def build_case(case):
     conf_file = f"{(FW_SRC / 'prj.conf').as_posix()};{conf.as_posix()}"
     try:
         proc = subprocess.run(
-            ["west", "build", "-p", "auto", "-b", BOARD, "-d", build.as_posix(),
+            ["west", "build", "-p", "always", "-b", BOARD, "-d", build.as_posix(),
              FW_SRC.as_posix(), f"-DDTC_OVERLAY_FILE={overlay.as_posix()}",
              f"-DCONF_FILE={conf_file}"],
             capture_output=True, text=True, timeout=900)

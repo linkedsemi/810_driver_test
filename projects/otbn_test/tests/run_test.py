@@ -31,6 +31,7 @@ import tempfile
 import re
 import subprocess
 import sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import threading
 import time
 from datetime import datetime
@@ -190,7 +191,7 @@ def build_case(case):
     overlay = src / "app.overlay"
     try:
         proc = subprocess.run(
-            ["west", "build", "-p", "auto", "-b", BOARD, "-d", build.as_posix(),
+            ["west", "build", "-p", "always", "-b", BOARD, "-d", build.as_posix(),
              src.as_posix(), f"-DDTC_OVERLAY_FILE={overlay.as_posix()}"],
             capture_output=True, text=True, timeout=600)
     except subprocess.TimeoutExpired:
