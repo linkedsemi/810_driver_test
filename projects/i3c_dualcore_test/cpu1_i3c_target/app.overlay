@@ -17,3 +17,8 @@
     >;
     pinctrl-names = "default";
 };
+
+/* 启用GPIO控制器，支持PA05/PA07翻转线程 */
+&gpio0 {
+	status = "okay";
+};

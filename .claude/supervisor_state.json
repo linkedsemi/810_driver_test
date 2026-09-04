@@ -1,0 +1,32 @@
+{
+  "task": "810_driver_test 驱动全量回归（23 cases）",
+  "strategy": "STRATEGY_BATCH",
+  "started": "2026-09-04",
+  "entry": "python regression/run_all.py (background task b7des6232)",
+  "items": {
+    "trng_test/case_default": {"status": "PENDING"},
+    "rtc_ls_test/case_default": {"status": "PENDING"},
+    "otbn_test/case_default": {"status": "PENDING"},
+    "otbn_selftest/case_default": {"status": "PENDING"},
+    "i2c_pure_test/case_pure_i2c_400k": {"status": "PENDING"},
+    "i3c_i2c_switch_test/case_switch_core": {"status": "PENDING"},
+    "i3c_dualcore_test/case_mixed_1m_12m5": {"status": "PENDING"},
+    "i3c_dualcore_test/case_mixed_1m_6m25": {"status": "PENDING"},
+    "i3c_dualcore_test/case_mixed_400k_12m5": {"status": "PENDING"},
+    "i3c_dualcore_test/case_mixed_400k_1m": {"status": "PENDING"},
+    "i3c_dualcore_test/case_mixed_400k_6m25": {"status": "PENDING"},
+    "i3c_dualcore_test/case_pure_i3c_12m5": {"status": "PENDING"},
+    "i3c_dualcore_test/case_pure_i3c_6m25": {"status": "PENDING"},
+    "mbedtls_test/case_sw_baseline": {"status": "PENDING"},
+    "mbedtls_test/case_otbn_ecc": {"status": "PENDING"},
+    "mbedtls_test/case_hw_otbn_mix": {"status": "PENDING"},
+    "mbedtls_test/case_hw_all": {"status": "PENDING"},
+    "mbedtls_test/case_otbn_hash": {"status": "PENDING"},
+    "mbedtls_test/case_otbn_rsa": {"status": "PENDING"},
+    "mbedtls_test/case_otbn_all": {"status": "PENDING"},
+    "mbedtls_test/case_otbn_sha256_hw_sm3": {"status": "PENDING"},
+    "mbedtls_test/case_sw_hw_mix": {"status": "PENDING"},
+    "mbedtls_test/case_all_on_max": {"status": "PENDING"}
+  },
+  "last_activity": "regression started in background"
+}

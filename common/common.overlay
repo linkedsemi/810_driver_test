@@ -1,0 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Common overlay for 810_driver_test projects
+ *
+ * Usage in your app.overlay:
+ *   #include "common.overlay"
+ *   # OR manually include this content
+ *
+ * This overlay enables GPIO for PA05/PA07 toggle threads.
+ */
+
+/* 启用GPIO控制器，支持PA05/PA07翻转线程 */
+&gpio0 {
+	status = "okay";
+};

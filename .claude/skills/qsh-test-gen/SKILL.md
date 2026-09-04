@@ -48,11 +48,28 @@ description: QSH 驱动测试代码生成 skill（三大类②自动化测试代
 
 ### 1.2 关键注入（cpu2 侧 CMakeLists.txt，样板照抄；工程在 projects/ 下，common 引用比原来多一级 `../../../`）
 ```cmake
+# 项目特定源文件
+target_sources(app PRIVATE
+    src/main.c
+    src/<role>_test.c)
+
+# 项目特定include目录
+target_include_directories(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include)
+
+# 包含公共源文件（统一入口：test_results.c, ztest_glue.c, gpio_toggle.c）
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
+
+# cpu2侧额外overlay
 set(EXTRA_DTC_OVERLAY_FILE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/cpu2_console_uart5.overlay;
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/cpu2_mem_layout.overlay)
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include)
 ```
+
+**注意**：
+- `common_sources.cmake` 统一管理公共源文件，包括 GPIO toggle 模块（PA05/PA07 自动翻转）
+- prj.conf 需添加 `CONFIG_GPIO=y`，app.overlay 需添加 `&gpio0 { status = "okay"; };`
+- 特殊工程（如 rtc_ls_test 不使用 ztest_glue）可手动选择包含哪些公共源文件
 
 ### 1.3 协议头（tests/include/<driver>_test_protocol.h）
 - opcode 用 ASCII 助记符（`'S'/'E'/'W'/'L'/'I'/'H'/'R'`），避免与 direct CCC 命令码混淆

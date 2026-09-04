@@ -43,3 +43,8 @@
 
 /* 内存布局由 810_driver_test/common/cpu2_mem_layout.overlay 统一提供
  * （经 CMakeLists.txt 的 EXTRA_DTC_OVERLAY_FILE 注入）。 */
+
+/* 启用GPIO控制器，支持PA05/PA07翻转线程 */
+&gpio0 {
+	status = "okay";
+};

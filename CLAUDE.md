@@ -1,101 +1,132 @@
 # CLAUDE.md — 810_driver_test 快速上手指南
 
 > **LSQSH 驱动批量自动化测试工程集**。`i3c_dualcore_test` 为首个样板工程。
+>
 > **⚠️ Supervisor 强制路由**：本目录下任何**非单次问答**的任务（回归、调试、开发、分析），
-> **必须**通过 supervisor agent 执行（CLAUDE.md §自动路由规则）。
+> **必须**通过 supervisor agent 执行（见 `.claude/agents/supervisor.md`）。
 > 纯查询（"这个函数在哪"、"读一下这个文件"）不需要 supervisor。
-> 详见 `.claude/agents/supervisor.md` + `.claude/TOOLS_AND_SKILLS.md`。
 
 ---
 
-## 1. 板级要求
+## 1. 硬件环境
 
-- 板卡：`lsqsh_evb@2os`（双核 AMP），cpu1=target(uart1)，cpu2=controller(uart5)
-- 接线：I3C5 ↔ I3C6 跨核对连；CKLink 连 JTAG；两路 UART 115200 8N1
+**板卡**：`lsqsh_evb@2os`（双核 AMP）
+- cpu1 = target (uart1)
+- cpu2 = controller (uart5)
+- 接线：I3C5 ↔ I3C6 跨核对连；CKLink 连 JTAG
 
-### COM 映射
+**串口映射**：**非固化**，需动态识别
+- 排除：CKLink Serial（调试器）
+- 识别：MCP2200=controller(cpu2), CH342=target(cpu1)
+- 方法：按 VID:PID 识别，详见 [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md)
 
-| COM | 设备 | 角色 | 注意 |
-|-----|------|------|------|
-| COM14 | CKLink Serial (32BF:B210) | 调试器 | **排除**，不是目标口 |
-| COM15 | MCP2200 (04D8:00DD) | controller (cpu2) | |
-| COM16/17 | CH342 (1A86:55D2) | target (cpu1) | 口号以设备管理器为准 |
-
-### DebugServer
-
-| 项 | 值 |
-|----|---|
-| GDB | `riscv64-unknown-elf-gdb`（无 Python） |
-| Server | `127.0.0.1:1025` ← PC 进程 `C:\uaer_app\debug_server\bin\DebugServerConsole.exe` |
-| 互斥 | DebugServer ↔ FlashProgrammer 同时只能一个占 CKLink |
-
-### 环境预检
-
-跑测试前确认：无 FlashProgrammer 残留 → DebugServer 在线（GDB 连一次判） → 串口空闲 → 批量跑 `python regression/precheck/run_precheck.py`
+详细配置：[`HARDWARE_SETUP.md`](HARDWARE_SETUP.md)
 
 ---
 
-## 2. 测试内容
+## 2. 测试工程
 
-| 工程 | 单/双核 | case 数 | 测什么 |
-|------|---------|---------|--------|
-| `i3c_dualcore_test` | 双核 | 8 | I3C 主从跨核通信（pure/mixed，400k~12.5M） |
-| `i2c_pure_test` | 双核 | 1 | I2C 纯模式跨核对连 |
-| `i3c_i2c_switch_test` | 双核 | 1 | I3C/I2C 动态切换 |
-| `trng_test` | 单核 | 1 | 真随机数熵源 |
-| `rtc_ls_test` | 单核 | 1 | RTC 设置/读取/闹钟 |
-| `otbn_test` | 单核 | 1 | OTBN 硬件 ECC |
-| `otbn_selftest` | 单核 | 1 | OTBN 底层自检 |
-| `mbedtls_test` | 单/双核 | 10 | mbedtls/wolfssl + OTBN 加速 |
-| `gpio_toggle_test` | 单核 | 1 | 示波器观察，**无自动化脚本** |
+**双核**：i3c_dualcore_test(8), i2c_pure_test(1), i3c_i2c_switch_test(1)
+**单核**：trng_test(1), rtc_ls_test(1), otbn_test(1), otbn_selftest(1), mbedtls_test(10)
 
-> case 清单：`regression/cases.yaml`（`#` 注释 = 屏蔽）
+完整 case 清单：`regression/cases.yaml`（`#` 注释 = 屏蔽）
+
+**公共功能**：所有工程自动包含 GPIO toggle 线程（PA05 高优先级 + PA07 低优先级，500ms 周期），
+用于示波器观察系统负载和时序。配置集中在 `common/common_sources.cmake`、`common/gpio_toggle.c`。
 
 ---
 
 ## 3. 调用入口
 
-### 全量回归
 ```bash
-python regression/run_all.py                # 预检 + 全部启用 case
-python regression/run_all.py --no-precheck  # 跳过预检
-python regression/run_all.py --dry-run      # 只列 case，不执行
-```
-流程：擦 flash → 预检 → 逐 case 调 run_test.py → 日志存 `session/logs/` → 汇总。单 case FAIL 不阻断。
+# 全量回归
+python regression/run_all.py                    # 预检 + 全部启用 case
+python regression/run_all.py --no-precheck      # 跳过预检
+python regression/run_all.py --dry-run          # 只列 case，不执行
 
-### 单工程 / 单 case
-```bash
+# 单工程 / 单 case
 cd 810_driver_test/projects/<driver>_test/tests
 python run_test.py                                    # 单工程回归
 python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 ```
 
-### 输出归档
-- 会话目录：`reports/<YYYY-MM-DD>-<idx>/`
-- 公共模块：`common/report_dir.py`（`allocate_session_dir` / `case_dir_for` / `update_summary`）
+**输出归档**：`reports/<YYYY-MM-DD>-<idx>/`
 
 ---
 
-## 4. 常见现象速查表
+## 4. 核心规范速查（必读）
+
+> 完整规范见 [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md)，以下为**最常用、最易踩坑**的核心规则：
+
+### 4.1 固件编写（血泪教训）
+
+| 规则 | 说明 |
+|------|------|
+| **test_main() 不返回** | 必须 `k_thread_join(&dispatcher_thread, K_FOREVER)`，否则 LOG_PANIC → 8ms 死窗 |
+| **ISR 禁打日志** | ISR 内禁止 `LOG_INF/LOG_ERR/printk`，只记账，dispatcher 线程汇总打印 |
+| **时序测量禁日志** | 用 `k_cyc_to_us_floor32`，不打 LOG 不拉 IO |
+| **统一 LOG_INF** | 所有 log/token 输出走 `LOG_INF`（不用 printk），prj.conf 必带 `CONFIG_LOG_MODE_DEFERRED=y` |
+| **公共结果模块** | 禁止私有 results 数组，统一用 `common/test_results.c`（`tr_init/tr_record`） |
+
+### 4.2 构建与配置
+
+| 规则 | 说明 |
+|------|------|
+| **统一 CMake 入口** | 用 `include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)` |
+| **ztest 详细输出** | prj.conf 必须 `CONFIG_ZTEST_VERBOSE_OUTPUT=y`，否则逐项结果全 MISSING |
+| **libc 选择** | 必须 `CONFIG_NEWLIB_LIBC=n`（与 Zephyr POSIX types 冲突） |
+| **overlay 修改后** | 必须删 build 全量重建（Kconfig 缓存坑） |
+
+### 4.3 测试执行
+
+| 规则 | 说明 |
+|------|------|
+| **结果判定** | 单核=全项 PASS + `PROJECT EXECUTION SUCCESSFUL`；双核=同名项双核 PASS |
+| **串口无输出兜底** | 用 `python scripts/dump_results.py --json` GDB 读内存取结果 |
+| **log 门禁** | load 后几秒内必须出 log/ztest 输出，否则直接判失败 |
+
+---
+
+## 5. 常见现象速查
 
 | 现象 | 最可能原因 | 立即处理 |
 |------|-----------|---------|
 | DebugServer 起不来 "CKLINK may be used" | FlashProgrammer 占用 | `taskkill` FlashProgrammer → 重启 DS |
 | 串口 0 行，只有 `\x00` | DebugServer 连接残留 | gdb detach 一次；不行重启 DS |
 | load 极慢（~190s） | 写包参数未调大 | `set memory-write-packet-size 16384`（41x 提速） |
-| 间歇性 WDR/时序异常 | DS 新实例不稳定期 | 重启后等 ~30s 稳定期 |
 | PASS/FAIL 与预期相反 | ANSI 重绘 `uart:~$` 前缀 | `re.search()` 不锚点 |
-| 改 overlay 后行为仍像旧的 | Kconfig 缓存 | 删 build 全量重建 |
-| COM 口被占用 | 残留 python 进程 | `taskkill` 对应 PID |
 | 逐项全 MISSING | `CONFIG_ZTEST_VERBOSE_OUTPUT=n` | prj.conf 设 `=y` |
+
+完整速查表（36条）：[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
 
 ---
 
-## 5. 规范参考
+## 6. 规范文档索引
 
-| 主题 | 文档 |
-|------|------|
-| 固件规范 / 结果判定 / 覆盖矩阵 / XIP 烧录 | [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md) |
-| 已知坑完整清单（36 条） | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) |
-| Supervisor agent 定义 | `.claude/agents/supervisor.md` |
-| Skill 清单 + 调用方式 | `.claude/TOOLS_AND_SKILLS.md` |
+| 主题 | 文档 | 何时查阅 |
+|------|------|---------|
+| 硬件接线/环境配置 | [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md) | 初次搭建环境 |
+| **固件规范完整版** | [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md) | **编写/修改固件时必读** |
+| 已知坑完整清单 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 遇到问题时 |
+| Supervisor agent 定义 | `.claude/agents/supervisor.md` | 需要理解路由逻辑 |
+| Skill 清单 + 调用方式 | `.claude/TOOLS_AND_SKILLS.md` | 需要特定 skill |
+
+---
+
+## 7. 文档修改规则
+
+**📖 完整规范**：[`.claude/DOC_EDIT_RULES.md`](.claude/DOC_EDIT_RULES.md) - 文档编辑规范（通用，必读）
+
+**🔒 保护文档**（仅结构变更时可改）：
+- `.claude/CLAUDE.md` - skill 库便携说明
+- `common/common_sources.cmake` - 公共源文件配置
+
+**📝 可更新文档**：
+- 本文件、`SPEC_REFERENCE.md`、各 `SKILL.md`
+
+**核心原则**：
+- CLAUDE.md 保持精简（100-150行），详细内容用链接引用
+- 单一信息源：同一信息只在一个地方维护
+- 核心规范速查：CLAUDE.md §4 只列最常用/易踩坑的规则
+
+修改前确认影响范围，避免破坏跨环境兼容性。

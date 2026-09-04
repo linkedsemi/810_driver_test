@@ -54,8 +54,15 @@
   - **定长数组**原因：GDB 读内存要按符号地址+固定步长解析，变长/指针数组无法直接 dump。
   - 接入方式（两个固件 CMakeLists.txt 都要）：
     ```cmake
-    target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../common/test_results.c)
-    target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../common)
+    # 统一方式（推荐）：包含公共源文件配置
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
+    # 该文件自动包含 test_results.c, ztest_glue.c, gpio_toggle.c 及 include 目录
+
+    # 手动方式（特殊工程，如 rtc_ls_test 不使用 ztest_glue）：
+    target_sources(app PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test_results.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/gpio_toggle.c)
+    target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)
     ```
   - 双核各自链接该模块，符号同名、地址不同，dump 时按 elf 区分核。
 - **记账自动化（ztest 原生化后，测试函数零 `tr_record` 调用、零 EXPECT/finish 样板）**：由公共 glue `common/ztest_glue.c` 的 `zt_run_all()` 完成——`test_main` 第一行调 `zt_init(core)`（打印 `ZT_BOOT <core>`，§6.2 BOOT 判据），末尾调 `zt_run_all()`：`tr_init(TR_MAX_COUNT)` → `ztest_run_all(...)` → 套件结束后遍历 `_ztest_unit_test_list_start..end` 按 `test->stats` 批量记账（`fail_count>0 → TR_FAIL`、`pass_count>0 → TR_PASS`、`skip/未跑 → TR_NOT_RUN`）。
