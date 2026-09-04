@@ -15,6 +15,10 @@
 | `debug-knowledge` | 调试领域知识库 | `knowledge/{common,mcu,zephyr,linux,riscv,arm}/` 内容 .md；装载 + 自动填充 |
 | `skill-registry` | 外部插件/MCP 能力目录 | superpowers/claude-mem 等启用法 |
 | `env-adapter` | 跨环境引导接线 + 通用入口 | 探测环境 → junction 接线 → 路由（**新环境第一个落点**） |
+| `agents/supervisor.md` | 810 自动总路由 agent | 策略路由/失败恢复/断点续跑（优先于手动 skill 调度） |
+
+> **Supervisor 优先**：810_driver_test 下的持续性任务由 supervisor 自动路由（见工程 CLAUDE.md），
+> supervisor 内部直接读本库 skill，不经过 junction。Junction 机制保留，供非 supervisor 场景使用。
 
 ## 加载机制（别违反）
 
@@ -43,7 +47,7 @@
 | 跨硬件方法学 | `embedded-debug` |
 | 某领域既往招式查询/沉淀 | `debug-knowledge`（§装载 / §写入） |
 | 外部插件/MCP 能力 | `skill-registry` |
-| 810 驱动测试工程任务 | `qsh-driver-test` |
+| 810 驱动测试工程任务 | `supervisor` agent 自动路由（手动备选：`qsh-driver-test`） |
 | 新环境/不确定/迁移引导 | `env-adapter` |
 | 都不命中 | `embedded-debug` 方法学 + `debug-knowledge` 查对应域 |
 

@@ -381,7 +381,7 @@ def _run_all(args, cases):
         clean_gdb_residue()
 
     sys.path.insert(0, str(ROOT / "common"))
-    from report_dir import allocate_session_dir
+    from report_dir import allocate_session_dir, update_summary
     session = allocate_session_dir(REPORTS_ROOT, datetime.date.today().isoformat())
     print(f"[run_all] session: {session}")
 
@@ -443,15 +443,22 @@ def _run_all(args, cases):
         print(f"[run_all] === {proj} {c.name} START（log: {logf.name}）===")
         with open(logf, "wb") as fh:
             rc = subprocess.call(cmd, stdout=fh, stderr=subprocess.STDOUT)
-        results.append((proj, c.name, "PASS" if rc == 0 else "FAIL"))
+        status = "PASS" if rc == 0 else "FAIL"
+        results.append((proj, c.name, status))
         print(f"[run_all] === {proj} {c.name} DONE rc={rc} ===")
+        # ★ 失败 case 的 run_test.py 在归档前就 return 1，不会调 update_summary；
+        #   由 run_all 兜底写入 summary.md（report 指向日志，因为无报告目录）。
+        if status == "FAIL":
+            update_summary(session, f"{proj}_{c.name}", "FAIL", 0, 0,
+                           f"logs/{proj}_{c.name}.log")
 
     print("\n[run_all] 汇总：")
     n_fail = 0
     for proj, case, st in results:
         print(f"  {st:<5} {proj:<22} {case}")
         n_fail += (st == "FAIL")
-    print(f"[run_all] {len(results) - n_fail}/{len(results)} PASS")
+    n_pass = len(results) - n_fail
+    print(f"\n[run_all] 共 {len(results)} 个测试，通过 {n_pass} 个，失败 {n_fail} 个")
     return 1 if n_fail else 0
 
 

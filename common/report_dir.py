@@ -63,7 +63,11 @@ def update_summary(session_dir, key, result, passed, total, report_rel):
                  "passed": passed, "total": total}
     lines = [f"# 810_driver_test 汇总（{Path(session_dir).name}）", "",
              "| 测试 | 结果 | 通过/总数 |", "|---|---|---|"]
+    total_cases = len(rows)
+    pass_cases = sum(1 for v in rows.values() if v["result"] == "PASS")
     for k in sorted(rows):
         v = rows[k]
         lines.append(f"| [{k}]({v['report']}) | {v['result']} | {v['passed']}/{v['total']} |")
+    lines.append("")
+    lines.append(f"**共 {total_cases} 个测试，通过 {pass_cases} 个，失败 {total_cases - pass_cases} 个**")
     f.write_text("\n".join(lines) + "\n", encoding="utf-8")
