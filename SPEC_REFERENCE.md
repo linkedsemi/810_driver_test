@@ -81,6 +81,14 @@
 | "STOP 分支必须 FLUSHTB：清空 TX FIFO 使 prefill 从 buf[0] 起写" | "之前 LOG_ERR 阻塞 10ms 造成 8ms 死窗" |
 | "opcode 用 ASCII 助记符避免与 CCC 命令码混淆" | "Windows gdb stdout 管道块缓冲导致读不到" |
 
+**一次性操作事故不入注释/规范**（与 debug-knowledge"一次性坑不沉淀"同一原则，本条款把它明确到代码注释）：
+
+- 注释与规范只记录两类有长期价值的内容：**a) 驱动/硬件层面需要注意的问题**；**b) 应用层面容易反复出现的问题**。
+- **一次性操作事故**（"某次迁移时一度丢失导致构建失败，某日已修复"这类历史事件叙述）不记录——不写进注释，也不进规范/速查。
+- 区分标准：**保留"是什么/为什么必须这样"（仍成立的结构约束），删除"曾经发生过什么事故"（含日期的修复记录、"一度/曾经/迁移时/某次"的叙述）**。
+  - ✅ 保留："`../tests/expected` 必须保留（protocol.h 引用的 *_vectors.h 向量本体在该目录）" —— 结构约束，永远成立
+  - ❌ 删除："迁移 common_sources.cmake 时一度丢失导致全量重建编译失败（2026-09-04 修复）" —— 一次性事故史
+
 外部系统问题（如 panic_mode、shell 后端阻塞、gdb 缓冲）的**记录位置**：
 - 反复会踩的通用坑 → §10 已知坑 / 对应 skill（qsh-debug §2.3 等）
 - 一次性定位闭环的 bug → 问题总结 .md（§7），存档后不进代码注释
@@ -100,6 +108,19 @@
 - `west build` 优先 `-p auto`；改 overlay（SRAM 地址类）后必须删 build 全量重建（§10.9）。
 - 每 case 的 `test.sh` 必须包含头注释模板：What is tested / CPU0/CPU1 行为 / Normal behavior / Abnormal behavior / Feedback / Hardware IO connections / Build artifacts / Usage。
 - `test.sh` 三模式统一：`./test.sh`（只编译，打印 launch.json 片段）、`-g`（编译 + GDB 加载运行）、`-r`（仅加载运行，agent 模式）。构建时 `SKIP_LOAD=y` 只编译不烧录。参考 `tests/case_pure_i3c_12m5/test.sh`。
+
+#### 6.1.9 复用收敛原则（通用设计原则）
+
+**凡多工程共用的内容（C 源、overlay 片段、脚本、配置模式），必须收敛到 `common/` 公共层单点维护，各工程只做 include/引用；禁止各工程私拷副本。**
+
+- 适配上游/共享树变更时（如 SoC dtsi 节点 label 改名），**优先且只改公共层**——私拷副本会导致同一改动逐工程重复 N 次、且容易漏改。
+- 现有公共层实例：
+  - `common/common_sources.cmake` —— 公共 C 源（test_results.c / ztest_glue.c / gpio_toggle.c）
+  - `common/gpio_toggle.dtsi` —— 公共 overlay 片段（GPIO enable 块，各 app.overlay `#include`）
+  - `common/cpu2_mem_layout.overlay` —— cpu2 内存布局（经 EXTRA_DTC_OVERLAY_FILE 注入）
+  - `projects/*/tests/scripts/` 共享执行脚本（dbg_run.py / dump_results.py 等同源复制自样板，新增通用脚本应入公共层）
+- 判断标准：**"同一内容出现在 ≥2 个工程里且语义必须保持一致"→ 收敛到公共层**。
+- 新工程骨架默认引用公共层（qsh-test-gen 模板已固化）；合规检查见 qsh-test-validate。
 
 ### 6.2 Agent 与结果规范
 

@@ -67,8 +67,14 @@ set(EXTRA_DTC_OVERLAY_FILE
 ```
 
 **注意**：
-- `common_sources.cmake` 统一管理公共源文件，包括 GPIO toggle 模块（PA05/PA07 自动翻转）
-- prj.conf 需添加 `CONFIG_GPIO=y`，app.overlay 需添加 `&gpio0 { status = "okay"; };`
+- `common_sources.cmake` 统一管理公共源文件；GPIO toggle（PA05/PA07）按
+  BOARD_QUALIFIERS 自动仅编入 cpu1（cpu2 侧不编入，勿手动加回）
+- **复用收敛（SPEC_REFERENCE §6.1.9）**：新工程一律引用公共层，禁止私拷副本：
+  - GPIO enable：cpu1 侧（单核工程 + 双核 target 侧）app.overlay 用
+    `#include "../../../common/gpio_toggle.dtsi"`（相对层级按工程位置算准），
+    cpu2 侧不 include；禁止在 app.overlay 里手写 `&gpioa { status = "okay"; };`
+  - C 源：走 `common_sources.cmake`，不单独 target_sources 公共文件
+- prj.conf 需添加 `CONFIG_GPIO=y`
 - 特殊工程（如 rtc_ls_test 不使用 ztest_glue）可手动选择包含哪些公共源文件
 
 ### 1.3 协议头（tests/include/<driver>_test_protocol.h）

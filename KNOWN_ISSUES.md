@@ -142,3 +142,13 @@ timeout 杀 continue 收场，判成败看日志不看退出码。
 
 **32. i3c WDR 时序项间歇性 critical 异常**
 约 1 case/轮，复跑即恢复。基线容忍 ≤1 case；驱动侧 `scl-overhead-ns` 工作流跟进。
+
+**37. 共享树 dtsi 节点 label 改名 + 构建缓存掩盖**（2026-09-04）
+共享树 SoC dtsi 节点 label 改名（如 lsqsh GPIO `gpio0`→`gpioa`）后，810 全部引用旧 label 的
+overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发重配 → 部分 case 用陈旧固件
+"假通过"，部分报构建错，失败模式割裂难定位。
+处理：① 全量构建失败先 diff 共享树 dtsi label（`grep -n "gpio" zephyr/dts/riscv/linkedsemi/*.dtsi`）；
+② 适配一律改公共层（复用收敛 §6.1.9），GPIO 使能块唯一来源 `common/gpio_toggle.dtsi`；
+③ 固件类 overlay 适配后删全部 build 目录再回归，不信缓存。
+同类迁移断裂信号：双核 case 串口全静默但 mem 兜底全 PASS → 查 cpu2 `zephyr,console` 是否被
+`cpu2_console_uart5.overlay` 注入（`build/controller/zephyr/zephyr.dts` 应见 `console = &uart5`）。

@@ -1,16 +1,12 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * Common overlay for 810_driver_test projects
+ * Common overlay for 810_driver_test projects（复用收敛原则，SPEC_REFERENCE §6.1.9）
  *
- * Usage in your app.overlay:
- *   #include "common.overlay"
- *   # OR manually include this content
+ * GPIO toggle 使能块的唯一来源 = common/gpio_toggle.dtsi。
+ * 各 cpu1 侧 app.overlay 使用：
  *
- * This overlay enables GPIO for PA05/PA07 toggle threads.
+ *   #include "../../../common/gpio_toggle.dtsi"
+ *
+ * （cpu2 侧不 include——GPIO toggle 仅 cpu1 使用）
  */
-
-/* 启用GPIO控制器，支持PA05/PA07翻转线程 */
-&gpio0 {
-	status = "okay";
-};

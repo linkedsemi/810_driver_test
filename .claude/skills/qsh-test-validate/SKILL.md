@@ -116,6 +116,17 @@ set(EXTRA_DTC_OVERLAY_FILE
 
 **检查方法**：grep CMakeLists.txt 中的 `test_results.c`、`ztest_glue.c`、`cpu2_console_uart5.overlay`。
 
+### 1.4a 复用收敛检查（必查，SPEC_REFERENCE §6.1.9）
+
+凡公共层已有等价物的内容，工程不得私拷副本：
+
+| 检查项 | 规则 | 检查方法 |
+|---|---|---|
+| overlay 公共片段 | app.overlay 不得手写 `&gpioa { status` 使能块；cpu1 侧（单核+双核 target）应 `#include` `common/gpio_toggle.dtsi`，cpu2 侧不得包含 | `grep -n "&gpio" <固件>/app.overlay`：cpu1 侧命中=FAIL（应走 dtsi include），cpu2 侧命中=FAIL |
+| 公共 C 源 | 不得单独 `target_sources` test_results.c/ztest_glue.c/gpio_toggle.c，必须走 `common_sources.cmake` | grep CMakeLists 直接点名这三个文件=FAIL（common_sources.cmake include 除外） |
+| 私有 results 数组 | 禁止固件私有 results 数组（原有检查项，归并到本原则） | grep 源码内 `test_result` 自定义数组 |
+| 脚本私拷 | 新增通用脚本必须入公共层/scripts 样板，不得工程内另起等价脚本 | 人工 review |
+
 ### 1.5 run_test.py sys.path 设置（必查）
 
 `run_test.py` 必须在顶部（import dump_results 之前）设置：

@@ -1,15 +1,11 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * GPIO Toggle Overlay模板
+ * GPIO Toggle Overlay模板（复用收敛原则，SPEC_REFERENCE §6.1.9）
  *
- * 将此内容添加到各测试项目的app.overlay中，
- * 用于启用gpio0节点以支持PA05和PA07翻转功能。
+ * 唯一来源 = common/gpio_toggle.dtsi。各 cpu1 侧 app.overlay 使用：
  *
- * 注意：如果项目已有gpio0配置，请合并而非覆盖。
+ *   #include "../../../common/gpio_toggle.dtsi"
+ *
+ * （相对层级按工程实际位置算准；cpu2 侧不 include——GPIO toggle 仅 cpu1 使用）
  */
-
-/* 启用GPIO控制器 */
-&gpio0 {
-	status = "okay";
-};

@@ -2,9 +2,10 @@
 
 > **LSQSH 驱动批量自动化测试工程集**。`i3c_dualcore_test` 为首个样板工程。
 >
-> **⚠️ Supervisor 强制路由**：本目录下任何**非单次问答**的任务（回归、调试、开发、分析），
-> **必须**通过 supervisor agent 执行（见 `.claude/agents/supervisor.md`）。
-> 纯查询（"这个函数在哪"、"读一下这个文件"）不需要 supervisor。
+> **⚠️ 分级路由**：**碰硬件/碰回归构建目录**的任务（烧录、串口、调试、回归、
+> 固件开发）**必须**通过 supervisor agent 执行（硬件串行化 + 断点续跑）；
+> **纯文档、纯代码分析**等不碰硬件、不碰构建目录的任务，主会话可直接派独立
+> agent 并行执行。纯查询（"这个函数在哪"）不需要 supervisor。
 
 ---
 
@@ -31,8 +32,10 @@
 
 完整 case 清单：`regression/cases.yaml`（`#` 注释 = 屏蔽）
 
-**公共功能**：所有工程自动包含 GPIO toggle 线程（PA05 高优先级 + PA07 低优先级，500ms 周期），
-用于示波器观察系统负载和时序。配置集中在 `common/common_sources.cmake`、`common/gpio_toggle.c`。
+**公共功能**：cpu1 侧（单核工程 + 双核 target 侧）自动包含 GPIO toggle 线程（PA05 高优先级 + PA07 低优先级，500ms 周期），
+用于示波器观察系统负载和时序；cpu2 侧不编入（AMP 共享 GPIOA 防双核并发驱动）。
+配置集中在 `common/common_sources.cmake`（按 BOARD_QUALIFIERS 条件注入）、
+`common/gpio_toggle.c`、`common/gpio_toggle.dtsi`（overlay 使能块唯一来源，app.overlay 用 `#include` 引用）。
 
 ---
 
@@ -76,6 +79,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | **ztest 详细输出** | prj.conf 必须 `CONFIG_ZTEST_VERBOSE_OUTPUT=y`，否则逐项结果全 MISSING |
 | **libc 选择** | 必须 `CONFIG_NEWLIB_LIBC=n`（与 Zephyr POSIX types 冲突） |
 | **overlay 修改后** | 必须删 build 全量重建（Kconfig 缓存坑） |
+| **复用收敛** | 多工程共用内容只改 `common/` 公共层，禁止私拷副本（SPEC_REFERENCE §6.1.9） |
 
 ### 4.3 测试执行
 

@@ -1,0 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * GPIO toggle 公共 overlay 片段（复用收敛原则，SPEC_REFERENCE §6.1.9）
+ *
+ * 使能 GPIOA（PA05/PA07 翻转线程所在端口），供 gpio_toggle.c 使用。
+ * label 改名/引脚调整只改此一处。
+ *
+ * 用法（仅 cpu1 侧：单核工程 + 双核 target 侧）——在 app.overlay 中：
+ *   #include "../../../common/gpio_toggle.dtsi"
+ * （相对层级按工程实际位置算准；cpu2 侧不要 include，GPIO toggle 仅 cpu1 使用）
+ */
+
+&gpioa {
+	status = "okay";
+};

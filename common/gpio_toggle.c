@@ -9,7 +9,7 @@
  * 使用方法：
  *   1. 在CMakeLists.txt中添加此源文件
  *   2. 在prj.conf中启用CONFIG_GPIO=y
- *   3. 在app.overlay中启用gpio0节点
+ *   3. 在app.overlay中启用gpioa节点
  *   模块会自动在系统启动时创建翻转线程
  */
 
@@ -22,7 +22,7 @@
 LOG_MODULE_REGISTER(gpio_toggle, LOG_LEVEL_INF);
 
 /* GPIO设备节点 */
-static const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+static const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpioa));
 
 /* GPIO引脚配置 */
 #define GPIO_PA05_PIN  5

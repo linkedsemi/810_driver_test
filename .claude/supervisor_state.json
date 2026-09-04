@@ -2,31 +2,92 @@
   "task": "810_driver_test 驱动全量回归（23 cases）",
   "strategy": "STRATEGY_BATCH",
   "started": "2026-09-04",
-  "entry": "python regression/run_all.py (background task b7des6232)",
+  "entry": "round1=b7des6232 (5P/18F gpio0); round2=bp6t6b440 (4P/19F); round3=beo0do12q (13P/10F); round4-rerun=b49hu8zh5 (10 cases into session 2026-09-04-4)",
+  "fixes": [
+    "gpio0->gpioa: 13 overlays + common/gpio_toggle.c DT_NODELABEL (shared lsqsh.dtsi renamed label)",
+    "gpio_toggle only cpu1: common_sources.cmake conditional on BOARD_QUALIFIERS cpu2; 3 cpu0 overlays cleaned",
+    "mbedtls CMakeLists: restored ../tests/expected include dir (lost in c5259bb->a4639be migration)",
+    "all build dirs deleted for full rebuild"
+  ],
+  "round2_failures": "mbedtls x10 build(fixed); i2c_pure TGT reads=1701 mem-only; i3c_switch+mixed_1m_12m5 all-PASS-mem but no completion marker; i3c x6 COM18 access denied (env)",
+  "round3": "13P/10F: mbedtls 10 全 PASS（include 修复生效）；双核 9 case FAIL 根因=a4639be 丢失 EXTRA_DTC_OVERLAY_FILE（cpu2 console 回落 uart4）已修复并验证；rtc capture flash failed",
+  "round4": "i2c_pure PASS 1/1, i3c_switch PASS 10/10, mixed_1m_12m5 PASS 32/32（重建生效）；其余 6 i3c case --skip-build 用了坏固件 + run_test.py 重试路径漏关 COM18 级联；rtc 仍 flash failed",
+  "round5_inflight": "b3epdwt3k: i3c 全量重建 + 6 case + rtc 重试",
+  "known_new_issues": [
+    "run_test.py(i3c_dualcore) 异常路径（pass-1 无输出 raise）未 stop SerialCapture → 重试时 COM18 被自己占用 PermissionError 级联（待沉淀 KNOWN_ISSUES）",
+    "commit a4639be 迁移丢失：3x cpu0 CMakeLists EXTRA_DTC_OVERLAY_FILE + mbedtls tests/expected include（均已修复）"
+  ],
   "items": {
-    "trng_test/case_default": {"status": "PENDING"},
-    "rtc_ls_test/case_default": {"status": "PENDING"},
-    "otbn_test/case_default": {"status": "PENDING"},
-    "otbn_selftest/case_default": {"status": "PENDING"},
-    "i2c_pure_test/case_pure_i2c_400k": {"status": "PENDING"},
-    "i3c_i2c_switch_test/case_switch_core": {"status": "PENDING"},
-    "i3c_dualcore_test/case_mixed_1m_12m5": {"status": "PENDING"},
-    "i3c_dualcore_test/case_mixed_1m_6m25": {"status": "PENDING"},
-    "i3c_dualcore_test/case_mixed_400k_12m5": {"status": "PENDING"},
-    "i3c_dualcore_test/case_mixed_400k_1m": {"status": "PENDING"},
-    "i3c_dualcore_test/case_mixed_400k_6m25": {"status": "PENDING"},
-    "i3c_dualcore_test/case_pure_i3c_12m5": {"status": "PENDING"},
-    "i3c_dualcore_test/case_pure_i3c_6m25": {"status": "PENDING"},
-    "mbedtls_test/case_sw_baseline": {"status": "PENDING"},
-    "mbedtls_test/case_otbn_ecc": {"status": "PENDING"},
-    "mbedtls_test/case_hw_otbn_mix": {"status": "PENDING"},
-    "mbedtls_test/case_hw_all": {"status": "PENDING"},
-    "mbedtls_test/case_otbn_hash": {"status": "PENDING"},
-    "mbedtls_test/case_otbn_rsa": {"status": "PENDING"},
-    "mbedtls_test/case_otbn_all": {"status": "PENDING"},
-    "mbedtls_test/case_otbn_sha256_hw_sm3": {"status": "PENDING"},
-    "mbedtls_test/case_sw_hw_mix": {"status": "PENDING"},
-    "mbedtls_test/case_all_on_max": {"status": "PENDING"}
+    "trng_test/case_default": {
+      "status": "PASS"
+    },
+    "rtc_ls_test/case_default": {
+      "status": "PASS"
+    },
+    "otbn_test/case_default": {
+      "status": "PASS"
+    },
+    "otbn_selftest/case_default": {
+      "status": "PASS"
+    },
+    "i2c_pure_test/case_pure_i2c_400k": {
+      "status": "PASS"
+    },
+    "i3c_i2c_switch_test/case_switch_core": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_mixed_1m_12m5": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_mixed_1m_6m25": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_mixed_400k_12m5": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_mixed_400k_1m": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_mixed_400k_6m25": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_pure_i3c_12m5": {
+      "status": "PASS"
+    },
+    "i3c_dualcore_test/case_pure_i3c_6m25": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_sw_baseline": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_otbn_ecc": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_hw_otbn_mix": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_hw_all": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_otbn_hash": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_otbn_rsa": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_otbn_all": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_otbn_sha256_hw_sm3": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_sw_hw_mix": {
+      "status": "PASS"
+    },
+    "mbedtls_test/case_all_on_max": {
+      "status": "PASS"
+    }
   },
-  "last_activity": "regression started in background"
+  "last_activity": "2026-09-04 21:35 全量回归 23/23 PASS（reports/2026-09-04-4）；overlay 公共化+规范+坑沉淀全部完成",
+  "final": "23/23 PASS in reports/2026-09-04-4; pure_i3c_6m25 intermittent recovered on retry (KNOWN_ISSUES #32)"
 }
