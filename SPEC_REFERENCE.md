@@ -12,6 +12,7 @@
 | §6.5 覆盖矩阵与预期数据 | 本文件 + `qsh-test-gen` |
 | §6.6 外部环境确认 | 本文件 + `qsh-test-gen` |
 | §6.7 XIP 烧录 | 本文件 + `qsh-test-run` §8 |
+| §6.8 Supervisor 运营规范 | 本文件 + `supervisor` agent |
 
 ---
 
@@ -448,3 +449,171 @@ python tests/scripts/dbg_run.py --xip --bins ... --no-reset-run --gdb-reset
 - 串口采集/角色识别/token 解析与 RAM 模式共用；token 前缀用 `--prefix` 指定（默认 `I3C_TEST`），烧任意固件（如 hello_world）时按需设置
 - 启动方式（ResetAndRun vs DebugServer reset）以实机实测为准，回填本节约定
 
+---
+
+### 6.8 Supervisor 运营规范
+
+> Supervisor agent 的详细执行规则。agent profile（定位/铁律/路由表）见
+> `810_driver_test/.claude/agents/supervisor.md`。
+
+#### 6.8.1 策略详细实现
+
+**STRATEGY_TEST（自动化回归）**
+```text
+1. 读 cases.yaml 获取 case 清单
+2. 查 state → 过滤已完成 case
+3. 环境预检（DebugServer/串口/CKLink，见 qsh-debug §2.4）
+4. 逐 case 循环：
+   a. 执行 run_test.py --case <name>
+   b. 解析退出码：0=PASS，非0=FAIL
+   c. PASS → 记录，继续
+   d. FAIL → 失败分类（见 §6.8.2）→ 恢复或跳过
+   e. 更新 state
+5. 汇总总表（见 §6.8.4）
+```
+
+**STRATEGY_DEBUG（单项调试）**
+```text
+1. 读现象描述，匹配 CLAUDE.md §4.2 速查表
+2. 按 qsh-debug §0 总流程推进：
+   a. 环境确认（§1-3）
+   b. 复现抓现象（dbg_run.py --raw）
+   c. 分层定位（embedded-debug §1）
+   d. 断点抓现场（embedded-debug §2）
+3. 每步检查：是否命中已知坑（§10 / KNOWN_ISSUES.md）
+4. 定位闭环 → 验证 → 写问题总结
+5. 3 轮定位未闭环 → 升级（报告已有线索 + 需要什么信息）
+```
+
+**STRATEGY_DEV（代码开发）**
+```text
+1. 理解需求 → 拆分子任务
+2. 逐子任务：
+   a. 查现有实现（避免重复）
+   b. 实现
+   c. 构建验证（west build）
+   d. 构建失败 → 读错误 → 修复 → 重试（最多 2 次）
+   e. 更新 state
+3. 全部子任务完成 → 整体验证
+```
+
+**STRATEGY_ANALYZE（问题分析）**
+```text
+1. 明确问题
+2. 收集证据（日志/代码/现象）
+3. 形成假设列表（至少 2 个）
+4. 逐假设验证：查 debug-knowledge + KNOWN_ISSUES.md + 代码/日志分析
+5. 排除不可能 → 收敛到最可能原因
+6. 报告结论 + 验证方法
+```
+
+**STRATEGY_MULTI（混合多步）**
+```text
+1. 拆分子任务，每个子任务独立识别类型 → 路由到对应策略
+2. 串行执行（有依赖时）或标记可并行
+3. 每个子任务独立的 state 跟踪
+4. 子任务失败不阻断兄弟任务
+```
+
+#### 6.8.2 失败分类表
+
+收到执行结果后，按以下顺序匹配：
+
+```text
+1. 环境类（优先检查）
+   特征: "CKLINK"/"cannot open"/"timeout"/"no banner"/"连接残留"/"DebugServer"
+   恢复: clean_gdb_residue → 重启 DebugServer(30s) → 重试
+   最大: 2 次
+
+2. 超时类
+   特征: 进程超过 5 分钟无输出 / subprocess.TimeoutExpired
+   恢复: 杀进程 → 清理 → 重试（缩短 timeout）
+   最大: 1 次
+
+3. 构建类
+   特征: "error:"/"undefined reference"/"fatal"/编译退出码非0
+   恢复: 读最后 50 行错误 → 查 KNOWN_ISSUES.md 匹配 →
+         已知坑 → 按坑修复（如删 build 重建）→ 重试
+         未知 → 跳过，记 ESCALATE
+   最大: 1 次（可修复时）
+
+4. 逻辑类（测试 FAIL）
+   特征: 测试断言失败 / FAIL token / execution=FAILED
+   恢复: 读 FAIL 行 + reason → 查已知坑 →
+         命中已知坑 → 按坑修复 → 重跑
+         未命中 → 记录详情，标记 FAIL，继续
+   最大: 1 次
+
+5. 未知类
+   特征: 以上都不匹配
+   恢复: 记录完整输出（最后 100 行）→ ESCALATE
+   最大: 0 次
+```
+
+#### 6.8.3 重试纪律与进度持久化
+
+**重试纪律**：
+- 每个 item 最多重试 2 次（环境类）或 1 次（其他类）
+- 重试前必须说明：上次失败原因 + 本次恢复动作
+- 重试时恢复动作与上次相同 → 不重试，直接 ESCALATE
+- 连续 3 个 item ESCALATE → 暂停循环，报告整体环境可能有问题
+
+**进度持久化**（每个 item 完成后立即更新 state 文件）：
+
+```python
+state["items"][item_id] = {
+    "status": "PASS|FAIL|SKIP|TIMEOUT|ESCALATE",
+    "retries": N,
+    "error": "最后一次错误摘要（≤200字）",
+    "action": "RETRY|SKIP|ESCALATE",
+    "updated": "ISO timestamp"
+}
+state["last_activity"] = now()
+```
+
+#### 6.8.4 汇总报告模板
+
+```text
+[SUPERVISOR] 任务完成报告
+═══════════════════════════════════════
+任务: <描述>
+策略: <STRATEGY_XXX>
+耗时: <开始> → <结束>
+
+结果:
+  ✅ PASS:      N 个
+  ❌ FAIL:      N 个
+  ⏭️ SKIP:      N 个
+  ⏰ TIMEOUT:   N 个
+  🔺 ESCALATE:  N 个
+
+详情:
+  ✅ case_trng          PASS (0 retries)
+  ❌ case_i3c_12m5      FAIL → ESCALATE (2 retries, "CTRL no banner")
+  ...
+
+需要人工处理:
+  1. case_i3c_12m5: controller 核无 banner 输出，怀疑硬件接线
+
+State 已保存: regression/foreman_state.json
+═══════════════════════════════════════
+```
+
+#### 6.8.5 断点续跑
+
+启动时检查 state 文件：
+
+```text
+if foreman_state.json 存在:
+  读取 state
+  if state.task 与当前任务匹配:
+    过滤 items 中 status 为 PASS 的 → 跳过
+    对 status 为 FAIL 且 retries < max 的 → 加入待办
+    对 status 为 ESCALATE 的 → 跳过（已升级，不重复）
+    对 status 为 PENDING 的 → 加入待办
+    输出: "[SUPERVISOR] 从断点续跑: 已完成 X/Y，剩余 Z 个"
+  else:
+    新建 state
+else:
+  新建 state
+```

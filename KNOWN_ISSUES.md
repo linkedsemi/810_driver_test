@@ -15,13 +15,16 @@
 **2. DebugServer 起不来：CKLINK may be used by other program**
 FlashProgrammer 占用 CKLink。互斥是双向的：烧 flash 时 DebugServer 也必须退出。
 处理：`tasklist | grep -i -E "cskyflash|debugserver"` 找占用进程 → taskkill。
+迭代补充（2026-09-05）：DebugServerConsole.exe 卡死占用 port 1025，Python subprocess `taskkill /F /PID` 无法杀死（MSYS 单斜杠不转换经典坑），新 DebugServer 启动报同样错误。最终在 bash 层面直接执行 `taskkill //F //PID` 成功（双斜杠在 MSYS bash 中被正确转换为单斜杠）。
+杀进程顺序：先杀残留 gdb → 再杀 DebugServerConsole（按 PID） → 确认 port 1025 释放（`netstat -ano | grep :1025`） → 再重启。
+极端情况：`taskkill //F` 仍杀不掉 → 拔插 CKLink USB 物理释放。
 
 **3. 不要用 netstat 判离线**（用户纠正）
 1025 由 PC 进程 DebugServer 提供（非固件内置），判断在线 = GDB 连一次看 "Remote debugging"。
 
 **17. DebugServer 连接残留的脚本化自愈**
 detach 不能真正释放连接；唯一可靠 = 重启 DebugServer 进程。四步：① netstat 杀 gdb ② taskkill /F /IM DebugServerConsole ③ netstat 精确杀 1025 LISTENING ④ Popen 重启 + 轮询 `DebuggerServer$` 判就绪。
-Python subprocess 里 taskkill 一律单斜杠 `/F /PID`（§16）。
+Python subprocess 里 taskkill 用单斜杠 `/F /PID`（§16）；若杀不掉，fallback = bash 层 `taskkill //F //PID`（见 #2）。
 
 **20. DebugServer 重启后"不稳定期"**
 新实例立即连跑 → 间歇性 load_fail/断连/WDR 异常。实例稳定 ~30s 后正常。
@@ -83,6 +86,33 @@ LOG_ERR 走 shell 后端阻塞 10ms+/条 → 中断饿死。ISR 只记账。
 
 **6. 调试探针必须清理**
 `log_dbg_*`/`to_dbg_*`/probe/while(1) 陷阱一律删。功能修复（MPIL workaround/PMP_W）保留。
+
+**38. 新工程脚本漏"按住 cpu2"——cpu2 自启劫持串口**（2026-09-07，模板缺陷）
+6 个新工程的 dbg_run.py/run_test.py 全部没有 `set {int}0x4002200c = 2`
+（APP_CPU_SRST 保持 cpu2 复位），老 4 个单核工程全都有此步骤。
+后果：cpu2 从 flash 自启跑旧固件，可能经 vuart 代理劫持 uart1 输出，
+导致单核工程串口 0 行（看似"无输出"实际是 cpu2 抢了串口）。
+根因：qsh-test-gen 模板生成脚本时未注入 cpu2 hold 步骤。
+修复：dbg_run.py / run_test.py 的 gdb 命令序列在 `reset` 前加
+`set {int}0x4002200c = 2`（APP_CPU_SRST 寄存器，bit1=cpu2 srst）。
+已固化为 qsh-test-gen 模板约束（见 qsh-test-gen §4）。
+
+**39. chosen 节点丢失导致串口无输出**（2026-09-07，模板缺陷）
+新工程 overlay 未显式声明 `chosen { zephyr,console = &uart1; };`，
+DT_CHOSEN(zephyr_console) 编译时为 NULL → uart_console_init 跳过 → printk 无输出。
+根因：qsh-test-gen 模板 overlay 不含 chosen 块。
+修复：所有单核工程 overlay 必须显式声明 chosen 节点。
+已固化为 qsh-test-gen 模板约束（见 qsh-test-gen §4）。
+
+**40. k_malloc 依赖堆导致崩溃——表现为串口 0 行极具迷惑性**（2026-09-07，模板缺陷）
+adc_temper 测试代码 `k_malloc(80)` 返回 NULL → `memset(NULL, ...)` →
+store fault → 系统挂死 → log 线程拿不到调度 → 串口 0 行。
+迷惑性：表现为"串口无输出"，诊断时一直追 console/log 配置，
+实际根因是堆内存不足的崩溃。
+根因：测试代码用堆内存而非静态数组；prj.conf 缺 `CONFIG_HEAP_MEM_POOL_SIZE`。
+修复：测试代码禁用 k_malloc，改用静态数组；qsh-test-gen 模板约束测试代码
+不得依赖堆分配。排查串口无输出时应**先查崩溃（fault/hardfault 日志）再查配置**。
+已固化为 qsh-test-gen 模板约束（见 qsh-test-gen §4）。
 
 ---
 
@@ -152,3 +182,23 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 ③ 固件类 overlay 适配后删全部 build 目录再回归，不信缓存。
 同类迁移断裂信号：双核 case 串口全静默但 mem 兜底全 PASS → 查 cpu2 `zephyr,console` 是否被
 `cpu2_console_uart5.overlay` 注入（`build/controller/zephyr/zephyr.dts` 应见 `console = &uart5`）。
+
+**38. run_test.py allocate_session_dir 缺 date_str 参数**（2026-09-07）
+- 现象：`TypeError: allocate_session_dir() missing 1 required positional argument: 'date_str'`
+- 根因：新工程 run_test.py 生成时漏传 date_str
+- 修复：`date_str = datetime.now().strftime("%Y-%m-%d"); session = allocate_session_dir(REPORTS_ROOT, date_str)`
+
+**39. DebugServer/CKLink 被残留 GDB 进程占用**（2026-09-07）
+- 现象：`ERROR: Your CKLINK may be used by other program`
+- 根因：测试中断后 GDB 进程未退出，持有 CKLink 连接
+- 修复：`wmic process where "name='riscv64-unknown-elf-gdb.exe'" delete`
+
+**40. 串口被残留 Python 进程占用**（2026-09-07）
+- 现象：`PermissionError(13, '拒绝访问')`
+- 根因：测试中断后 Python 进程未退出，占用串口
+- 修复：`wmic process where "name='python.exe'" delete`
+
+**41. 新工程固件加载成功但串口无输出**（2026-09-07，待解决）
+- 现象：固件加载正常（Transfer rate: 41 KB/sec），GDB 断点可达 zt_init/test_main，但串口 COM10 无任何输出
+- 影响：adc/dma/flash/wdt/iopmp 等新工程均受影响
+- 排查方向：uart1 初始化、时钟配置、overlay 配置

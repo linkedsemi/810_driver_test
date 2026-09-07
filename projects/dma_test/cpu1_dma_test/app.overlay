@@ -1,0 +1,19 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * DMA M2M test overlay (cpu1, lsqsh_evb)
+ *
+ * 使能 dmac1（8 通道，不与 SPI3/4 的 dmac2 冲突）。
+ * M2M 传输直接用 dmac1 节点，不需额外 consumer（上游 loop_transfer 也是直接传设备）。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&dmac1 {
+	status = "okay";
+};

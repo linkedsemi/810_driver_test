@@ -449,8 +449,10 @@ def run_case(case_dir: Path, ctrl_port: str, tgt_port: str, case_timeout: int) -
     ctrl_cap.start()
     tgt_cap.start()
     if ctrl_cap.error:
+        tgt_cap.stop()   # 开不动一路时另一路必须关掉，否则句柄泄漏致重试 PermissionError
         raise RuntimeError(ctrl_cap.error)
     if tgt_cap.error:
+        ctrl_cap.stop()
         raise RuntimeError(tgt_cap.error)
 
     def _has_boot() -> bool:
@@ -490,6 +492,8 @@ def run_case(case_dir: Path, ctrl_port: str, tgt_port: str, case_timeout: int) -
     _kill_proc_group(proc)
     clean_gdb_residue()
     if p1_boot is None:
+        ctrl_cap.stop()   # 抛错前释放串口句柄：泄漏会让同进程重试开 COM 失败
+        tgt_cap.stop()
         raise RuntimeError(
             f"{case_dir.name}: pass-1 烧录后 {LOAD_WINDOW_S}s 内无任何固件输出"
             "（ZT_BOOT/ztest 行/I2C_PURE_TEST token）——测试环境有问题"

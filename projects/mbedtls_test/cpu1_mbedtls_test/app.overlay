@@ -20,7 +20,7 @@
 	status = "okay";
 };
 
-/* 启用GPIO控制器，支持PA05/PA07翻转线程 */
-&gpio0 {
-	status = "okay";
-};
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）：
+ * 使能 GPIOA（PA05/PA07 翻转线程所在端口），label 调整只改公共文件。
+ * GPIO toggle 仅 cpu1 使用，cpu2 侧固件不编入 gpio_toggle.c、不 include 本片段。 */
+#include "../../../common/gpio_toggle.dtsi"

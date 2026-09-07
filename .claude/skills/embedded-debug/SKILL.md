@@ -118,3 +118,11 @@ description: 嵌入式开发通用调试方法论（不依赖具体硬件环境/
 | 本方法学的通用部分 | 本 skill（`embedded-debug`） |
 | 某领域（mcu/zephyr/linux/riscv/arm）既往招式查询/沉淀 | `debug-knowledge`（§装载 读 / §写入 自动填充） |
 | 外部插件/MCP 能力查询 | `skill-registry` |
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 方法学应用完成 | 回调用方 | 定位闭环 |
+| 推出可复用招式 | debug-knowledge §写入 | 非一次性、属某域 |
+| 发现通用环境坑 | KNOWN_ISSUES.md | 换机器还会踩 |

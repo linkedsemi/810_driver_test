@@ -143,3 +143,11 @@ dbg_run.py SUMMARY 里过滤的关键行（驱动/固件汇总）：
 
 对比分析中发现的新模式（如新假 PASS 形式），追加到 §2 假 PASS 识别 +
 CLAUDE.md §10。
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 分析完成 | ★ 坑沉淀决策 | 自动转（见 skill-orchestrator §2 坑沉淀决策表） |
+| 发现假 PASS 新模式 | qsh-test-compare §2 + KNOWN_ISSUES | 新模式 |
+| 发现领域可复用调试法 | debug-knowledge §写入 | 非一次性、非纯环境坑 |

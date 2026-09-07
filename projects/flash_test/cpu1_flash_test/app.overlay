@@ -1,0 +1,17 @@
+/*
+ * Flash test overlay (cpu1, lsqsh_evb@2os)
+ *
+ * 板级 dts 定义了 flash1@8000000（片外 QSPI），
+ * 但未设 status="okay"，需在此显式 enable。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&flash1 {
+	status = "okay";
+};

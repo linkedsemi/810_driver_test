@@ -76,13 +76,103 @@ taskkill //F //IM DebugServerConsole.exe && cd C:/uaer_app/debug_server/bin && .
 > **实测纠正**：detach 不能真正释放连接（任何"连接→detach→退出"的 gdb 都留
 > 残留，**探测连接本身也制造残留**）→ 残留深时 detach 无效，唯一可靠 = 重启
 > DebugServer 进程。**脚本化自愈四步**（run_test.py 的 `clean_gdb_residue`）：
-> ① netstat 找 1025 ESTABLISHED 对端 PID 杀 gdb；② taskkill /F /IM
+> ① netstat 找 1025 ESTABLISHED 对端 PID 杀 gdb；② taskkill //F //IM
 > DebugServerConsole.exe；③ netstat 精确杀 1025 LISTENING 兜底；④ Popen 重启 +
 > stdout 重定向日志，**轮询日志出现 `DebuggerServer$` 提示符判就绪**（≤30s），
 > 不能只固定 sleep（CKLink 初始化耗时随机）。
-> **Python subprocess 里 taskkill/tasklist 必须用单斜杠**（`/F /PID /FI /FO`）：
-> MSYS 的 `//F` 转换只对 Git Bash 有效，subprocess 无转换层，`//F` 原样传给
-> taskkill 报"无效参数"（CLAUDE.md §10.16）。
+> **Python subprocess 中 taskkill 优先用双斜杠**（`//F //PID`）：
+> 单斜杠在 MSYS subprocess 下不转换（KNOWN_ISSUES §16/#2 经典坑），杀不掉；
+> 双斜杠在 Git Bash 和 subprocess 下均正确。若仍杀不掉 → 拔插 CKLink USB。
+
+### 2.4 环境预检（Supervisor 执行前必做）
+
+执行任何碰硬件的任务前必须确认环境就绪：
+
+```text
+1. DebugServer 在线？
+   → GDB 连 127.0.0.1:1025，能 detach 即在线
+   → 不在线 → 启动 DebugServer（§2.1）→ 等 port 1025 LISTENING（秒级，轮询 netstat）
+
+2. 无进程冲突？
+   → tasklist | grep -i -E "cskyflash|debugserver|python"
+   → FlashProgrammer 在 → 杀掉（CKLink 互斥，§2.2）
+   → 残留 python 占串口 → 杀掉
+
+3. 串口可用？
+   → 枚举 COM 口，排除 CKLink（32bf）
+   → 双核工程需 2 路：CTRL + TGT
+
+4. 连接残留？
+   → netstat -ano | findstr :1025
+   → ESTABLISHED 存在 → 自愈四步（§2.3）
+```
+
+预检失败 → 自愈 → 重试 1 次 → 仍失败 → 升级（报告环境问题，需人工检查硬件连接）。
+
+### 2.5 自愈升级策略（超时升级，2026-09-07 用户裁定）
+
+**核心原则：先穷尽自愈手段，超时后才升级。升级必须带结构化信息。**
+
+#### 自愈阶梯（遇到问题时按顺序执行，不跳步）
+
+```text
+环境问题（DebugServer/串口/CKLink）：
+  Step 1: taskkill //F //PID（双斜杠，MSYS 兼容）杀残留进程
+  Step 2: taskkill //F //IM DebugServerConsole.exe（按名字杀）
+  Step 3: 确认 port 1025 干净（netstat）→ 启动 DebugServer（§2.1）
+  Step 4: 轮询 netstat 等 port 1025 LISTENING（秒级，不要固定 sleep）
+  Step 5: GDB 连 127.0.0.1:1025 验证在线
+  Step 6: 仍失败 → 拔插 CKLink USB（物理释放）→ 回 Step 3
+  Step 7: 以上全部失败 → 超时升级
+
+构建失败：
+  Step 1: 查 KNOWN_ISSUES.md 匹配已知坑 → 按坑修复 → 重建
+  Step 2: clean build（删 build 目录重建）→ 回 Step 1
+  Step 3: 仍失败 → 超时升级
+
+烧录/GDB 连接失败：
+  Step 1: 杀残留 GDB（netstat 查 1025 ESTABLISHED 对端 PID）
+  Step 2: 重启 DebugServer（同上 Step 2-4）
+  Step 3: GDB 连接 → 尝试 reset + load
+  Step 4: 仍失败 → 超时升级
+```
+
+**关键约束：每步做完后必须验证结果再进下一步（不能盲跳）。**
+
+#### 超时升级规则
+
+| 自愈阶段 | 超时上限 | 到期后 |
+|---------|---------|-------|
+| 环境类（DebugServer/串口/CKLink） | **30 秒** | 升级 |
+| 构建类 | **1 分钟** | 升级 |
+| 烧录/GDB 类 | **30 秒** | 升级 |
+
+超时 = 从第一次遇到问题到当前的墙钟时间（不是步数）。超时前完成所有阶梯步骤。
+
+#### 升级格式（必须结构化，禁止模糊求助）
+
+升级消息模板：
+```text
+🔺 自愈超时（已耗时 X 分钟），需要人工介入
+
+问题: <一句话描述>
+已尝试:
+  ① taskkill //F //PID xxx → <结果>
+  ② 重启 DebugServer → <结果>
+  ③ ...
+最后错误: <粘贴关键错误信息>
+建议操作: <具体可执行的下一步>
+```
+
+**禁止**："需要用户操作"（不够具体）、"请手动关闭 DebugServer"（不说原因）、反复发同一条消息。
+
+#### 直接升级（不走超时阶梯）
+
+1. 同一 item 重试次数耗尽仍失败
+2. 连续 3 个 item ESCALATE（可能是系统性问题）
+3. 需要修改硬件连接（接线改动、检查焊点）
+4. 需要修改非本项目的代码（Zephyr 上游、HAL 库源码）
+5. 不确定属于哪种失败类型（诊断无把握）
 
 ## 3. GDB 双核烧录（两遍烧录法）
 
@@ -225,6 +315,7 @@ riscv64-unknown-elf-gdb -q \
 | 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（§10.21） |
 | load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
+| 串口 0 行 + 系统完全无输出（★ 先查崩溃再查配置） | 测试代码 k_malloc 返回 NULL → memset(NULL) → store fault 崩溃；极具迷惑性表现为"串口无输出"，实际是堆内存不足导致的系统挂死 | ★ **排查顺序**：先 gdb attach `bt` 看是否有 fault/hardfault；再查测试代码是否用了 k_malloc/k_calloc（改用静态数组 `static uint8_t buf[N]`）；最后才查 console/log 配置。根因见 KNOWN_ISSUES #40 |
 
 ## 8. 探针纪律（方法 → embedded-debug §4；本段留 QSH 实例）
 
@@ -243,6 +334,15 @@ QSH/810 实例：
 
 - 只沉淀会反复遇到的通用坑 → embedded-debug §6 + CLAUDE.md §10/速查表；
   一次性定位闭环的 bug → 问题总结 .md 存档（CLAUDE.md §7），不进速查
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 问题解决 | 回调用方（qsh-test-run / qsh-test-gen 等） | 恢复执行 |
+| 发现环境坑 | KNOWN_ISSUES.md + qsh-debug §7 速查 | 反复踩 |
+| 发现领域招式 | debug-knowledge §写入 | 非一次性 |
+| 3 轮未闭环 | 升级（结构化报告） | 超时 |
 
 ## 附：scons / HAL 示例验证（低频非主环境）
 

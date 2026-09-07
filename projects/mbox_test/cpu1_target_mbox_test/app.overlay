@@ -1,0 +1,26 @@
+/*
+ * MBOX test overlay - cpu1 (target) side
+ *
+ * 在板级 mbox 节点内添加 2 个测试 consumer（ch4/ch5），
+ * 避开 ch0-3 已占用通道。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&mbox {
+	mbox_test_ch4: mbox_test_ch4 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 4 16 1>, <&mbox 4 16 1>;
+		mbox-names = "tx", "rx";
+	};
+	mbox_test_ch5: mbox_test_ch5 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 5 8 1>, <&mbox 5 8 1>;
+		mbox-names = "tx", "rx";
+	};
+};

@@ -1022,7 +1022,7 @@ ZTEST(i3c_controller, ccc_basic)
 }
 #endif /* I3C_TEST_EN_CCC_BASIC */
 
-/* ========== 主机主动临界测试（2026-08-24 新增） ========== */
+/* ========== 主机主动临界测试 ========== */
 
 /*
  * 读欠载（target TX 耗尽提前终止，T-bit=0）宏生成器：
@@ -1396,7 +1396,7 @@ ZTEST(i3c_controller, multi_msg_4)
 }
 #endif /* I3C_TEST_EN_MULTI_MSG_4 */
 
-/* ========== SETAASA / SETDASA 地址分配 CCC（2026-08-26 新增） ==========
+/* ========== SETAASA / SETDASA 地址分配 CCC ==========
  *
  * 硬件依据（i3c_peripheral_programmers_model.pdf，NXP I3C slave IP）：
  * - target 静态地址写在 SCONFIG.SADDR（DTS static-address，见 app.overlay）；

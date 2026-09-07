@@ -207,3 +207,11 @@ python tests/scripts/dbg_run.py --xip --bins hello.bin@0x08000000 --timeout 10 -
 - 结果判定：`FP_OK: <name>@<addr>` + 退出码 0；失败看 `Bins\flash-programer.log` 尾部
 - 环境变量：`FP_EXE`/`FP_ALGO`/`FP_LOG` 可覆盖工具路径；**默认已用工程内
   打包副本**（`tools/flash_program/`，自包含），外部 `C:\user_file\...` 仅回退
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 采集完成 | ★ qsh-test-compare | 自动转，结果分析 |
+| 连接/烧录失败 | qsh-debug（环境修复） | 环境问题 |
+| 发现环境坑 | KNOWN_ISSUES.md | 反复踩的坑 |

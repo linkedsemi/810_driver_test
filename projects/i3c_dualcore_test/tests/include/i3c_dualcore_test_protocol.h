@@ -182,7 +182,7 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
  * 若单独分块跑 ibi/hot_join 而不跑 ccc_basic，行为不受影响；
  * 若一起跑，controller 会在 ibi/hot_join 测试前重新 ENEC。
  */
-/* 全量测试开关（2026-08-24：write_read 根因闭环后恢复全开） */
+/* 全量测试开关 */
 #define I3C_TEST_EN_CCC_BASIC          1
 #define I3C_TEST_EN_DAA_DISCOVERY      1
 #define I3C_TEST_EN_WRITE_8            1

@@ -176,6 +176,60 @@ void test_main(void) {
 
 **检查方法**：若已编译，用 `nm --numeric-sort <elf> | grep _ztest_unit_test` 对比 TEST_NAMES 顺序。
 
+### 1.9 模板缺陷防漏检查（必查，2026-09-07 沉淀）
+
+以下 3 项源自 6 个新工程实机跑测暴露的模板缺陷，**必须逐项检查**：
+
+#### 1.9a cpu2 hold 步骤（串口 0 行最高频根因）
+
+dbg_run.py / run_test.py 的 gdb 命令序列必须包含：
+```
+set {int}0x4002200c = 2
+```
+此命令在 `reset` 前执行，保持 cpu2 复位防止其从 flash 自启劫持 uart1。
+
+**检查方法**：
+```python
+for script in [dbg_run_py, run_test_py]:
+    content = script.read_text()
+    assert "0x4002200c" in content, f"{script.name} 缺 cpu2 hold 步骤"
+```
+
+#### 1.9b overlay chosen 节点
+
+单核工程的 overlay 必须显式声明 console chosen 节点：
+```dts
+chosen {
+    zephyr,console = &uart1;
+};
+```
+双核 cpu2 侧走 `cpu2_console_uart5.overlay`（公共层），不需额外声明。
+
+**检查方法**：
+```python
+for case_dir in tests.glob("case_*"):
+    overlay = case_dir / "controller.overlay"  # 单核工程
+    if overlay.exists():
+        content = overlay.read_text()
+        assert "zephyr,console" in content, f"{overlay} 缺 chosen 节点"
+```
+
+#### 1.9c 测试代码禁用堆分配
+
+测试源码（`src/*.c`）不得调用 `k_malloc` / `k_calloc` / `k_realloc`，
+改用静态数组（`static uint8_t buf[N]`）。堆依赖极具迷惑性：
+k_malloc 返回 NULL → memset(NULL) → store fault → 系统挂死 →
+串口表现为 0 行（看似 console/log 配置问题，实际是崩溃）。
+
+**检查方法**：
+```python
+for src in project_dir.rglob("src/*.c"):
+    content = src.read_text()
+    for bad in ["k_malloc", "k_calloc", "k_realloc"]:
+        assert bad not in content, \
+            f"{src} 用了 {bad}（堆分配），改用静态数组"
+```
+
 ## 2. 编译验证（必做）
 
 对每个 `case_*` 目录执行 `west build`：
@@ -265,3 +319,11 @@ for case_dir in project_tests.glob("case_*"):
 | 修改 prj.conf/overlay 后 | 静态+编译受影响 case | prj.conf + 编译 |
 | 回归前预检 | 静态快速扫 | 目录+配置+sys.path |
 | 排查回归失败 | 针对 FAIL case | 编译+配置+glue 集成 |
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 全部 PASS | ★ qsh-test-run（首次验证） | 自动转 |
+| 存在 FAIL 项 | 回 qsh-test-gen 修 | FAIL 标注具体修复项 |
+| 存在 WARN 项 | 记录后继续 | 非阻塞 |

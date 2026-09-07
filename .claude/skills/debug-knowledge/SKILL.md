@@ -73,3 +73,11 @@ debug-knowledge/
 | `skill-registry` | 外部插件/MCP 能力目录 |
 | qsh-* / 工程 CLAUDE.md §10 | QSH/810 工程级坑 |
 | ~~顶层 `DEBUG_ISSUES_QUICKREF.md`~~（2026-09-02 已删） | 内容并入 `knowledge/common/` 笔记（电气/总线等），方法学 M1 在 embedded-debug §3.3；跨工程速查由本库按域装载承接 |
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| §装载查到招式 | 回调用方（直接用） | 命中 |
+| §装载未命中 | embedded-debug（方法学现推） | 没有现成招式 |
+| §写入完成 | skill-keeper（索引同步） | 域 README 更新 |

@@ -21,6 +21,7 @@
 
 | 文档 | 定位 | 用途 |
 |------|------|------|
+| `USER_GUIDE.md` | ★ 用户指南 | **新手入口**：怎么用/怎么迁移/常见操作/常见问题 |
 | `CLAUDE.md`（本文件） | skill 库便携说明 | 库结构/接线/迁移指南 |
 | `TOOLS_AND_SKILLS.md` | skill 清单 | 所有 skill 的索引和调用方式 |
 | `DOC_EDIT_RULES.md` | 文档编辑规范 | CLAUDE.md/SKILL.md 编辑规则（通用） |
@@ -32,8 +33,11 @@
 | `embedded-debug` | 通用调试方法论 | ✅ 通用 | 分层定位/断点/双通道/探针/坑沉淀三分（跨硬件） |
 | `debug-knowledge` | 调试领域知识库 | ✅ 通用 | `knowledge/{common,mcu,zephyr,linux,riscv,arm}/` 内容 .md；装载 + 自动填充 |
 | `skill-registry` | 外部插件/MCP 能力目录 | ✅ 通用 | superpowers/claude-mem 等启用法 |
-| `env-adapter` | 跨环境引导接线 + 通用入口 | ✅ 通用 | 探测环境 → junction 接线 → 路由（**新环境第一个落点**） |
-| `agents/supervisor.md` | 自适应任务监督 agent | ✅ 通用 | 策略路由/失败恢复/断点续跑（需按工程域定制） |
+| `env-adapter` | 跨环境引导接线 + 通用入口 | ✅ 通用 | 探测环境 → junction 接线 → 路由 → 工程适配 → 迁移清单（**新环境第一个落点**） |
+| `skill-orchestrator` | 闭环路由 manifest | ✅ 通用 | ★ 任务生命周期/转换规则/supervisor 强制读（**所有策略执行前必读**） |
+| `skill-auditor` | 完整性自检 + 迁移验证 | ✅ 通用 | 文件/引用/闭环链检查 + 硬编码扫描 + 迁移后验证 |
+| `agents/supervisor.md` | 自适应任务监督 agent | ✅ 通用 | 策略路由/失败恢复/断点续跑（需按工程域定制；**执行前必读 skill-orchestrator**） |
+| `agents/skill-keeper.md` | skill 库与文档维护 agent | ✅ 通用 | 坑沉淀/模板补漏/文档漂移修复（纯文档，不碰硬件） |
 | `qsh-driver-test` | 810 总入口路由 | ⚠️ 810 专用 | 810 驱动测试三大类任务先读它 |
 | `qsh-debug`（含附 `ref-scons-hal-verify.md`） | QSH 调试主入口 | ⚠️ QSH 专用 | 连接/烧录/串口/速查；scons/HAL 低频验证见附 md |
 | `qsh-test-gen` / `qsh-test-run` / `qsh-test-compare` | 810 驱动测试执行链 | ⚠️ 810 专用 | 生成/跑用例/分析 |
@@ -82,6 +86,8 @@
 | 外部插件/MCP 能力 | `skill-registry` |
 | 810 驱动测试工程任务 | `supervisor` agent 自动路由（手动备选：`qsh-driver-test`） |
 | 新环境/不确定/迁移引导 | `env-adapter` |
+| 闭环链路查询/策略执行前 | `skill-orchestrator`（supervisor 必读） |
+| 迁移后验证/完整性检查 | `skill-auditor` |
 | 都不命中 | `embedded-debug` 方法学 + `debug-knowledge` 查对应域 |
 
 ## 留档（随本目录）

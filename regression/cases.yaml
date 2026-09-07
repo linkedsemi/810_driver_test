@@ -24,3 +24,10 @@ cases:
   - projects\mbedtls_test\tests\case_otbn_sha256_hw_sm3
   - projects\mbedtls_test\tests\case_sw_hw_mix
   - projects\mbedtls_test\tests\case_all_on_max
+  # === 新增 6 工程（2026-09-04） ===
+  - projects\adc_temper_test\tests\case_default
+  - projects\dma_test\tests\case_default
+  - projects\flash_test\tests\case_default
+  - projects\mbox_test\tests\case_mbox_basic
+  - projects\wdt_test\tests\case_non_destructive
+  - projects\iopmp_test\tests\case_default

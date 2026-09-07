@@ -532,8 +532,10 @@ def run_case(case_dir: Path, ctrl_port: str, tgt_port: str, case_timeout: int) -
     ctrl_cap.start()
     tgt_cap.start()
     if ctrl_cap.error:
+        tgt_cap.stop()   # 异常路径必须释放串口，否则重试/下一 case 自占 COM 口
         raise RuntimeError(ctrl_cap.error)
     if tgt_cap.error:
+        ctrl_cap.stop()
         raise RuntimeError(tgt_cap.error)
 
     def _ztest_view(cap: SerialCapture) -> Dict:
@@ -578,6 +580,10 @@ def run_case(case_dir: Path, ctrl_port: str, tgt_port: str, case_timeout: int) -
     _kill_proc_group(proc)
     clean_gdb_residue()
     if p1_boot is None:
+        # raise 前释放串口：主流程的 RETRY 会在同进程内重开采集，
+        # 不 stop 则下一 attempt 打开 COM 口必 PermissionError（自占级联）
+        ctrl_cap.stop()
+        tgt_cap.stop()
         raise RuntimeError(
             f"{case_dir.name}: pass-1 烧录后 {LOAD_WINDOW_S}s 内无任何固件输出"
             "（ZT_BOOT/ztest 行/I3C_TEST token）——测试环境有问题"

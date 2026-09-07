@@ -1,0 +1,15 @@
+/*
+ * WDT test overlay (cpu1, lsqsh_evb)
+ * 使能 sec_iwdg 看门狗实例。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&sec_iwdg {
+	status = "okay";
+};

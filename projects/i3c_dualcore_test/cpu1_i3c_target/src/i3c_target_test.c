@@ -136,7 +136,7 @@ static bool tgt_failed;
 /*
  * Pre-fill the hardware TX FIFO with the bytes to be read.
  *
- * 预填模型（2026-08-21 修订：写匹配时刻预填，替代"仅 IDLE 可预填"旧模型）：
+ * 预填模型（写匹配时刻预填）：
  * - 驱动 i3c_target_tx_write 只拒绝 RD 态（master 正在读）；IDLE/WR 态均可
  *   预填，按 FIFO 现存 TXCOUNT 续写 buf（幂等：已装内容不重写）。
  * - 预填时机（两个）：
@@ -1207,7 +1207,7 @@ static void validate_ccc_basic(void)
 	TGT_EXPECT(addressed, "target was not addressed");
 }
 
-/* ========== 主机主动临界测试的 target 侧校验（2026-08-24 新增） ========== */
+/* ========== 主机主动临界测试的 target 侧校验 ========== */
 
 static void validate_read_underrun_8_16(void)
 {
@@ -1290,7 +1290,7 @@ static void validate_multi_msg_4(void)
 	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
 }
 
-/* SETAASA/SETDASA 公共校验（2026-08-26 新增）。
+/* SETAASA/SETDASA 公共校验。
  * 证据链（i3c_peripheral_programmers_model.pdf DYNADDR @0x64）：
  * 1. 探针写在新地址上被收到（aasa_probe_seen）——地址切换后总线可达；
  * 2. 探针时刻快照的 SDYNADDR：DAVALID=1、DADDR=期望地址、DCAUSE=2

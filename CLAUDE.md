@@ -4,8 +4,19 @@
 >
 > **⚠️ 分级路由**：**碰硬件/碰回归构建目录**的任务（烧录、串口、调试、回归、
 > 固件开发）**必须**通过 supervisor agent 执行（硬件串行化 + 断点续跑）；
-> **纯文档、纯代码分析**等不碰硬件、不碰构建目录的任务，主会话可直接派独立
-> agent 并行执行。纯查询（"这个函数在哪"）不需要 supervisor。
+> **纯文档维护**（坑沉淀/模板补漏/文档漂移）走 skill-keeper agent；
+> **纯代码分析**等不碰硬件不碰构建目录的任务，主会话可直接派独立
+> agent 并行执行。纯查询（"这个函数在哪"）不需要任何 agent。
+>
+> **🚨 强制 Skill 调用规则（2026-09-07 新增）**：
+> 遇到以下问题时，**必须先 Read 对应 SKILL.md**，按 skill 流程执行，**禁止自行摸索**：
+> - 硬件/连接/串口问题 → Read `.claude/skills/qsh-debug/SKILL.md`
+> - 测试执行/结果判定问题 → Read `.claude/skills/qsh-test-run/SKILL.md`
+> - 新工程生成/代码规范问题 → Read `.claude/skills/qsh-test-gen/SKILL.md`
+> - 调试方法论/分层定位 → Read `.claude/skills/embedded-debug/SKILL.md`
+>
+> **违反后果**：浪费时间、创建无用报告、无法解决问题。
+> **正确做法**：遇到问题 → 查 skill → 按流程执行 → 沉淀坑。
 
 ---
 
@@ -113,6 +124,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | **固件规范完整版** | [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md) | **编写/修改固件时必读** |
 | 已知坑完整清单 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 遇到问题时 |
 | Supervisor agent 定义 | `.claude/agents/supervisor.md` | 需要理解路由逻辑 |
+| Skill-Keeper agent 定义 | `.claude/agents/skill-keeper.md` | 文档沉淀/模板补漏 |
 | Skill 清单 + 调用方式 | `.claude/TOOLS_AND_SKILLS.md` | 需要特定 skill |
 
 ---

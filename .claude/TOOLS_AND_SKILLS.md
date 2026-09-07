@@ -17,6 +17,8 @@
 
 | Skill | 调用方式 | 用法 | 说明 |
 |-------|---------|------|------|
+| ★ **skill-orchestrator** | 🟢 自动 | supervisor 策略执行前自动读 | ★ 闭环路由 manifest，所有策略必读 |
+| ★ **skill-auditor** | 🟢/🔵 | 迁移后自动调 / 手动 `/skill-auditor` | 完整性自检+迁移验证 |
 | ★ **qsh-driver-test** | 🟢 自动 | agent 读 CLAUDE.md 自动路由 | 总入口，决定调哪个子 skill |
 | ★ **qsh-debug** | 🟢 自动 | supervisor 策略 STRATEGY_DEBUG 自动调 | DebugServer/GDB/串口/四步自愈 |
 | ★ **embedded-debug** | 🟢 自动 | qsh-debug 内部自动调 | 通用分层定位方法论 |
@@ -26,7 +28,7 @@
 | ★ **qsh-test-run** | 🟢 自动 | supervisor 策略 STRATEGY_TEST 自动调 | 构建/烧录/跑用例 |
 | ★ **qsh-test-compare** | 🟢 自动 | 测试完成后自动调 | 结果解析/报告/对比 |
 | **skill-registry** | 🟢 自动 | 需要外部能力时自动查 | 外部插件/MCP 目录 |
-| **env-adapter** | 🟢 自动 | 新环境/不确定时自动调 | 环境探测 + 路由 |
+| **env-adapter** | 🟢 自动 | 新环境/不确定时自动调 | 环境探测 + 路由 + 工程适配 + 迁移清单 |
 
 > 所有 skill 都是 🟢 自动——你只需要说任务，agent/supervisor 自动选择并调用。
 
@@ -37,10 +39,11 @@
 | Agent | 调用方式 | 用法 | 说明 |
 |-------|---------|------|------|
 | ★ **supervisor** | 🟢 自动 | 碰硬件/碰回归构建目录的任务走 supervisor（分级路由，CLAUDE.md） | 策略路由/失败恢复/断点续跑 |
+| ★ **skill-keeper** | 🟢 自动 | 纯文档维护：坑沉淀/模板补漏/文档漂移修复/规范落地 | 只动 .md，不碰硬件不碰代码 |
 
 > 分级路由（2026-09-04 用户裁定）：碰硬件/碰回归构建目录的任务（烧录、串口、调试、回归、
-> 固件开发）必须走 supervisor（硬件串行化）；纯文档、纯代码分析任务主会话可直接派独立
-> agent 并行执行；纯查询不需要 supervisor。
+> 固件开发）必须走 supervisor（硬件串行化）；纯文档维护任务走 skill-keeper；
+> 纯代码分析任务主会话可直接派独立 agent 并行执行；纯查询不需要 supervisor。
 
 ---
 

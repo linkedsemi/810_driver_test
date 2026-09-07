@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 cmake_minimum_required(VERSION 3.20.0)
+
+# cpu2 侧必须注入（find_package 之前）：
+#   cpu2_console_uart5.overlay  - 控制台 uart5（PN14/PN13, 115200）
+#   cpu2_mem_layout.overlay     - 内存布局（sram_ro/sram 地址与大小，统一管理）
+set(EXTRA_DTC_OVERLAY_FILE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/cpu2_console_uart5.overlay;
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/cpu2_mem_layout.overlay)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(cpu0_i2c_master)
 

@@ -1,0 +1,13 @@
+/*
+ * IOPMP test overlay (cpu1, lsqsh_evb)
+ *
+ * IOPMP 在 lsqsh 平台没有 DT 节点（纯寄存器操作，基地址 SEC_IOPMP1_ADDR）。
+ * chosen 块确保 printk 能输出到串口。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};

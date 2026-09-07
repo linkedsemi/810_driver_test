@@ -73,6 +73,86 @@ cmd //c rmdir "D:\<当前环境>\.claude\skills\<名>"
 新工程的 `.claude/skills/` → **天然可见，无需 junction** → 调一次本 skill 做环境确认 + 按需写
 CLAUDE 指引。若只带一个入口，带本 skill 即可引导出其余（§2）。
 
+## §4 工程适配（从模板工程迁到新工程时）
+
+把 `.claude/` 从 810_driver_test（或其他模板工程）搬到新工程后，本节指导
+替换工程特定内容。
+
+### 4.1 需要替换的硬编码清单
+
+| 类型 | 模板中的值 | 扫描方式 | 替换为 |
+|------|-----------|---------|--------|
+| Board 名 | `lsqsh_evb@2os`, `lsqsh_evb@1os` | grep 全部 .md | `<new_board>` |
+| 工程名 | `i3c_dualcore_test`, `810_driver_test` | grep 全部 .md | `<new_project>` |
+| 串口号 | `COM14`/`COM15`/`COM16`/`COM17` | grep 全部 .md | `<new_ports>` |
+| 地址 | `0x10000000`/`0x100c0000`/`0x4002200c` | grep 全部 .md | `<new_addrs>`（如架构不变可保留） |
+| 调试器路径 | `C:/uaer_app/debug_server` | grep qsh-debug | `<debug_server_path>` |
+| 工具链 | `riscv64-unknown-elf-gdb` | grep qsh-debug/qsh-test-run | `<toolchain_prefix>` |
+
+### 4.2 适配流程
+
+```text
+1. 复制 .claude/ 到目标工程
+2. 确定哪些 skill 是"通用保留"、哪些是"工程专属需替换"
+   通用保留：skill-orchestrator, skill-auditor, env-adapter, embedded-debug,
+             debug-knowledge, skill-registry, skill-keeper
+   工程专属：qsh-* 系列（删除或替换为新工程等价 skill）
+3. 按 §4.1 替换硬编码
+4. 生成新工程 CLAUDE.md（从模板工程 CLAUDE.md 提取结构，填入新工程信息）
+5. 调 skill-auditor 做迁移后验证（§1 完整性检查 + §2 闭环链检查）
+6. skill-auditor 通过 → 迁移完成
+```
+
+### 4.3 新工程 CLAUDE.md 生成模板
+
+从模板工程 CLAUDE.md 提取以下结构，替换工程特定内容：
+
+```markdown
+# <新工程名> 规范
+
+## 工程概述
+- SoC: <soc_name>
+- Board: <board_name>
+- 架构: <arch>（单核/双核）
+- 外设: <driver_list>
+
+## 构建命令
+west build -p always -b <board> <src>
+
+## 核心规范速查
+（从模板 CLAUDE.md §4 提取，保留通用部分，删除 810 专属条目）
+
+## Skill 入口
+（由 .claude/CLAUDE.md 自动提供，无需重复）
+```
+
+## §5 迁移清单（打包带走前的 checklist）
+
+```text
+必须带走：
+  □ .claude/ 整目录（agents/ + skills/ + CLAUDE.md + TOOLS_AND_SKILLS.md + DOC_EDIT_RULES.md）
+  □ 工程 CLAUDE.md（工程级，与 .claude/CLAUDE.md 不同）
+  □ SPEC_REFERENCE.md / KNOWN_ISSUES.md（如有）
+
+按需带走：
+  □ common/ 公共模块（test_results/ztest_glue/report_dir/ztest_report 等）
+  □ regression/ 回归框架（run_all.py/cases.yaml）
+
+带走后必须做：
+  □ 运行 skill-auditor §1 完整性检查
+  □ 按 §4.1 替换硬编码
+  □ 运行 skill-auditor 二次验证
+  □ supervisor.md 策略表按新工程定制
+```
+
 ## 验证
 
-新开一个该环境会话 → 让 Claude 列可用 skill，确认目标已可见；或 `/env-adapter` 走一遍 §0-§3。
+新开一个该环境会话 → 让 Claude 列可用 skill，确认目标已可见；或 `/env-adapter` 走一遍 §0-§5。
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 环境判定完成 | 对应策略 skill（qsh-driver-test / qsh-debug / embedded-debug） | 按 §0 路由 |
+| 接线完成 | skill-auditor（验证接线有效） | junction 建完后 |
+| 工程适配完成 | skill-auditor（迁移后验证） | 硬编码替换后 |

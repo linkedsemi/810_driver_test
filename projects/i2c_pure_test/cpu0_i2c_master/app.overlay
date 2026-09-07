@@ -17,7 +17,5 @@
     bus-frequency = <400000>;
 };
 
-/* 启用GPIO控制器，支持PA05/PA07翻转线程 */
-&gpio0 {
-	status = "okay";
-};
+/* GPIO toggle 仅 cpu1 使用：本核(cpu2)不编入
+ * gpio_toggle.c，故不使能 gpioa（板级 dts 已 okay）。 */

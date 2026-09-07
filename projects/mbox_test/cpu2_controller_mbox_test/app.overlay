@@ -1,0 +1,18 @@
+/*
+ * MBOX test overlay - cpu2 (controller) side
+ *
+ * 与 cpu1 侧同序同参添加 ch4/ch5 consumer。
+ */
+
+&mbox {
+	mbox_test_ch4: mbox_test_ch4 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 4 16 1>, <&mbox 4 16 1>;
+		mbox-names = "tx", "rx";
+	};
+	mbox_test_ch5: mbox_test_ch5 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 5 8 1>, <&mbox 5 8 1>;
+		mbox-names = "tx", "rx";
+	};
+};

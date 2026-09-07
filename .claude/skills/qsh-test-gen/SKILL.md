@@ -207,7 +207,19 @@ tests/case_<速记>/
 | cmake 报 Invalid character escape '\z' | Windows 反斜杠路径传进 cmake 被转义 | 路径统一 `.as_posix()`（正斜杠） |
 | run 脚本 ValueError: too many values to unpack | token 正则 `(TGT)` 用了捕获组，groups() 多出角色组 | 固定文本用非捕获组 `(?:TGT)`，只有变量用 `(...)` |
 | run 脚本 TypeError: write_text() got unexpected keyword 'mode' | Python 3.5+ 的 Path.write_text 无 mode 参数 | 用 `with open(path, "a"/"w", encoding=...)` |
+| dbg_run.py / run_test.py 串口 0 行（单核工程） | 脚本漏 `set {int}0x4002200c = 2`（cpu2 hold），cpu2 自启劫持 uart1 | ★ **模板必须注入**：gdb 命令序列在 `reset` 前加 `set {int}0x4002200c = 2`（APP_CPU_SRST bit1）；所有 dbg_run.py / run_test.py 模板必须包含此步骤 |
+| overlay 编译后 printk 无输出 | overlay 缺 `chosen { zephyr,console = &uart1; };`，DT_CHOSEN 为 NULL → uart_console_init 跳过 | ★ **模板 overlay 必须含 chosen 块**：单核工程 overlay 显式声明 `chosen { zephyr,console = &uart1; };`；双核 cpu2 侧走 cpu2_console_uart5.overlay |
+| 测试代码 store fault 挂死 → 串口 0 行 | k_malloc 返回 NULL → memset(NULL) → 崩溃；极具迷惑性表现为"串口无输出" | ★ **测试代码禁用堆分配**：不用 k_malloc/k_calloc，改用静态数组（`static uint8_t buf[N]`）；prj.conf 不依赖 CONFIG_HEAP_MEM_POOL_SIZE；排查串口无输出时**先查崩溃再查配置** |
 
 ## 5. 坑沉淀要求
 
 生成/调试过程遇到的新问题，处理方式写入对应 skill 速查表 + CLAUDE.md §10。
+
+## → 下一步（闭环链）
+
+| 完成状态 | 下一个 skill | 触发条件 |
+|---------|------------|---------|
+| 工程/case 生成完成 | ★ qsh-test-validate | 自动转，不可跳过 |
+| qsh-test-validate FAIL | 回本 skill 修模板 | FAIL 项存在 |
+| qsh-test-validate PASS | qsh-test-run（首次验证） | 全部 PASS |
+| 生成过程发现模板缺陷 | skill-keeper（模板补漏） | 模板规则需改进 |
