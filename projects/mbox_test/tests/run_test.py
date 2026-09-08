@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
-"""MBOX dual-core regression runner (ztest-native).
+"""MBOX dual-core regression runner.
 
-Runs mbox_test cases on the connected controller/target UARTs, parses the
-ztest-native output (common/ztest_report.parse_ztest) and produces an
-archived JSON report under 810_driver_test/reports/<YYYY-MM-DD>-<idx>/.
+Mbox 测试不用 ztest，而是 cpu1/cpu2 各自运行 mbox_*_main() 后手动打印
+"PROJECT EXECUTION: SUCCESSFUL"。判定 = 两核都有该标记且无 error。
 
-双核工程：controller (cpu2, uart5) 和 target (cpu1, uart1) 各自运行测试，
-结果需要两核都 PASS 才算通过。
-
-Environment:
-    I3C_CTRL_UART          Controller UART port (e.g. COM15)
-    I3C_TGT_UART           Target UART port (e.g. COM16)
-    GDB_SERVER_HOST        GDB server host (default: localhost)
-    GDB_SERVER_PORT        GDB server port (default: 1025)
+结果归档到 reports/<date>-<idx>/（report_dir 公共模块）。
 """
 import argparse
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -29,24 +19,22 @@ from pathlib import Path
 
 import serial
 import serial.tools.list_ports as list_ports
+import shutil
 
 SAMPLE_ROOT = Path(__file__).resolve().parents[1]
 REPORTS_ROOT = SAMPLE_ROOT.parents[1] / "reports"
 
 sys.path.insert(0, str(REPORTS_ROOT.parent / "common"))
-from ztest_report import parse_ztest
 from report_dir import allocate_session_dir, case_dir_for, update_summary
 
-GDB = shutil.which("riscv64-unknown-elf-gdb") or "riscv64-unknown-elf-gdb"
+GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST = os.environ.get("GDB_SERVER_HOST", "127.0.0.1")
 GDB_PORT = os.environ.get("GDB_SERVER_PORT", "1025")
-TARGET_ROM_START = "0x100c0000"
 DRIVER_NAME = "mbox_test"
 REPORT_BASE = f"{DRIVER_NAME}_report"
 
-# Banner patterns for role identification
-CTRL_BANNERS = ["CTRL", "cpu2", "controller"]
-TGT_BANNERS = ["TGT", "cpu1", "target"]
+SUCCESS_MARKER = "PROJECT EXECUTION: SUCCESSFUL"
+FAIL_MARKER = "PROJECT EXECUTION: FAILED"
 
 
 def log(msg):
@@ -54,139 +42,27 @@ def log(msg):
 
 
 def _find_git_bash():
-    """Find Git Bash, avoiding WSL bash."""
+    # Prefer bin/bash.exe (not usr/bin which is MSYS2 alternate)
     candidates = [
         os.environ.get("GIT_BASH"),
-        shutil.which("bash"),
         r"C:\Program Files\Git\bin\bash.exe",
-        r"C:\Program Files\Git\usr\bin\bash.exe",
         r"C:\Program Files (x86)\Git\bin\bash.exe",
     ]
     for c in candidates:
-        if not c or not Path(c).exists():
-            continue
-        low = c.lower()
-        if "system32" in low or "windowsapps" in low:
-            continue
-        return c
+        if c and Path(c).exists():
+            low = c.lower()
+            if "system32" in low or "windowsapps" in low:
+                continue
+            return c
+    # Fallback: any bash but not usr/bin
+    p = shutil.which("bash")
+    if p:
+        return p
     return "bash"
 
 
-BASH = _find_git_bash()
+Bash = _find_git_bash()
 TESTS_DIR = SAMPLE_ROOT / "tests"
-
-
-def _find_ctrl_uart():
-    """Find controller UART (MCP2200 or CH342 Serial-A)."""
-    for p in list_ports.comports():
-        desc = (p.description or "").lower()
-        if "mcp2200" in desc:
-            return p.device
-    for p in list_ports.comports():
-        desc = (p.description or "").lower()
-        if "ch342" in desc and "serial-a" in desc:
-            return p.device
-    return None
-
-
-def _find_tgt_uart():
-    """Find target UART (CH342 Serial-B preferred)."""
-    for p in list_ports.comports():
-        desc = (p.description or "").lower()
-        if "ch342" in desc and "serial-b" in desc:
-            return p.device
-    for p in list_ports.comports():
-        desc = (p.description or "").lower()
-        if "ch342" in desc or "ch34" in desc:
-            return p.device
-    ports = [p.device for p in list_ports.comports()
-             if "32bf" not in (p.hwid or "").lower()
-             and "cklink" not in (p.description or "").lower()]
-    return ports[0] if ports else None
-
-
-def _netstat_1025():
-    """Check netstat for port 1025 status."""
-    rows = []
-    try:
-        out = subprocess.run(["netstat", "-ano"], capture_output=True,
-                             text=True, timeout=15).stdout
-        for line in out.splitlines():
-            if ":1025" not in line:
-                continue
-            parts = line.split()
-            if len(parts) >= 5 and parts[0] == "TCP":
-                rows.append((parts[3], parts[4], parts[1]))
-    except Exception:
-        pass
-    return rows
-
-
-def _kill_residual_gdb():
-    """Kill residual gdb processes holding port 1025."""
-    try:
-        pids = set()
-        for state, local_pid, _ in _netstat_1025():
-            if state == "ESTABLISHED" and local_pid.isdigit():
-                pids.add(local_pid)
-        for pid in pids:
-            ti = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV"],
-                                capture_output=True, text=True, timeout=15).stdout
-            if "gdb" in ti.lower():
-                subprocess.run(["taskkill", "/F", "/PID", pid],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               timeout=15)
-    except Exception:
-        pass
-
-
-def _restart_debugserver():
-    """Restart DebugServer and wait for ready."""
-    subprocess.run(["taskkill", "/F", "/IM", "DebugServerConsole.exe"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
-    time.sleep(1)
-    ds = Path(r"C:\uaer_app\debug_server\bin\DebugServerConsole.exe")
-    if not ds.exists():
-        log(f"[ENV] WARNING: DebugServer not found at {ds}")
-        return
-    subprocess.Popen([str(ds)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(30):
-        time.sleep(1)
-        for state, pid, _ in _netstat_1025():
-            if state == "LISTENING":
-                log("[ENV] DebugServer ready")
-                return
-    log("[ENV] WARNING: DebugServer may not be ready")
-
-
-def _clean_gdb_residue():
-    """Kill residual gdb processes."""
-    _kill_residual_gdb()
-    subprocess.run(["taskkill", "/F", "/IM", "riscv64-unknown-elf-gdb.exe"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
-    time.sleep(1)
-
-
-def clean_gdb_residue():
-    _clean_gdb_residue()
-
-
-def restart_debugserver():
-    _restart_debugserver()
-    time.sleep(5)
-
-
-def _kill_proc_group(proc):
-    """Kill process and its children."""
-    try:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
-    except Exception:
-        proc.kill()
-    try:
-        proc.wait(timeout=5)
-    except Exception:
-        proc.kill()
 
 
 class SerialCapture:
@@ -214,12 +90,11 @@ class SerialCapture:
     def _run(self):
         while not self._stop.is_set():
             try:
-                data = self._ser.readline()
+                data = self._ser.read(4096)
             except Exception:
                 break
             if data:
-                line = data.decode("utf-8", errors="replace").rstrip("\r\n")
-                self.lines.append((time.time(), line))
+                self.lines.append((time.time(), data.decode("utf-8", errors="replace")))
 
     def stop(self):
         self._stop.set()
@@ -233,50 +108,19 @@ class SerialCapture:
         return "\n".join(l for _, l in self.lines)
 
 
-def _spawn_test_run(case_dir, build_dir):
-    """Spawn test.sh -r in agent mode."""
-    test_sh = case_dir / "test.sh"
-    env = dict(os.environ)
-    env["SKIP_LOAD"] = "y"
-    env["AGENT_RUN"] = "y"
-    env["I3C_TEST_ROOT"] = str(SAMPLE_ROOT)
-    proc = subprocess.Popen(
-        [BASH, str(test_sh), "-r"],
-        cwd=str(case_dir),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    lines = []
-    def _reader():
-        for line in proc.stdout:
-            lines.append(line.rstrip("\r\n"))
-            print(line, end="", flush=True)
-    t = threading.Thread(target=_reader, daemon=True)
-    t.start()
-    return proc, lines, t
-
-
 def run_case(case_name, ctrl_uart, tgt_uart, timeout=120):
-    """Run a single case on dual-core setup.
-
-    Returns dict with ctrl_lines, tgt_lines, proc_lines, timed_out.
-    """
+    """Run mbox dual-core test and capture both UARTs."""
     build_dir = TESTS_DIR / case_name / "build"
     target_elf = build_dir / "target" / "zephyr" / "zephyr.elf"
-    controller_elf = build_dir / "controller" / "zephyr" / "zephyr.elf"
+    controller_bin = build_dir / "controller" / "zephyr" / "zephyr.bin"
 
     if not target_elf.exists():
         log(f"[ERROR] Target ELF not found: {target_elf}")
         return None
-    if not controller_elf.exists():
-        log(f"[ERROR] Controller ELF not found: {controller_elf}")
+    if not controller_bin.exists():
+        log(f"[ERROR] Controller BIN not found: {controller_bin}")
         return None
 
-    # Start capturing from both UARTs
     ctrl_cap = SerialCapture(ctrl_uart)
     tgt_cap = SerialCapture(tgt_uart)
     ctrl_cap.start()
@@ -289,24 +133,44 @@ def run_case(case_name, ctrl_uart, tgt_uart, timeout=120):
         log(f"[ERROR] {tgt_cap.error}")
         return None
 
-    proc, proc_lines, thread = _spawn_test_run(TESTS_DIR / case_name, build_dir)
+    # Run test.sh -r (stdout=DEVNULL, serial capture is the real output)
+    test_sh = TESTS_DIR / case_name / "test.sh"
+    env = dict(os.environ)
+    env["SKIP_LOAD"] = "y"
+    env["AGENT_RUN"] = "y"
+    env["I3C_TEST_ROOT"] = str(SAMPLE_ROOT).replace("\\", "/")
+    proc = subprocess.Popen(
+        [Bash, str(test_sh).replace("\\", "/"), "-r"],
+        cwd=str(SAMPLE_ROOT).replace("\\", "/"),
+        env=env,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
+    # Poll until test.sh exits (load_and_run stays alive via gdb continue)
     start = time.time()
-    last_activity = start
     while time.time() - start < timeout:
         if proc.poll() is not None:
             break
-        # Check for early completion (PROJECT EXECUTION seen on both cores)
-        ctrl_text = ctrl_cap.text
-        tgt_text = tgt_cap.text
-        if ("PROJECT EXECUTION" in ctrl_text and "PROJECT EXECUTION" in tgt_text):
-            # Both cores completed, wait a bit for final output
-            time.sleep(1)
-            break
-        time.sleep(0.3)
+        time.sleep(0.5)
 
-    _kill_proc_group(proc)
-    thread.join(timeout=3.0)
+    # Kill entire test.sh + gdb process tree (qsh-debug §2.3: gdb 残留
+    # 会占 CKLink 连接，下次 load 失败)
+    try:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    time.sleep(1)
+    # 兜底：杀所有残留 gdb（进程树杀不净时）
+    try:
+        subprocess.run(["wmic", "process", "where", "name='riscv64-unknown-elf-gdb.exe'", "delete"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    except Exception:
+        pass
+    time.sleep(1)
     ctrl_cap.stop()
     tgt_cap.stop()
 
@@ -314,71 +178,44 @@ def run_case(case_name, ctrl_uart, tgt_uart, timeout=120):
         "case": case_name,
         "ctrl_lines": ctrl_cap.lines,
         "tgt_lines": tgt_cap.lines,
-        "proc_lines": proc_lines,
         "timed_out": (time.time() - start >= timeout),
     }
 
 
 def evaluate_case(case_name, ctrl_lines, tgt_lines):
-    """Evaluate dual-core test results using parse_ztest.
-
-    - Test item result = same item PASS on both cores (CTRL + TGT)
-    - Case result = CTRL execution "SUCCESSFUL" + all items dual-core PASS
+    """Mbox dual-core判定：
+    - ctrl/tgt 各自检查 SUCCESS_MARKER/FAIL_MARKER
+    - 额外检查 LOG err 计数
+    - case PASS = 两核都有 SUCCESS_MARKER 且无 FAIL_MARKER
     """
-    ctrl_p = parse_ztest(
-        [l for _, l in ctrl_lines],
-        ctrl_banners=CTRL_BANNERS, tgt_banners=TGT_BANNERS
-    )
-    tgt_p = parse_ztest(
-        [l for _, l in tgt_lines],
-        ctrl_banners=CTRL_BANNERS, tgt_banners=TGT_BANNERS
-    )
+    ctrl_text = "\n".join(l for _, l in ctrl_lines)
+    tgt_text = "\n".join(l for _, l in tgt_lines)
 
-    # Merge test items from both cores
-    ctrl_tests = ctrl_p.get("tests", {})
-    tgt_tests = tgt_p.get("tests", {})
-    all_items = {}
-    for name, v in ctrl_tests.items():
-        all_items[name] = {"ctrl": v.get("result", "MISSING"), "tgt": "MISSING"}
-    for name, v in tgt_tests.items():
-        if name in all_items:
-            all_items[name]["tgt"] = v.get("result", "MISSING")
-        else:
-            all_items[name] = {"ctrl": "MISSING", "tgt": v.get("result", "MISSING")}
+    ctrl_ok = SUCCESS_MARKER in ctrl_text and FAIL_MARKER not in ctrl_text
+    tgt_ok = SUCCESS_MARKER in tgt_text and FAIL_MARKER not in tgt_text
 
-    # Determine per-item result (both cores must PASS)
-    items = []
-    case_pass = True
-    for name, statuses in all_items.items():
-        both_pass = statuses["ctrl"] == "PASS" and statuses["tgt"] == "PASS"
-        result = "PASS" if both_pass else "FAIL"
-        if not both_pass:
-            case_pass = False
-        items.append({
-            "name": name,
-            "result": result,
-            "ctrl_result": statuses["ctrl"],
-            "tgt_result": statuses["tgt"],
-        })
+    # Count LOG errors
+    ctrl_errs = sum(1 for _, l in ctrl_lines if "<err>" in l.lower())
+    tgt_errs = sum(1 for _, l in tgt_lines if "<err>" in l.lower())
 
-    # Case execution: CTRL must be SUCCESSFUL
-    ctrl_exec = ctrl_p.get("execution", "UNKNOWN")
-    tgt_exec = tgt_p.get("execution", "UNKNOWN")
-
-    if ctrl_exec != "SUCCESSFUL":
-        case_pass = False
+    result = "PASS" if (ctrl_ok and tgt_ok) else "FAIL"
+    items = [
+        {"name": "ctrl_mbox_controller", "result": "PASS" if ctrl_ok else "FAIL",
+         "reason": f"{ctrl_errs} err logs" if ctrl_errs else ""},
+        {"name": "tgt_mbox_target", "result": "PASS" if tgt_ok else "FAIL",
+         "reason": f"{tgt_errs} err logs" if tgt_errs else ""},
+    ]
 
     return {
         "case": case_name,
-        "result": "PASS" if case_pass else "FAIL",
-        "ctrl_execution": ctrl_exec,
-        "tgt_execution": tgt_exec,
+        "result": result,
+        "ctrl_execution": "SUCCESSFUL" if ctrl_ok else ("FAILED" if FAIL_MARKER in ctrl_text else "UNKNOWN"),
+        "tgt_execution": "SUCCESSFUL" if tgt_ok else ("FAILED" if FAIL_MARKER in tgt_text else "UNKNOWN"),
         "items": items,
     }
 
 
 def print_report(results):
-    """Print summary report to console."""
     print("\n--- MBOX dual-core test results ---")
     for r in results:
         status = r.get("result", "UNKNOWN")
@@ -392,38 +229,61 @@ def print_report(results):
         for item in items:
             name = item.get("name", "?")
             res = item.get("result", "?")
-            ctrl_res = item.get("ctrl_result", "?")
-            tgt_res = item.get("tgt_result", "?")
-            print(f"  {name}: {res} (ctrl={ctrl_res}, tgt={tgt_res})")
+            reason = item.get("reason", "")
+            print(f"  {name}: {res} {reason}")
+
+
+def write_markdown_report(cdir, result):
+    """§6.4.1/§6.4.2 补写 markdown 报告：与 json 同源（items[] 渲染），覆盖写。"""
+    base = cdir / f"{REPORT_BASE}.md"
+    items = result.get("items", [])
+    passed = sum(1 for it in items if it.get("result") == "PASS")
+    total = len(items)
+    status = result.get("result") or "FAIL"
+    head = f"## {result.get('case', '')}: {status} ({passed}/{total})"
+    extra = [f"{k.upper()}={result[k]}" for k in ("ctrl_execution", "tgt_execution")
+             if result.get(k)]
+    if extra:
+        head += "  " + ", ".join(extra)
+    lines = [
+        f"# {DRIVER_NAME} 测试报告",
+        "",
+        f"- 工程: {DRIVER_NAME}",
+        f"- case: {result.get('case', '')}",
+        f"- 日期: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "- 板级: lsqsh_evb@2os",
+        "",
+        head,
+        "",
+        "| 测试项 | 结果 | 失败原因 |",
+        "|---|---|---|",
+    ]
+    for it in items:
+        name = it.get("name", "?")
+        res = it.get("result", "?")
+        st = "✅ PASS" if res == "PASS" else ("❌ FAIL" if res == "FAIL" else f"⬜ {res}")
+        lines.append(f"| {name} | {st} | {it.get('reason', '')} |")
+    lines.append("")
+    base.write_text("\n".join(lines), encoding="utf-8")
+    return base
 
 
 def main():
     parser = argparse.ArgumentParser(description="MBOX dual-core regression runner")
     parser.add_argument("--case", default="case_mbox_basic",
                         help="Test case directory name")
-    parser.add_argument("--ctrl-uart", default=None,
-                        help="Controller UART port (e.g. COM15)")
-    parser.add_argument("--tgt-uart", default=None,
-                        help="Target UART port (e.g. COM16)")
-    parser.add_argument("--session-dir", default=None,
-                        help="Session directory for reports")
-    parser.add_argument("--skip-build", action="store_true",
-                        help="Skip build step")
-    parser.add_argument("--no-archive", action="store_true",
-                        help="Don't archive results")
-    parser.add_argument("--case-timeout", type=int, default=120,
-                        help="Timeout per case in seconds")
+    parser.add_argument("--ctrl-uart", default=None)
+    parser.add_argument("--tgt-uart", default=None)
+    parser.add_argument("--session-dir", default=None)
+    parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--no-archive", action="store_true")
+    parser.add_argument("--case-timeout", type=int, default=120)
     args = parser.parse_args()
 
-    # Resolve UART ports
-    ctrl_uart = args.ctrl_uart or os.environ.get("I3C_CTRL_UART") or _find_ctrl_uart()
-    tgt_uart = args.tgt_uart or os.environ.get("I3C_TGT_UART") or _find_tgt_uart()
-
-    if not ctrl_uart:
-        log("ERROR: no controller UART found (use --ctrl-uart or I3C_CTRL_UART)")
-        return 1
-    if not tgt_uart:
-        log("ERROR: no target UART found (use --tgt-uart or I3C_TGT_UART)")
+    ctrl_uart = args.ctrl_uart or os.environ.get("I3C_CTRL_UART")
+    tgt_uart = args.tgt_uart or os.environ.get("I3C_TGT_UART")
+    if not ctrl_uart or not tgt_uart:
+        log("ERROR: --ctrl-uart and --tgt-uart required for mbox dual-core test")
         return 1
 
     log(f"Controller UART: {ctrl_uart}")
@@ -431,37 +291,37 @@ def main():
 
     date_str = datetime.now().strftime("%Y-%m-%d")
     session = Path(args.session_dir) if args.session_dir else allocate_session_dir(REPORTS_ROOT, date_str)
-    logs = session / "logs"
-    logs.mkdir(parents=True, exist_ok=True)
 
-    # Build if needed
     if not args.skip_build:
         log(f"[BUILD] {args.case} (both cores)")
-        build_dir = TESTS_DIR / args.case / "build"
         test_sh = TESTS_DIR / args.case / "test.sh"
         env = dict(os.environ)
-        env["I3C_TEST_ROOT"] = str(SAMPLE_ROOT)
-        rc = subprocess.call([BASH, str(test_sh)], cwd=str(TESTS_DIR / args.case), env=env)
+        env["I3C_TEST_ROOT"] = str(SAMPLE_ROOT).replace("\\", "/")
+        rc = subprocess.call([Bash, str(test_sh).replace("\\", "/")],
+                             cwd=str(SAMPLE_ROOT).replace("\\", "/"), env=env)
         if rc != 0:
             log(f"[ERROR] build failed rc={rc}")
             return 1
 
-    # Run case
     raw = run_case(args.case, ctrl_uart, tgt_uart, args.case_timeout)
     if raw is None:
         return 1
 
-    # Evaluate results
     result = evaluate_case(args.case, raw["ctrl_lines"], raw["tgt_lines"])
     print_report([result])
 
-    # Archive results
     if not args.no_archive:
         cdir = case_dir_for(session, DRIVER_NAME, args.case)
         cdir.mkdir(parents=True, exist_ok=True)
         report_json = cdir / f"{REPORT_BASE}.json"
         report_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-        log(f"[run] archived -> {report_json}")
+        report_md = write_markdown_report(cdir, result)
+        log(f"[run] archived -> {report_json}, {report_md}")
+        items = result.get("items", [])
+        passed = sum(1 for it in items if it.get("result") == "PASS")
+        update_summary(session, f"{DRIVER_NAME}_{args.case}",
+                       result.get("result") or "FAIL", passed, len(items),
+                       f"{cdir.name}/{REPORT_BASE}.md")
 
     return 0 if result.get("result") == "PASS" else 1
 

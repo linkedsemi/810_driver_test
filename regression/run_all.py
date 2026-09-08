@@ -48,8 +48,15 @@ PROJECT_SCRIPT = {
     "i3c_i2c_switch_test": "run_test.py",
     "i3c_dualcore_test": "run_test.py",
     "mbedtls_test": "run_test.py",
+    # 新增 6 工程（2026-09-04，全量回归纳入）
+    "adc_temper_test": "run_test.py",
+    "dma_test": "run_test.py",
+    "flash_test": "run_test.py",
+    "mbox_test": "run_test.py",
+    "wdt_test": "run_test.py",
+    "iopmp_test": "run_test.py",
 }
-DUAL_CORE = {"i2c_pure_test", "i3c_i2c_switch_test", "i3c_dualcore_test"}
+DUAL_CORE = {"i2c_pure_test", "i3c_i2c_switch_test", "i3c_dualcore_test", "mbox_test"}
 
 
 # ---- DebugServer 环境管理（run_precheck.py 既有实现照搬，§10.17 四步）----

@@ -1,12 +1,12 @@
 ---
 name: qsh-driver-test
-description: 810_driver_test 手动总入口（备选）。正常任务由 supervisor agent 自动路由，本 skill 仅在 supervisor 不可用或需要手动指定 skill 时使用。
+description: 810_driver_test 手动总入口（备选）。正常任务由 runner agent 自动路由，本 skill 仅在 runner 不可用或需要手动指定 skill 时使用。
 ---
 
 # QSH 驱动自动化测试（手动总入口）
 
-> **正常流程**：supervisor agent 自动路由，你不需要手动调本 skill。
-> **手动场景**：supervisor 不可用、需要绕过 supervisor 直接指定 skill、或调试 supervisor 本身。
+> **正常流程**：runner agent 自动路由，你不需要手动调本 skill。
+> **手动场景**：runner 不可用、需要绕过 runner 直接指定 skill、或调试 runner 本身。
 
 ## 路由表（手动调用参考）
 
@@ -25,8 +25,11 @@ description: 810_driver_test 手动总入口（备选）。正常任务由 super
 
 ```
 用户任务 → CLAUDE.md Supervisor 强制路由规则
-         → Agent(subagent_type="supervisor")
-         → supervisor 读 task → 选策略 → 调对应 skill
+         → Agent(subagent_type="runner")
+         → runner 读 task → 选策略 → 调对应 skill
 ```
 
-详见 `.claude/agents/supervisor.md`。
+详见 `.claude/agents/runner.md`。
+
+## 链路
+> **路由**→ `qsh-debug` · `qsh-test-*` · **被读**← runner · **相关**→ skill-orchestrator

@@ -215,3 +215,6 @@ python tests/scripts/dbg_run.py --xip --bins hello.bin@0x08000000 --timeout 10 -
 | 采集完成 | ★ qsh-test-compare | 自动转，结果分析 |
 | 连接/烧录失败 | qsh-debug（环境修复） | 环境问题 |
 | 发现环境坑 | KNOWN_ISSUES.md | 反复踩的坑 |
+
+## 链路
+> **输出**→ `qsh-test-compare` · **前置**← runner(STRATEGY_TEST) · **相关**→ skill-orchestrator

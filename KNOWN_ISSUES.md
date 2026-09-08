@@ -202,3 +202,48 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 - 现象：固件加载正常（Transfer rate: 41 KB/sec），GDB 断点可达 zt_init/test_main，但串口 COM10 无任何输出
 - 影响：adc/dma/flash/wdt/iopmp 等新工程均受影响
 - 排查方向：uart1 初始化、时钟配置、overlay 配置
+
+**42. 双核 run_test.py 串口捕获用 readline() 阻塞**（2026-09-07）
+- 现象：mbox 测试固件加载成功但串口捕获 0 行（readline 等待 \n 超时）
+- 根因：shell prompt `uart:~$ ` 与固件输出交错，readline() 无法完成单行读取
+- 修复：SerialCapture._run() 用 `read(4096)` 替代 `readline()`（原始字节流不依赖行结构）
+
+**43. 双核 test.sh 用 build_single_test 选错板**（2026-09-07）
+- 现象：mbox cpu1 target 固件 entry=0x10000000（1os cpu1）而不是 0x100c0000（2os cpu1）
+- 根因：`build_single_test` 硬编码 `SINGLE_BOARD=lsqsh_evb@1os/lsqsh/cpu1`，双核工程应用 `build_test`
+- 修复：mbox test.sh 改用 `build_test`（_detect_board 自动识别 2os cpu1/cpu2）
+
+**44. mbox overlay 用旧格式（3 cell + tx/rx names）**（2026-09-07）
+- 现象：mbox 驱动报错 `msg size error, msg size: 64, mtu: 16`
+- 根因：驱动改版后 mboxes 用 5 cell `<&mbox ch tx_w tx_d rx_w rx_d>` + `mbox-names="mbox"`，但测试 overlay 还是旧的 3 cell 格式
+- 修复：改 overlay 为新格式，width 16/8 → 64（容纳64字节测试消息）
+
+**45. mbox firmware 用 MBOX_DT_SPEC_GET(node, rx/tx) 分 tx/rx spec**（2026-09-07）
+- 现象：新驱动改版后 mboxes 单 phandle，不再分 tx/rx
+- 修复：固件改用单一 `MBOX_DT_SPEC_GET(node, mbox)`，同一 spec 用于 send 和 receive
+
+**46. sec_iwdg 复位类型是 HART 复位（SEC_IWDT_HART_RESET=6）不是 FULL RESET（2026-09-07）**
+- 现象：WDT 破坏性测试期望 reset_reason==SYS_IWDT_FULL_RESET(4)，实际得到 SEC_IWDT_HART_RESET(6)
+- 根因：sec_iwdg 配 `WDT_FLAG_RESET_CPU_CORE`（=1，唯一被 sec_iwdg 匹配的 flag）→ 触发 HART 复位（只复位 cpu core），不是 full system reset
+- soc_reset.h 枚举：SYS_IWDT_FULL_RESET=4（sys_iwdg full）、SEC_IWDT_HART_RESET=6（sec_iwdg hart）
+- 修复：破坏性测试期望值用 SEC_IWDT_HART_RESET
+
+**47. WDT flash boot 测试的完整软件流程（2026-09-07）**
+```
+1. 构建（普通 2os 固件，非 XIP）：west build -b lsqsh_evb@2os/lsqsh/cpu1 -DWDT_DESTRUCTIVE_RESET=y
+2. 烧录含 bootram 头的 bin：zephyr_flash_bram_xip_*@0x08000000（非 zephyr.bin！zephyr.bin 无引导头 bootrom 不认）
+3. 启动 DebugServer → GDB 清 noinit（test_phase 等）→ 杀 DebugServer
+4. flash_program --reset-and-run 触发（固件已在 flash，重烧一次触发复位）
+5. 全程无外部干预，WDT 自动复位 → PHASE 1 读 reset_reason
+```
+- 关键：烧录 flash 需独占 CKLink（先杀 DebugServer/CSKYFlashProgramer）；GDB 连接会 halt CPU，WDT_OPT_PAUSE_HALTED_BY_DBG 使 WDT 在 halt 时暂停，所以复位触发必须用 flash_program 硬复位（ConnectType=1 不 halt）
+
+**48. flash 引导测试要烧 zephyr_flash_bram_*.bin 不是 zephyr.bin（2026-09-07）**
+- 现象：烧 zephyr.bin 到 0x08000000 后 bootrom 不引导（PC 停在 0x1000000 bootrom，无固件输出）
+- 根因：zephyr.bin 是裸应用，无 bootrom 引导头；zephyr_flash_bram_*.bin 含 0x0 引导头 + 应用（bootrom 按头信息加载）
+- 修复：flash boot 烧 zephyr_flash_bram_xip_lsqsh_evb_2os_lsqsh_cpu1.bin@0x08000000
+
+**49. GDB reset/detach 会 halt CPU 阻止 bootrom 从 flash 引导（2026-09-07）**
+- 现象：GDB `reset` + `detach` 后 PC 停在 0x1000000（bootrom），固件不启动
+- 根因：GDB 连接 halt CPU，detach 不清除 halt；bootrom 无法继续执行
+- 修复：需要 flash_program 硬复位（--reset-and-run）触发，不 halt CPU；或用户断电重启

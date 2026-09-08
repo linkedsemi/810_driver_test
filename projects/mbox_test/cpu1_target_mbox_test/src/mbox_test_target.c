@@ -3,6 +3,8 @@
  *
  * MBOX test - cpu1 (target) side
  * 等待 cpu2 发送消息，验证 pattern，回复确认。
+ *
+ * 驱动改版后用单一 mbox-names="mbox"（不再分 tx/rx）。
  */
 
 #include <zephyr/kernel.h>
@@ -16,10 +18,9 @@
 
 LOG_MODULE_REGISTER(mbox_tgt, LOG_LEVEL_INF);
 
-static const struct mbox_dt_spec rx_ch4 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch4), rx);
-static const struct mbox_dt_spec tx_ch4 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch4), tx);
-static const struct mbox_dt_spec rx_ch5 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch5), rx);
-static const struct mbox_dt_spec tx_ch5 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch5), tx);
+/* 单一 mbox spec（新版驱动，mbox-names="mbox"） */
+static const struct mbox_dt_spec mbox_ch4 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch4), mbox);
+static const struct mbox_dt_spec mbox_ch5 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch5), mbox);
 
 static volatile uint32_t rx_count_ch4;
 static volatile uint32_t rx_count_ch5;
@@ -34,35 +35,35 @@ static void mbox_rx_callback(const struct device *dev, mbox_channel_id_t channel
 	if (msg && msg->data && msg->size >= sizeof(struct mbox_test_msg)) {
 		memcpy(&last_msg, msg->data, sizeof(struct mbox_test_msg));
 	}
-	if (channel == 4) {
+	if (channel == mbox_ch4.channel_id) {
 		rx_count_ch4++;
 		rx_done_ch4 = true;
-	} else if (channel == 5) {
+	} else if (channel == mbox_ch5.channel_id) {
 		rx_count_ch5++;
 		rx_done_ch5 = true;
 	}
 }
 
-static int send_ack(const struct mbox_dt_spec *tx, uint8_t ch, uint32_t seq)
+static int send_ack(const struct mbox_dt_spec *spec, uint32_t seq)
 {
 	struct mbox_test_msg ack = {
 		.magic = MBOX_TEST_MAGIC,
-		.channel = ch,
+		.channel = (uint8_t)spec->channel_id,
 		.seq = seq,
 	};
 	memset(ack.payload, 0xAA, sizeof(ack.payload));
 	struct mbox_msg m = { .data = &ack, .size = sizeof(ack) };
-	return mbox_send_dt(tx, &m);
+	return mbox_send_dt(spec, &m);
 }
 
 void mbox_target_main(void)
 {
 	LOG_INF("[CPU1 MBOX] MBOX target test started");
 
-	mbox_register_callback(rx_ch4.dev, rx_ch4.channel_id, mbox_rx_callback, NULL);
-	mbox_register_callback(rx_ch5.dev, rx_ch5.channel_id, mbox_rx_callback, NULL);
-	mbox_set_enabled(rx_ch4.dev, rx_ch4.channel_id, 1);
-	mbox_set_enabled(rx_ch5.dev, rx_ch5.channel_id, 1);
+	mbox_register_callback(mbox_ch4.dev, mbox_ch4.channel_id, mbox_rx_callback, NULL);
+	mbox_register_callback(mbox_ch5.dev, mbox_ch5.channel_id, mbox_rx_callback, NULL);
+	mbox_set_enabled(mbox_ch4.dev, mbox_ch4.channel_id, 1);
+	mbox_set_enabled(mbox_ch5.dev, mbox_ch5.channel_id, 1);
 
 	LOG_INF("[CPU1 MBOX] waiting for cpu2 messages...");
 
@@ -76,8 +77,8 @@ void mbox_target_main(void)
 
 	LOG_INF("[CPU1 MBOX] ch4_rx=%d ch5_rx=%d", rx_count_ch4, rx_count_ch5);
 
-	send_ack(&tx_ch4, 4, rx_count_ch4);
-	send_ack(&tx_ch5, 5, rx_count_ch5);
+	send_ack(&mbox_ch4, rx_count_ch4);
+	send_ack(&mbox_ch5, rx_count_ch5);
 
 	LOG_INF("[CPU1 MBOX] target done");
 }

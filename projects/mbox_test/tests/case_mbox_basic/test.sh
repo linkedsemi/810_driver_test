@@ -48,18 +48,18 @@ CONTROLLER_ELF="${CONTROLLER_BUILD}/zephyr/zephyr.elf"
 CONTROLLER_BIN="${CONTROLLER_BUILD}/zephyr/zephyr.bin"
 
 if [ "${AGENT_RUN}" != "y" ]; then
-# Build target (cpu1)
-build_single_test "${TEST_NAME}" "${TARGET_SRC}" "${TARGET_OVERLAY}" "" "${TARGET_BUILD}"
-# Build controller (cpu2)
-build_single_test "${TEST_NAME}" "${CONTROLLER_SRC}" "${CONTROLLER_OVERLAY}" "" "${CONTROLLER_BUILD}"
+# ★ 双核工程用 build_test（_detect_board 自动识别 2os cpu1/cpu2），
+#   不用 build_single_test（硬编码 1os cpu1 会搞错 board）。
+build_test "${TEST_NAME}" "${CONTROLLER_SRC}" "${CONTROLLER_OVERLAY}" "" "${CONTROLLER_BUILD}"
+build_test "${TEST_NAME}" "${TARGET_SRC}" "${TARGET_OVERLAY}" "" "${TARGET_BUILD}"
 echo -e "${COLOR_GREEN}Build OK (both cores):${COLOR_RESET} ${TEST_BUILD_DIR}"
 else
 # Agent mode: build both cores if ELF missing, then load+run both via GDB
 if [ ! -f "${TARGET_ELF}" ]; then
-build_single_test "${TEST_NAME}" "${TARGET_SRC}" "${TARGET_OVERLAY}" "" "${TARGET_BUILD}"
+build_test "${TEST_NAME}" "${TARGET_SRC}" "${TARGET_OVERLAY}" "" "${TARGET_BUILD}"
 fi
 if [ ! -f "${CONTROLLER_BIN}" ]; then
-build_single_test "${TEST_NAME}" "${CONTROLLER_SRC}" "${CONTROLLER_OVERLAY}" "" "${CONTROLLER_BUILD}"
+build_test "${TEST_NAME}" "${CONTROLLER_SRC}" "${CONTROLLER_OVERLAY}" "" "${CONTROLLER_BUILD}"
 fi
 load_and_run "${TEST_NAME}" "${TARGET_ELF}" "${CONTROLLER_BIN}"
 fi

@@ -151,3 +151,6 @@ CLAUDE.md §10。
 | 分析完成 | ★ 坑沉淀决策 | 自动转（见 skill-orchestrator §2 坑沉淀决策表） |
 | 发现假 PASS 新模式 | qsh-test-compare §2 + KNOWN_ISSUES | 新模式 |
 | 发现领域可复用调试法 | debug-knowledge §写入 | 非一次性、非纯环境坑 |
+
+## 链路
+> **输入**← `qsh-test-run` · **相关**→ `embedded-debug` · skill-orchestrator

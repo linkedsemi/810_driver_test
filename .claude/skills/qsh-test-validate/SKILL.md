@@ -178,7 +178,7 @@ void test_main(void) {
 
 ### 1.9 模板缺陷防漏检查（必查，2026-09-07 沉淀）
 
-以下 3 项源自 6 个新工程实机跑测暴露的模板缺陷，**必须逐项检查**：
+以下 4 项源自 6 个新工程实机跑测暴露的模板缺陷，**必须逐项检查**：
 
 #### 1.9a cpu2 hold 步骤（串口 0 行最高频根因）
 
@@ -228,6 +228,25 @@ for src in project_dir.rglob("src/*.c"):
     for bad in ["k_malloc", "k_calloc", "k_realloc"]:
         assert bad not in content, \
             f"{src} 用了 {bad}（堆分配），改用静态数组"
+```
+
+#### 1.9d run_test.py 归档必须同时产出 .md + .json
+
+2026-09-08 沉淀：这 6 个新工程实机暴露，run_test.py 归档段若只写
+`<driver>_test_report.json`，summary.md 对应行就会链 .json，偏离
+SPEC §6.4.1 的 `.md`+`.json` 成对要求（根因 = 模板归档段漏写 md 步骤，
+非注解缺失）。
+
+**检查方法**：
+```python
+# run_test.py 归档段必须写 .md（write_markdown_report 或等价 _report.md 写入），
+# 且 update_summary 报告路径应指向 .md（与 json 同源）
+content = run_test_py.read_text()
+assert ("write_markdown_report" in content
+        or "_report.md" in content), \
+    f"{run_test_py.name} 归档缺 .md 报告（模板缺陷 §1.9d）"
+assert "REPORT_BASE" in content, \
+    f"{run_test_py.name} 缺 REPORT_BASE 定义"
 ```
 
 ## 2. 编译验证（必做）
@@ -310,6 +329,7 @@ for case_dir in project_tests.glob("case_*"):
 | prj.conf 缺 `CONFIG_ZTEST_VERBOSE_OUTPUT=y` | 显式加上（§10.26：=n 则逐项输出被抑制） |
 | CMakeLists 缺 `test_results.c` | 加 `target_sources(app PRIVATE .../common/test_results.c)` |
 | case 未在 cases.yaml 注册 | 在 `regression/cases.yaml` 对应位置加一行 |
+| run_test.py 归档只有 .json 没 .md | 抄已迁移 run_test.py 的 write_markdown_report() + 归档段写 _report.md，update_summary 报告路径改指 .md |
 
 ## 6. 典型验证场景
 
@@ -327,3 +347,6 @@ for case_dir in project_tests.glob("case_*"):
 | 全部 PASS | ★ qsh-test-run（首次验证） | 自动转 |
 | 存在 FAIL 项 | 回 qsh-test-gen 修 | FAIL 标注具体修复项 |
 | 存在 WARN 项 | 记录后继续 | 非阻塞 |
+
+## 链路
+> **输入**← `qsh-test-gen` · **输出**→ runner(STRATEGY_TEST) · **相关**→ skill-orchestrator

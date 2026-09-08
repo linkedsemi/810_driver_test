@@ -12,7 +12,12 @@ LOG_MODULE_REGISTER(wdt_test, LOG_LEVEL_INF);
 
 void test_main(void)
 {
+#ifdef WDT_DESTRUCTIVE_RESET
+	extern void wdt_destructive_main(void);
+	wdt_destructive_main();
+#else
 	LOG_INF("[CPU1 WDT] WDT test started");
 	zt_init("TGT");
 	zt_run_all();
+#endif
 }

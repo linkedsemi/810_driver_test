@@ -18,8 +18,8 @@ description: Skill 库完整性自检 + 迁移后验证。检查所有 skill/age
 .claude/CLAUDE.md
 .claude/TOOLS_AND_SKILLS.md
 .claude/DOC_EDIT_RULES.md
-.claude/agents/supervisor.md
-.claude/agents/skill-keeper.md
+.claude/agents/runner.md
+.claude/agents/keeper.md
 .claude/skills/skill-orchestrator/SKILL.md
 .claude/skills/skill-auditor/SKILL.md
 .claude/skills/env-adapter/SKILL.md
@@ -44,8 +44,8 @@ description: Skill 库完整性自检 + 迁移后验证。检查所有 skill/age
 
 从所有 `.md` 文件中提取文件路径引用，逐一验证目标存在：
 
-1. **supervisor.md 的 skill 表**：每个"文件路径"列的路径可读
-2. **skill-keeper.md 的 skill 表**：同上
+1. **runner.md 的 skill 表**：每个"文件路径"列的路径可读
+2. **keeper.md 的 skill 表**：同上
 3. **各 SKILL.md 的交叉引用**：`qsh-debug` 引 `embedded-debug`、
    `qsh-test-gen` 引 `qsh-test-validate` 等
 4. **skill-orchestrator 的转换表**：每个目标 skill 存在
@@ -65,7 +65,7 @@ grep -roh '\.claude/skills/[^ ]*' *.md agents/*.md skills/*/SKILL.md | sort -u
 | STRATEGY_DEV | gen→validate→run→compare→沉淀 | 4 个 skill 全存在 |
 | STRATEGY_DEBUG | debug→(knowledge/KNOWN_ISSUES) | debug + knowledge 存在 |
 | STRATEGY_TEST | run→compare→沉淀 | 2 个 skill 存在 |
-| 坑沉淀 | knowledge §写入 / KNOWN_ISSUES / skill-keeper | 3 条路径可达 |
+| 坑沉淀 | knowledge §写入 / KNOWN_ISSUES / keeper | 3 条路径可达 |
 
 ### D. 工程绑定检查（迁移时必查）
 
@@ -109,7 +109,7 @@ Step 5: 更新工程 CLAUDE.md（如有）
 |--------|------|------|
 | 通用 skill（6个） | ✅ 全部存在 | — |
 | 工程专用 skill（6个） | ⚠️ 需替换 | qsh-* 系列为 810 专用 |
-| agent 文件 | ✅ 存在 | supervisor 需定制策略表 |
+| agent 文件 | ✅ 存在 | runner 需定制策略表 |
 
 ## 引用完整性
 | 断裂引用 | 位置 | 修复 |
@@ -147,3 +147,6 @@ Step 5: 更新工程 CLAUDE.md（如有）
 | SKILL.md 缺"下一步"章节 | 从 skill-orchestrator 转换表生成 |
 | debug-knowledge README 未更新 | 自动生成索引行 |
 | 硬编码残留 | 列出逐项替换指令 |
+
+## 链路
+> **相关**→ `skill-orchestrator` · `env-adapter` · **触发**← 迁移后/完整性检查

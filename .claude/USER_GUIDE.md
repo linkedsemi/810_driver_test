@@ -20,7 +20,7 @@ i3c case_pure_i3c_12m5 失败了帮我查  → Claude 自动走 debug → 分层
 
 ```
 用 qsh-test-gen 帮我新建 XXX 测试
-走 supervisor，帮我调试 XXX 问题
+走 runner，帮我调试 XXX 问题
 ```
 
 ### 任务类型 → Claude 自动走的链路
@@ -55,8 +55,8 @@ i3c case_pure_i3c_12m5 失败了帮我查  → Claude 自动走 debug → 分层
 ├── USER_GUIDE.md                ← 本文件（用户指南）
 │
 ├── agents/                      ← Claude 使用的 agent
-│   ├── supervisor.md            ← 硬件任务监督（串行化锁）
-│   └── skill-keeper.md          ← 文档维护（纯文档任务）
+│   ├── runner.md            ← 硬件任务监督（串行化锁）
+│   └── keeper.md          ← 文档维护（纯文档任务）
 │
 ├── skills/                      ← skill 库（每个一个目录）
 │   ├── skill-orchestrator/      ← ★ 闭环路由总图（所有策略必读）
@@ -76,7 +76,7 @@ i3c case_pure_i3c_12m5 失败了帮我查  → Claude 自动走 debug → 分层
 ```
 
 **通用 skill**（任何工程都能用）：orchestrator / auditor / env-adapter /
-embedded-debug / debug-knowledge / skill-registry / supervisor / skill-keeper
+embedded-debug / debug-knowledge / skill-registry / runner / keeper
 
 **810 专用 skill**（qsh-* 系列）：搬到新工程时需要替换为等价 skill。
 
@@ -118,7 +118,7 @@ rmdir /S /Q "D:\new_project\.claude\skills\qsh-test-validate"
 ├── CLAUDE.md
 ├── TOOLS_AND_SKILLS.md
 ├── DOC_EDIT_RULES.md
-├── agents/ (supervisor.md + skill-keeper.md)
+├── agents/ (runner.md + keeper.md)
 └── skills/
     ├── skill-orchestrator/    ← 闭环路由
     ├── skill-auditor/         ← 自检
@@ -167,13 +167,13 @@ Claude 会：确认外部环境 → 生成骨架 → 合规检查 → 首次验�
 ## 五、常见问题
 
 ### Q: Claude 不按 skill 走怎么办？
-说"走 supervisor"或"用 qsh-test-gen skill"，显式指定。
+说"走 runner"或"用 qsh-test-gen skill"，显式指定。
 
 ### Q: 怎么知道有哪些 skill？
 说"列出所有可用 skill"或读 `TOOLS_AND_SKILLS.md`。
 
-### Q: 新工程没有 supervisor agent 怎么办？
-复制 `.claude/agents/supervisor.md` 过去，按新工程定制策略表即可。
+### Q: 新工程没有 runner agent 怎么办？
+复制 `.claude/agents/runner.md` 过去，按新工程定制策略表即可。
 
 ### Q: 知识库条目怎么增加？
 不需要手动。调试/测试闭环后，Claude 自动把可复用招式写入

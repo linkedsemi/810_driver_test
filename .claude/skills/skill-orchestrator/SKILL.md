@@ -1,12 +1,12 @@
 ---
 name: skill-orchestrator
-description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式转换关系、任务生命周期、supervisor 强制读取规则。supervisor 执行策略前必须先读本文件获取 skill 链，执行完一个 skill 后按本文件决定下一步。不直接执行任务，只管"谁该调谁"。
+description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式转换关系、任务生命周期、runner 强制读取规则。runner 执行策略前必须先读本文件获取 skill 链，执行完一个 skill 后按本文件决定下一步。不直接执行任务，只管"谁该调谁"。
 ---
 
 # Skill 闭环路由 Manifest
 
 > **定位**：本文件是 skill 库的"总调度图"——不执行任何具体任务，
-> 只定义 skill 之间的转换规则。supervisor 每个策略执行前**必须 Read 本文件**。
+> 只定义 skill 之间的转换规则。runner 每个策略执行前**必须 Read 本文件**。
 
 ## 1. 任务生命周期（闭环）
 
@@ -66,14 +66,14 @@ description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式
 | 坑类型 | 归处 | 执行者 |
 |--------|------|--------|
 | 领域可复用调试法 | debug-knowledge §写入 | 当前 agent |
-| 通用环境/工具链坑 | KNOWN_ISSUES.md + 对应 skill 速查 | skill-keeper |
-| 模板缺陷 | qsh-test-gen 模板规则 + qsh-test-validate 检查项 | skill-keeper |
-| 文档漂移 | skill-keeper 文档一致性维护 | skill-keeper |
+| 通用环境/工具链坑 | KNOWN_ISSUES.md + 对应 skill 速查 | keeper |
+| 模板缺陷 | qsh-test-gen 模板规则 + qsh-test-validate 检查项 | keeper |
+| 文档漂移 | keeper 文档一致性维护 | keeper |
 | 一次性 bug | 问题总结 .md 存档 | 当前 agent（不入知识库） |
 
 ## 3. Supervisor 强制读取规则
 
-supervisor 启动任何策略前，**必须**：
+runner 启动任何策略前，**必须**：
 
 ```
 Step 1: Read 本文件（skill-orchestrator/SKILL.md）
@@ -94,3 +94,6 @@ Step 5: 不得跳过链中 ★ 标记的环节
 ## 5. 闭环完整性自检
 
 当怀疑链路断裂时，调 `skill-auditor` 做完整性检查。
+
+## 链路
+> **路由**→ 所有 skill（定义完整链路 manifest） · **被读**← runner · keeper

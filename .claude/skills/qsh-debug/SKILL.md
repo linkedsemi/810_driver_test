@@ -231,6 +231,34 @@ python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提�
 - **免烧重跑 --no-load**：attach → `x/4wx 0x100c0000` sanity（镜像在？非全 0）
   → `set $pc=0x100c0000` 重跑复位向量（重新初始化 .bss/.data，等效软复位）
 
+### 3.2 flash boot 破坏性复位测试（bootrom 引导非 XIP）
+
+首次完整跑通于 wdt_test `case_destructive_reset`（2026-09-07）：烧录含 bootram 引导头的
+镜像到 flash，由 bootrom 引导真实复位——RAM 回归触发不了的硬件复位场景
+（如 sec_iwdg）。完整软件流程见
+`projects/wdt_test/tests/case_destructive_reset/run_destructive.sh`；
+坑细节见 KNOWN_ISSUES #46-49。
+
+- **烧录对象**：`zephyr_flash_bram_*.bin` @0x08000000（如
+  `zephyr_flash_bram_xip_lsqsh_evb_2os_lsqsh_cpu1.bin`），**不是 zephyr.bin**。
+  zephyr.bin 是裸应用无 bootrom 引导头，bootrom 不认（烧了 PC 停 bootrom 不引导）；
+  flash_bram bin = 引导头 + 应用。文件名里的 "xip" 是 HAL 生成的固定命名
+  （`SOC_LSQSH_BUILD_OUTPUT_BRAM_BIN` 产物名后缀），**不代表该固件用了 XIP 板型**
+- **构建**：普通 2os 固件即可（如 `lsqsh_evb@2os/lsqsh/cpu1`，入口/文本在 RAM，
+  bootrom 加载到 RAM 引导执行），**不需要 cpu1_xip 板型，不需要专门 XIP 配置**
+- **触发复位**：`python flash_program.py --bin <flash_bram.bin>@0x08000000 --reset-and-run`
+  （硬复位 ConnectType=1，不 halt CPU）
+- **★ 不要用 GDB 触发 flash boot**：GDB `reset`+`detach` 会 halt CPU（detach 不清 halt），
+  PC 停 0x1000000 bootrom，固件不启动（KNOWN_ISSUES #49）——flash boot 必须靠硬复位/断电
+- **CKLink 独占**：烧 flash 前先杀 DebugServer/CSKYFlashProgramer（互斥双向，§2.2）；
+  复位触发前也要退出 DebugServer
+- **跨复位状态机**：测试代码用 `__noinit` 变量跨复位记录阶段（warm reset 保留 RAM
+  noinit）；WDT halt 被调试器暂停时会暂停计数（WDT_OPT_PAUSE_HALTED_BY_DBG），
+  故复位触发必须用不 halt 的硬复位
+- **GDB 清 noinit 重启测试**：
+  `riscv64-unknown-elf-nm elf | grep test_phase` 找地址 →
+  gdb `set {int}0x<addr> = 0`（run_destructive.sh 用它清 test_phase/phase0_passed 后重跑）
+
 ## 4. 串口动态识别与采集
 
 ### 4.1 角色识别（不硬编码口号）
@@ -316,6 +344,7 @@ riscv64-unknown-elf-gdb -q \
 | load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
 | 串口 0 行 + 系统完全无输出（★ 先查崩溃再查配置） | 测试代码 k_malloc 返回 NULL → memset(NULL) → store fault 崩溃；极具迷惑性表现为"串口无输出"，实际是堆内存不足导致的系统挂死 | ★ **排查顺序**：先 gdb attach `bt` 看是否有 fault/hardfault；再查测试代码是否用了 k_malloc/k_calloc（改用静态数组 `static uint8_t buf[N]`）；最后才查 console/log 配置。根因见 KNOWN_ISSUES #40 |
+| 烧 flash 到 0x08000000 后 bootrom 不引导（无固件输出） | 烧错 bin：zephyr.bin 无 bootram 引导头；或 GDB reset/detach halt CPU 阻止 bootrom | flash boot 流程见 §3.2：烧 `zephyr_flash_bram_*.bin`，触发用 flash_program `--reset-and-run`，别用 GDB（KNOWN_ISSUES #48/#49） |
 
 ## 8. 探针纪律（方法 → embedded-debug §4；本段留 QSH 实例）
 
@@ -349,3 +378,6 @@ QSH/810 实例：
 主开发环境是 **Zephyr**；如确需验证 `modules/hal/linkedsemi/examples`（`scons ic=qsh`）的
 HAL 示例（uart_capture 采集 / `_run.gdb` 冷启动 / dump ret-pass 判读），见同目录
 [ref-scons-hal-verify.md](ref-scons-hal-verify.md)。本 skill 正文面向 zephyr 主环境调试。
+
+## 链路
+> **相关**→ `embedded-debug` → `debug-knowledge` · **触发**← runner(STRATEGY_DEBUG)

@@ -245,6 +245,41 @@ def print_report(results):
             print(f"  {name}: {res} {reason}")
 
 
+def write_markdown_report(cdir, result):
+    """§6.4.1/§6.4.2 补写 markdown 报告：与 json 同源（items[] 渲染），覆盖写。"""
+    base = cdir / f"{REPORT_BASE}.md"
+    items = result.get("items", [])
+    passed = sum(1 for it in items if it.get("result") == "PASS")
+    total = len(items)
+    status = result.get("result") or "FAIL"
+    head = f"## {result.get('case', '')}: {status} ({passed}/{total})"
+    extra = [f"{k.upper()}={result[k]}" for k in ("ctrl_execution", "tgt_execution")
+             if result.get(k)]
+    if extra:
+        head += "  " + ", ".join(extra)
+    lines = [
+        f"# {DRIVER_NAME} 测试报告",
+        "",
+        f"- 工程: {DRIVER_NAME}",
+        f"- case: {result.get('case', '')}",
+        f"- 日期: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "- 板级: lsqsh_evb@2os",
+        "",
+        head,
+        "",
+        "| 测试项 | 结果 | 失败原因 |",
+        "|---|---|---|",
+    ]
+    for it in items:
+        name = it.get("name", "?")
+        res = it.get("result", "?")
+        st = "✅ PASS" if res == "PASS" else ("❌ FAIL" if res == "FAIL" else f"⬜ {res}")
+        lines.append(f"| {name} | {st} | {it.get('reason', '')} |")
+    lines.append("")
+    base.write_text("\n".join(lines), encoding="utf-8")
+    return base
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", default="case_default")
@@ -289,7 +324,13 @@ def main():
         cdir.mkdir(parents=True, exist_ok=True)
         report_json = cdir / f"{REPORT_BASE}.json"
         report_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-        log(f"[run] archived -> {report_json}")
+        report_md = write_markdown_report(cdir, result)
+        log(f"[run] archived -> {report_json}, {report_md}")
+        items = result.get("items", [])
+        passed = sum(1 for it in items if it.get("result") == "PASS")
+        update_summary(session, f"{DRIVER_NAME}_{args.case}",
+                       result.get("result") or "FAIL", passed, len(items),
+                       f"{cdir.name}/{REPORT_BASE}.md")
 
     return 0 if result.get("result") == "PASS" else 1
 

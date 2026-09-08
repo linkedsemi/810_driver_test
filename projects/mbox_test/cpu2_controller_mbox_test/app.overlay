@@ -1,18 +1,24 @@
 /*
  * MBOX test overlay - cpu2 (controller) side
  *
- * 与 cpu1 侧同序同参添加 ch4/ch5 consumer。
+ * 新格式（mbox_linkedsemi 驱动改版后）：
+ *   mboxes = <&mbox channel tx_width tx_depth rx_width rx_depth>
+ *   mbox-names = "mbox"（单一 phandle，不再分 tx/rx）
+ *
+ * 用 ch4/ch5 避开 ch0-2 已占用通道。
+ * cpu2 的 tx_fifo_first = <1>（TX fifo first，与 cpu1 相反，
+ * 板级 cpu2 DTS 需设此值使 fifo 内存布局对应）。
  */
 
 &mbox {
 	mbox_test_ch4: mbox_test_ch4 {
 		compatible = "vnd,mbox-consumer";
-		mboxes = <&mbox 4 16 1>, <&mbox 4 16 1>;
-		mbox-names = "tx", "rx";
+		mboxes = <&mbox 4 64 4 64 4>;
+		mbox-names = "mbox";
 	};
 	mbox_test_ch5: mbox_test_ch5 {
 		compatible = "vnd,mbox-consumer";
-		mboxes = <&mbox 5 8 1>, <&mbox 5 8 1>;
-		mbox-names = "tx", "rx";
+		mboxes = <&mbox 5 64 4 64 4>;
+		mbox-names = "mbox";
 	};
 };

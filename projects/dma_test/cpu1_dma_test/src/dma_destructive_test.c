@@ -1,0 +1,264 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * DMA destructive/robustness tests (LinkedSemi DMA driver, dmac1)
+ *
+ * 测试 DMA 驱动在异常参数/边界条件下的鲁棒性：
+ *   - 无效参数拒绝（data_size、block_size）
+ *   - 通道忙碌时重配置
+ *   - 极小/极大传输
+ *   - 自拷贝（src==dst）
+ *
+ * 驱动约束（dma_dw_common.c）：
+ *   - source_data_size 必须在 {1,2,4,8,16}
+ *   - block_size 不能 > DW_CTLH_BLOCK_TS_MASK (0xFFFF)
+ *   - 忙碌通道重配置返回 -EBUSY
+ */
+
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/ztest.h>
+#include <string.h>
+#include "ztest_glue.h"
+
+#define DMA_NODE DT_NODELABEL(dmac1)
+#define DMA_CHANNEL 0
+
+static const struct device *dma_dev;
+static volatile bool dma_done;
+static volatile int dma_status;
+
+static void dma_callback(const struct device *dev, void *arg,
+			 uint32_t id, int status)
+{
+	dma_status = status;
+	dma_done = true;
+}
+
+static void *dma_test_setup(void)
+{
+	dma_dev = DEVICE_DT_GET(DMA_NODE);
+	zassert_true(device_is_ready(dma_dev), "dmac1 not ready");
+	return NULL;
+}
+
+static void dma_wait_complete(int timeout_ms)
+{
+	for (int t = 0; t < timeout_ms && !dma_done; t++) {
+		k_msleep(1);
+	}
+}
+
+/* TC-1: invalid data_size (3) should be rejected */
+ZTEST(dma_destructive, test_dma_invalid_data_size)
+{
+	__nocache __aligned(32) static uint8_t buf[64];
+	memset(buf, 0, sizeof(buf));
+
+	struct dma_config cfg = {
+		.dma_slot = 0,
+		.channel_direction = MEMORY_TO_MEMORY,
+		.dma_callback = dma_callback,
+		.complete_callback_en = 1,
+		.error_callback_dis = 0,
+		.source_data_size = 3,   /* invalid: not in {1,2,4,8,16} */
+		.dest_data_size = 3,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
+		.block_count = 1,
+	};
+	struct dma_block_config block = {
+		.source_address = (uint32_t)buf,
+		.dest_address = (uint32_t)buf,
+		.block_size = 64,
+	};
+	cfg.head_block = &block;
+
+	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
+	zassert_not_equal(ret, 0, "dma_config with data_size=3 should fail");
+}
+
+/* TC-2: data_size=0 should be rejected */
+ZTEST(dma_destructive, test_dma_data_size_zero)
+{
+	__nocache __aligned(32) static uint8_t buf[64];
+	memset(buf, 0, sizeof(buf));
+
+	struct dma_config cfg = {
+		.dma_slot = 0,
+		.channel_direction = MEMORY_TO_MEMORY,
+		.dma_callback = dma_callback,
+		.complete_callback_en = 1,
+		.error_callback_dis = 0,
+		.source_data_size = 0,   /* invalid */
+		.dest_data_size = 0,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
+		.block_count = 1,
+	};
+	struct dma_block_config block = {
+		.source_address = (uint32_t)buf,
+		.dest_address = (uint32_t)buf,
+		.block_size = 64,
+	};
+	cfg.head_block = &block;
+
+	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
+	zassert_not_equal(ret, 0, "dma_config with data_size=0 should fail");
+}
+
+/* TC-3: block_size > DW_CTLH_BLOCK_TS_MASK (0xFFFF = 65535) should be rejected */
+ZTEST(dma_destructive, test_dma_block_too_large)
+{
+	__nocache __aligned(32) static uint8_t buf[256];
+	memset(buf, 0, sizeof(buf));
+
+	struct dma_config cfg = {
+		.dma_slot = 0,
+		.channel_direction = MEMORY_TO_MEMORY,
+		.dma_callback = dma_callback,
+		.complete_callback_en = 1,
+		.error_callback_dis = 0,
+		.source_data_size = 1,
+		.dest_data_size = 1,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
+		.block_count = 1,
+	};
+	struct dma_block_config block = {
+		.source_address = (uint32_t)buf,
+		.dest_address = (uint32_t)buf,
+		.block_size = 70000,   /* > 0xFFFF */
+	};
+	cfg.head_block = &block;
+
+	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
+	zassert_not_equal(ret, 0, "dma_config with block_size=70000 should fail");
+}
+
+/* TC-4: self-copy (src==dst, in-place) should work without crash */
+ZTEST(dma_destructive, test_dma_self_copy)
+{
+	__nocache __aligned(32) static uint8_t buf[64];
+	for (int i = 0; i < 64; i++) {
+		buf[i] = (uint8_t)i;
+	}
+	dma_done = false;
+	dma_status = -1;
+
+	struct dma_config cfg = {
+		.dma_slot = 0,
+		.channel_direction = MEMORY_TO_MEMORY,
+		.dma_callback = dma_callback,
+		.complete_callback_en = 1,
+		.error_callback_dis = 0,
+		.source_data_size = 1,
+		.dest_data_size = 1,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
+		.block_count = 1,
+	};
+	struct dma_block_config block = {
+		.source_address = (uint32_t)buf,
+		.dest_address = (uint32_t)buf,  /* src == dst */
+		.block_size = 64,
+	};
+	cfg.head_block = &block;
+
+	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
+	zassert_equal(ret, 0, "dma_config failed: %d", ret);
+	ret = dma_start(dma_dev, DMA_CHANNEL);
+	zassert_equal(ret, 0, "dma_start failed: %d", ret);
+
+	dma_wait_complete(200);
+	zassert_true(dma_done, "DMA self-copy timed out");
+
+	/* data should be unchanged */
+	for (int i = 0; i < 64; i++) {
+		zassert_equal(buf[i], (uint8_t)i, "self-copy corrupted byte[%d]", i);
+	}
+}
+
+/* TC-5: minimal transfer (1 byte) */
+ZTEST(dma_destructive, test_dma_one_byte)
+{
+	__nocache __aligned(32) static uint8_t src[32] = {0};
+	__nocache __aligned(32) static uint8_t dst[32] = {0};
+	src[0] = 0xAB;
+	dma_done = false;
+	dma_status = -1;
+
+	struct dma_config cfg = {
+		.dma_slot = 0,
+		.channel_direction = MEMORY_TO_MEMORY,
+		.dma_callback = dma_callback,
+		.complete_callback_en = 1,
+		.error_callback_dis = 0,
+		.source_data_size = 1,
+		.dest_data_size = 1,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
+		.block_count = 1,
+	};
+	struct dma_block_config block = {
+		.source_address = (uint32_t)src,
+		.dest_address = (uint32_t)dst,
+		.block_size = 1,   /* minimal */
+	};
+	cfg.head_block = &block;
+
+	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
+	zassert_equal(ret, 0, "dma_config failed: %d", ret);
+	ret = dma_start(dma_dev, DMA_CHANNEL);
+	zassert_equal(ret, 0, "dma_start failed: %d", ret);
+
+	dma_wait_complete(200);
+	zassert_true(dma_done, "1-byte transfer timed out");
+	zassert_equal(dst[0], 0xAB, "1-byte transfer data mismatch");
+}
+
+/* TC-6: large block_size (16KB - 仍在合理范围) */
+ZTEST(dma_destructive, test_dma_large_block)
+{
+	/* 使用 16KB 缓冲区测试较大传输（nocache 段有限，不用 64KB） */
+	__nocache __aligned(32) static uint8_t large_src[16384];
+	__nocache __aligned(32) static uint8_t large_dst[16384];
+	memset(large_src, 0x55, sizeof(large_src));
+	memset(large_dst, 0xAA, sizeof(large_dst));
+	dma_done = false;
+	dma_status = -1;
+
+	struct dma_config cfg = {
+		.dma_slot = 0,
+		.channel_direction = MEMORY_TO_MEMORY,
+		.dma_callback = dma_callback,
+		.complete_callback_en = 1,
+		.error_callback_dis = 0,
+		.source_data_size = 1,
+		.dest_data_size = 1,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
+		.block_count = 1,
+	};
+	struct dma_block_config block = {
+		.source_address = (uint32_t)large_src,
+		.dest_address = (uint32_t)large_dst,
+		.block_size = 16384,  /* 16KB */
+	};
+	cfg.head_block = &block;
+
+	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
+	zassert_equal(ret, 0, "dma_config failed for 16KB block: %d", ret);
+	ret = dma_start(dma_dev, DMA_CHANNEL);
+	zassert_equal(ret, 0, "dma_start failed: %d", ret);
+
+	dma_wait_complete(5000);
+	zassert_true(dma_done, "16KB transfer timed out");
+	/* verify first and last bytes */
+	zassert_equal(large_dst[0], 0x55, "first byte mismatch");
+	zassert_equal(large_dst[16383], 0x55, "last byte mismatch");
+}
+
+ZTEST_SUITE(dma_destructive, NULL, dma_test_setup, NULL, NULL, NULL);

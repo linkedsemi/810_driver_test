@@ -95,7 +95,7 @@ CLAUDE 指引。若只带一个入口，带本 skill 即可引导出其余（§2
 1. 复制 .claude/ 到目标工程
 2. 确定哪些 skill 是"通用保留"、哪些是"工程专属需替换"
    通用保留：skill-orchestrator, skill-auditor, env-adapter, embedded-debug,
-             debug-knowledge, skill-registry, skill-keeper
+             debug-knowledge, skill-registry, keeper
    工程专属：qsh-* 系列（删除或替换为新工程等价 skill）
 3. 按 §4.1 替换硬编码
 4. 生成新工程 CLAUDE.md（从模板工程 CLAUDE.md 提取结构，填入新工程信息）
@@ -142,7 +142,7 @@ west build -p always -b <board> <src>
   □ 运行 skill-auditor §1 完整性检查
   □ 按 §4.1 替换硬编码
   □ 运行 skill-auditor 二次验证
-  □ supervisor.md 策略表按新工程定制
+  □ runner.md 策略表按新工程定制
 ```
 
 ## 验证
@@ -156,3 +156,6 @@ west build -p always -b <board> <src>
 | 环境判定完成 | 对应策略 skill（qsh-driver-test / qsh-debug / embedded-debug） | 按 §0 路由 |
 | 接线完成 | skill-auditor（验证接线有效） | junction 建完后 |
 | 工程适配完成 | skill-auditor（迁移后验证） | 硬编码替换后 |
+
+## 链路
+> **相关**→ `skill-orchestrator` · `skill-auditor` · **触发**← 新环境/不确定时

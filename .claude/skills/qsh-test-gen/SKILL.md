@@ -154,6 +154,10 @@ set(EXTRA_DTC_OVERLAY_FILE
    - **归档用公共 `common/report_dir.py`**（`allocate_session_dir` /
      `case_dir_for` / `update_summary`，禁止自算路径）：报告写到会话目录
      `reports/<YYYY-MM-DD>-<idx>/<project>_<case>/<driver>_test_report.{md,json}`
+   - **归档必须同时写 `.md` + `.json`**（样板 = 已迁移工程的
+     `write_markdown_report()` + json writer；`.md` 用 items[] 渲染、
+     `.json` 为机器可读源）；**漏写 .md 属模板缺陷**，summary.md 会把
+     该 case 链到 .json、偏离 §6.4.1
    - summary.md 只在会话目录最外层，**行粒度 = case**（key
      `<project>_<case>`，§12.4）
    - 解析 `INFO <name>: k=v[,k=v]` 约定行填报告"实际"列（§13.4）
@@ -210,6 +214,7 @@ tests/case_<速记>/
 | dbg_run.py / run_test.py 串口 0 行（单核工程） | 脚本漏 `set {int}0x4002200c = 2`（cpu2 hold），cpu2 自启劫持 uart1 | ★ **模板必须注入**：gdb 命令序列在 `reset` 前加 `set {int}0x4002200c = 2`（APP_CPU_SRST bit1）；所有 dbg_run.py / run_test.py 模板必须包含此步骤 |
 | overlay 编译后 printk 无输出 | overlay 缺 `chosen { zephyr,console = &uart1; };`，DT_CHOSEN 为 NULL → uart_console_init 跳过 | ★ **模板 overlay 必须含 chosen 块**：单核工程 overlay 显式声明 `chosen { zephyr,console = &uart1; };`；双核 cpu2 侧走 cpu2_console_uart5.overlay |
 | 测试代码 store fault 挂死 → 串口 0 行 | k_malloc 返回 NULL → memset(NULL) → 崩溃；极具迷惑性表现为"串口无输出" | ★ **测试代码禁用堆分配**：不用 k_malloc/k_calloc，改用静态数组（`static uint8_t buf[N]`）；prj.conf 不依赖 CONFIG_HEAP_MEM_POOL_SIZE；排查串口无输出时**先查崩溃再查配置** |
+| run 脚本归档只有 .json 没有 .md | 模板归档段漏 `write_markdown_report` | 抄已迁移 run_test.py：md writer + update_summary 报告路径指 .md（§1.6，2026-09-08） |
 
 ## 5. 坑沉淀要求
 
@@ -222,4 +227,7 @@ tests/case_<速记>/
 | 工程/case 生成完成 | ★ qsh-test-validate | 自动转，不可跳过 |
 | qsh-test-validate FAIL | 回本 skill 修模板 | FAIL 项存在 |
 | qsh-test-validate PASS | qsh-test-run（首次验证） | 全部 PASS |
-| 生成过程发现模板缺陷 | skill-keeper（模板补漏） | 模板规则需改进 |
+| 生成过程发现模板缺陷 | keeper（模板补漏） | 模板规则需改进 |
+
+## 链路
+> **输出**→ `qsh-test-validate` · **前置**← runner(STRATEGY_DEV) · **相关**→ skill-orchestrator

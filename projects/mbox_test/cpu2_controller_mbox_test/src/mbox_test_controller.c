@@ -3,6 +3,8 @@
  *
  * MBOX test - cpu2 (controller) side
  * 主动发送消息到 cpu1，验证回复。
+ *
+ * 驱动改版后用单一 mbox-names="mbox"（不再分 tx/rx）。
  */
 
 #include <zephyr/kernel.h>
@@ -16,21 +18,22 @@
 
 LOG_MODULE_REGISTER(mbox_ctrl, LOG_LEVEL_INF);
 
-static const struct mbox_dt_spec tx_ch4 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch4), tx);
-static const struct mbox_dt_spec tx_ch5 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch5), tx);
+/* 单一 mbox spec（新版驱动，mbox-names="mbox"） */
+static const struct mbox_dt_spec mbox_ch4 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch4), mbox);
+static const struct mbox_dt_spec mbox_ch5 = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_test_ch5), mbox);
 
-static int send_test_msg(const struct mbox_dt_spec *tx, uint8_t ch, uint32_t seq)
+static int send_test_msg(const struct mbox_dt_spec *spec, uint32_t seq)
 {
 	struct mbox_test_msg msg = {
 		.magic = MBOX_TEST_MAGIC,
-		.channel = ch,
+		.channel = (uint8_t)spec->channel_id,
 		.seq = seq,
 	};
 	for (int i = 0; i < sizeof(msg.payload); i++) {
 		msg.payload[i] = (uint8_t)(seq + i);
 	}
 	struct mbox_msg m = { .data = &msg, .size = sizeof(msg) };
-	return mbox_send_dt(tx, &m);
+	return mbox_send_dt(spec, &m);
 }
 
 void mbox_controller_main(void)
@@ -43,7 +46,7 @@ void mbox_controller_main(void)
 	/* TC1+TC2: ch4 发送 5 条消息 */
 	LOG_INF("[CPU2 MBOX] TC1+TC2: ch4 send 5 msgs");
 	for (uint32_t seq = 0; seq < 5; seq++) {
-		int ret = send_test_msg(&tx_ch4, 4, seq);
+		int ret = send_test_msg(&mbox_ch4, seq);
 		if (ret != 0) {
 			LOG_ERR("ch4 send seq=%d failed: %d", seq, ret);
 			total_failed++;
@@ -55,7 +58,7 @@ void mbox_controller_main(void)
 	/* TC3: ch5 发送 3 条消息 */
 	LOG_INF("[CPU2 MBOX] TC3: ch5 send 3 msgs");
 	for (uint32_t seq = 0; seq < 3; seq++) {
-		int ret = send_test_msg(&tx_ch5, 5, seq);
+		int ret = send_test_msg(&mbox_ch5, seq);
 		if (ret != 0) {
 			LOG_ERR("ch5 send seq=%d failed: %d", seq, ret);
 			total_failed++;
@@ -73,7 +76,7 @@ void mbox_controller_main(void)
 	};
 	memset(big_msg.payload, 0xBB, sizeof(big_msg.payload));
 	struct mbox_msg m = { .data = &big_msg, .size = sizeof(big_msg) };
-	int ret = mbox_send_dt(&tx_ch4, &m);
+	int ret = mbox_send_dt(&mbox_ch4, &m);
 	LOG_INF("[CPU2 MBOX] MTU full: %s (ret=%d)", ret == 0 ? "OK" : "FAIL", ret);
 	if (ret != 0) total_failed++;
 

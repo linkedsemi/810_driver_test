@@ -126,3 +126,6 @@ description: 嵌入式开发通用调试方法论（不依赖具体硬件环境/
 | 方法学应用完成 | 回调用方 | 定位闭环 |
 | 推出可复用招式 | debug-knowledge §写入 | 非一次性、属某域 |
 | 发现通用环境坑 | KNOWN_ISSUES.md | 换机器还会踩 |
+
+## 链路
+> **相关**→ `debug-knowledge` · **被调**← `qsh-debug` · `qsh-test-compare`
