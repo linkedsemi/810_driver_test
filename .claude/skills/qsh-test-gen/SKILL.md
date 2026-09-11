@@ -215,6 +215,7 @@ tests/case_<速记>/
 | overlay 编译后 printk 无输出 | overlay 缺 `chosen { zephyr,console = &uart1; };`，DT_CHOSEN 为 NULL → uart_console_init 跳过 | ★ **模板 overlay 必须含 chosen 块**：单核工程 overlay 显式声明 `chosen { zephyr,console = &uart1; };`；双核 cpu2 侧走 cpu2_console_uart5.overlay |
 | 测试代码 store fault 挂死 → 串口 0 行 | k_malloc 返回 NULL → memset(NULL) → 崩溃；极具迷惑性表现为"串口无输出" | ★ **测试代码禁用堆分配**：不用 k_malloc/k_calloc，改用静态数组（`static uint8_t buf[N]`）；prj.conf 不依赖 CONFIG_HEAP_MEM_POOL_SIZE；排查串口无输出时**先查崩溃再查配置** |
 | run 脚本归档只有 .json 没有 .md | 模板归档段漏 `write_markdown_report` | 抄已迁移 run_test.py：md writer + update_summary 报告路径指 .md（§1.6，2026-09-08） |
+| 增删测试项后 dump mem 兜底错位/假 MISSING | run_test.py 与 dump_results.py 各硬编码一份 TEST_NAMES，只改其一；新项插在链接序**前部**时旧列表整体移位一格 | **两份 TEST_NAMES 必须同改**（都是 ztest 链接序，勿用 protocol.h 枚举序，两者不一致）；构建后 `nm --numeric-sort <elf> \| grep z_ztest_unit_test` 复核全序，并同步更新两处注释里的实测序清单（2026-09-09 broadcast 漏同步 dump_results 实例） |
 
 ## 5. 坑沉淀要求
 

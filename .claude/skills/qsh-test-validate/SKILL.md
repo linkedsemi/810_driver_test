@@ -170,11 +170,16 @@ void test_main(void) {
 
 **检查方法**：grep test.sh 中的 `-g` / `-r` 参数处理、`SKIP_LOAD` 变量。
 
-### 1.8 dump_results.py TEST_NAMES 对齐（建议查）
+### 1.8 TEST_NAMES 双份同步 + 链接序对齐（建议查）
 
-`dump_results.py` 的 `TEST_NAMES` 列表必须按 ztest_unit_test **链接序**（SORT_BY_NAME）排列，与 ztest_glue 记账 idx 对齐。
+`run_test.py` 与 `dump_results.py` **各自硬编码一份** `TEST_NAMES`，两份都必须按
+ztest_unit_test **链接序**（SORT_BY_NAME）排列，与 ztest_glue 记账 idx 对齐。
+**增删测试项必须同步两份**（链接序 ≠ protocol.h 枚举序，勿用枚举序填）：新项插在
+链接序前部会让未同步的旧列表整体错位一格，mem 兜底结果张冠李戴/假 MISSING
+（2026-09-09 新增 broadcast_nack_recovery 只同步了 run_test.py、漏 dump_results.py 实例）。
 
-**检查方法**：若已编译，用 `nm --numeric-sort <elf> | grep _ztest_unit_test` 对比 TEST_NAMES 顺序。
+**检查方法**：若已编译，用 `nm --numeric-sort <elf> | grep _ztest_unit_test` 对比两份
+TEST_NAMES 顺序一致且都与链接序相符（含注释里的实测序清单）；新工程先核对再回归。
 
 ### 1.9 模板缺陷防漏检查（必查，2026-09-07 沉淀）
 

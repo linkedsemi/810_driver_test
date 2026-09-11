@@ -81,7 +81,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | PASS/FAIL 相反 | ANSI 重绘前缀 | `re.search()` 不锚点 |
 | 逐项 MISSING | verbose 输出关了 | `CONFIG_ZTEST_VERBOSE_OUTPUT=y` |
 
-完整清单（36条）：[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
+完整清单：[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
 
 ## 6. 文档索引
 

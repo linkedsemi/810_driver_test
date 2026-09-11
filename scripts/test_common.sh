@@ -449,6 +449,7 @@ load_and_run_single() {
         -ex "set \$ROM_START = ${SINGLE_ROM_START}"
         -ex "file ${elf_win}"
         -ex "reset"
+        -ex "monitor flash erase_address 0x10000000 0x10000"
         -ex "set memory-write-packet-size 16384"
         -ex "set remotewritesize 16384"
         -ex "load"

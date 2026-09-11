@@ -162,6 +162,13 @@ MSYS `//F` 只对 Git Bash 有效，subprocess 无转换层 → "无效参数"�
 **29. test.sh -g 退出码 124 是设计行为**
 timeout 杀 continue 收场，判成败看日志不看退出码。
 
+**50. run_test.py 与 dump_results.py 的 TEST_NAMES 双份硬编码，增删测试项漏同步 → mem 兜底错位/假 MISSING**（2026-09-09）
+新增 broadcast_nack_recovery（第 11 项）时只同步了 run_test.py，漏了 dump_results.py（仍是旧 10 项）
+→ broadcast 读回 MISSING 假 FAIL；且新项插在链接序**前部**，旧列表整体错位一格，把真实结果张冠李戴。
+修法/防再犯：两份 TEST_NAMES 都是 **ztest 链接序**（不是 protocol.h 枚举序，两者不一致）；增删测试项后
+两份同改，构建后 `nm --numeric-sort <elf> | grep z_ztest_unit_test` 复核全序，并同步更新各自注释里的实测序清单。
+（本项漏同步实例的代码修复 = runner 跟进：dump_results.py TEST_NAMES 补 broadcast 到表头 + 更新其头部注释实测序。）
+
 ---
 
 ## 环境与并发
@@ -247,3 +254,39 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 - 现象：GDB `reset` + `detach` 后 PC 停在 0x1000000（bootrom），固件不启动
 - 根因：GDB 连接 halt CPU，detach 不清除 halt；bootrom 无法继续执行
 - 修复：需要 flash_program 硬复位（--reset-and-run）触发，不 halt CPU；或用户断电重启
+
+---
+
+## i3c 切换 / CCC 恢复域（i3c_i2c_switch_test，2026-09-09）
+
+**51. 广播 CCC NACK 后 controller 错误残留 → 后续 CCC 卡死（已修，有常驻回归项）**
+广播 RSTACT whole 遇 target 切 I2C（不响应广播）会 NACK；此前 controller 错误残留（EVR BUSY/FCF/ERRF 等）
+使后续 CCC 卡死/失败。修复集中在 `zephyr/drivers/i3c/i3c_linkedsemi.c`：
+- `ls_i3c_xfer_reset` 加固 = 统一清理口：等 BUSY 清（超时软复位 master）→ while 清 FCF/ERRF/RXTGTEND 残留
+  （带超时）→ flush RX/TX/Control FIFO → Status FIFO flush 移最后；
+- `ls_i3c_do_ccc`：RequestTransfer(TSFSET) 后等 CFNFF 再填 CR 控制字（超时报错）；
+- `ls_i3c_do_daa` 收尾 / `out_ccc_stop`：精简显式清标志（统一交 xfer_reset）。
+EVR bit12=BUSY 定义（`I3C_EVR_BUSY_MASK/POS` / `I3C_EVR_BUSY` / `LL_I3C_IsActiveFlag_BUSY`）同步进
+zephyr 与 HAL 两份寄存器头。
+**回归保护** = i3c_i2c_switch_test 第 11 项 `broadcast_nack_recovery`：'N' 让 target 临时切 I2C → 首帧
+RSTACT whole 预期 NACK → 切回后 RSTACT peripheral / RSTDAA 应正常 → 帧末 EVR BUSY=0。改动该恢复路径必跑。
+
+**52. switch 二次 DAA 回归未解（I2C→I3C 切回后 re-DAA 失败；首轮 i3c_baseline DAA 正常）**
+- 2026-09-09 两次回归复现：switch_i2c_to_i3c / switch_stress 仍 FAIL；仅 I2C→I3C 切换后的二次 DAA 场景失败，
+  i3c_baseline 首轮 DAA 一直 PASS。
+- **已排除**：do_daa 收尾精简非根因（回退显式清标志后仍 FAIL）。
+- 排查方向：target 侧 I2C6 占用期间 TX FIFO 残留（切回 I3C 时 flush TX + prefill 是否到位）、
+  控制器侧切换后总线/中断残留；TGT broadcast NOT_RUN（'B'/'E' 是否到达 target）待查。
+- **判据注意**：end-of-run 立即 mem 兜底读数可能抓到未稳定状态（曾误报 TGT 全 FAIL），数分钟后稳定 RAM
+  快照才一致；本域判据以 CTRL（DAA/读回发起方）稳定槽为准，读数冲突复读确认。
+
+**53. mem 兜底 reason 槽真空：写入(枚举序 legacy 手动记账) vs 读取(链接序 glue 自动记账) 可能错位（根因待证）**
+- 现象：FAIL 时 `ctrl_fail_reason`（vsnprintk，kernel API）有值，但 dump_results 按链接序 x/s 读
+  `test_reasons[id]`（char[96]）全空，dump reasons 永远空串。
+- 代码事实：i3c_i2c_switch 控制器仍 **legacy 手动记账**（`ctrl_test_end` 显式 `tr_record(枚举 id,...)`），与
+  §6.1.5/glue 的**链接序自动记账**是两套下标约定并存 → dump(链接序) 与写入(枚举序) 槽位可能对不上；
+  不是所有 FAIL 都进得了 dump 读的那个槽。
+- 两个待证假设：① 写/读槽位错位（枚举序≠链接序，最可能）；② `tr_record` 内 libc `vsnprintf`
+  （test_results.c）在 minimal libc 下空实现（CONFIG_NEWLIB_LIBC=n）。
+- 验证：gdb 同时读 `test_reasons[枚举id]` 与 `[链接id]` 两位置对比；确认前别先入为主怪 vsnprintf。
+  判 FAIL 的 reason 以串口 zassert printk / 探针为准，勿依赖 mem reason。

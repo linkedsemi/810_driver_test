@@ -238,6 +238,8 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 
 内存兜底在 case 跑完后立即执行（目标仍在，interrupt 可读）；`dump_results.py` 必须支持 `--json`（输出 `{"CTRL": {...}, "TGT": {...}, "reasons": {...}}` 或单核版 `{"TGT": {...}}`）；`TEST_NAMES` 必须按 **ztest_unit_test 链接序**（SORT_BY_NAME，§10.27）与 glue 记账 idx 对齐。
 
+- **TEST_NAMES 双份同步（★ 2026-09-09）**：run 脚本（run_test.py）与 dump_results.py **各自硬编码一份** `TEST_NAMES`（都是链接序，非 protocol.h 枚举序）。增删测试项必须同步两份：新项插在链接序前部会让未同步的旧列表整体错位一格，mem 兜底结果张冠李戴/假 MISSING。构建后 `nm --numeric-sort <elf> | grep z_ztest_unit_test` 复核全序，并同步更新两处注释里的实测序清单。
+
 #### 6.4.4 summary.md 索引（会话目录最外层，行粒度 = case）
 
 每工程脚本写完自己的报告后 `update_summary()` 更新会话目录的 `summary.md`：
