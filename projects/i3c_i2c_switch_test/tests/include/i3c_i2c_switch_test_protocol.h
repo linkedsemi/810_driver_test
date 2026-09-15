@@ -44,6 +44,8 @@ extern "C" {
 #define CMD_TGT_END          'E'	/* 0x45：后随 1 字节 test id，target 结账记账 */
 #define CMD_SWITCH_TO_I2C    'S'	/* 0x53：I3C 帧下发，target 延时切换 I2C pinmux */
 #define CMD_SWITCH_TO_I3C    'Y'	/* 0x59：I2C 帧下发，target 延时切回 I3C pinmux */
+#define CMD_NACK_WINDOW      'N'	/* 0x4E：I3C 帧下发，target 临时切 I2C（不响应广播），
+					 * 延时 NACK_WINDOW_MS 后自动切回 I3C */
 #define CMD_WRITE_PATTERN    'W'	/* 0x57：写 pattern（target 校验内容） */
 #define CMD_PRINT_SUMMARY    'P'	/* 0x50：target 判定收尾（旧框架：打印 SUMMARY 后结束） */
 
@@ -60,6 +62,9 @@ extern "C" {
  * controller 发完命令后延时 CTRL_SWITCH_DELAY_MS 再切（必须 > TGT）。 */
 #define TGT_SWITCH_DELAY_MS  5
 #define CTRL_SWITCH_DELAY_MS 8
+/* NACK 窗口时长（target 收到 'N' 后切 I2C 保持的时长，controller 须在此
+ * 窗口内完成一次广播 NACK，窗口结束后 target 自动切回 I3C 应答） */
+#define NACK_WINDOW_MS       2
 
 /* pinctrl "pinmux_i2c" 状态的 ID：私有状态从 PINCTRL_STATE_PRIV_START 起
  * （pinctrl-names 第 2 个状态），固件据此验证 IO 区分机制的配置。 */
@@ -86,6 +91,7 @@ enum i3c_i2c_test_id {
 	TEST_SWITCH_I2C_TO_I3C,		/* 双端切回 I3C + 重新 DAA + 复验 */
 	TEST_I2C_NACK_BAD_ADDR,		/* I2C 负路径：访问不存在的地址 */
 	TEST_SWITCH_STRESS,		/* I3C<->I2C 循环切换 N 轮，每轮双模式基本读写 */
+	TEST_BROADCAST_NACK_RECOVERY,	/* 广播 RSTACT NACK 后 CCC 恢复（驱动修复验证） */
 	I3C_I2C_TEST_COUNT,
 };
 
@@ -103,6 +109,7 @@ static const char * const i3c_i2c_test_names[I3C_I2C_TEST_COUNT] = {
 	[TEST_SWITCH_I2C_TO_I3C] = "switch_i2c_to_i3c",
 	[TEST_I2C_NACK_BAD_ADDR] = "i2c_nack_bad_addr",
 	[TEST_SWITCH_STRESS] = "switch_stress",
+	[TEST_BROADCAST_NACK_RECOVERY] = "broadcast_nack_recovery",
 };
 
 /* 兼容旧 token 宏（ztest 迁移后不再输出 token，保留空宏避免编译错误） */

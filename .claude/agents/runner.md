@@ -29,6 +29,7 @@ model: opus
 | 8 | **文档规范** | 改文档前读 DOC_EDIT_RULES；写底层驱动代码时遵守 memory 中的 driver-comment-convention |
 | 9 | **不求助** | 先走完自愈阶梯，超时才升级 |
 | 10 | **写 gotcha** | 失败恢复后、或遇到需要领域知识才能解决的问题时，往 `.claude/gotchas/INBOX.md` 追加一条（Agent做了什么/人期望什么/为什么） |
+| 11 | **手动环境预检** | STRATEGY_TEST 执行 `run_all.py` 前，必须先逐项手动验证环境（见「手动环境预检」节），全部通过才能启动批量脚本。禁止把环境验证完全委托给 run_all.py 的内置预检 |
 
 ---
 
@@ -45,6 +46,7 @@ model: opus
 | qsh-test-gen | `.claude/skills/qsh-test-gen/SKILL.md` | 新建工程时 |
 | qsh-test-compare | `.claude/skills/qsh-test-compare/SKILL.md` | 结果分析时 |
 | qsh-test-validate | `.claude/skills/qsh-test-validate/SKILL.md` | 合规检查时 |
+| qsh-driver-review | `.claude/skills/qsh-driver-review/SKILL.md` | 驱动代码审核时（mutex 泄漏/资源清理/中断安全） |
 | embedded-debug | `.claude/skills/embedded-debug/SKILL.md` | 通用调试方法论时 |
 | debug-knowledge | `.claude/skills/debug-knowledge/SKILL.md` | 查领域知识库时 |
 | skill-auditor | `.claude/skills/skill-auditor/SKILL.md` | 迁移后验证 / 完整性检查时 |
@@ -59,7 +61,8 @@ model: opus
 |---------|--------|------|------------------------|
 | **自动化回归** | "回归"/"全量"/"批量测试" | `STRATEGY_TEST` | `.claude/skills/qsh-test-run/SKILL.md` → `.claude/skills/qsh-test-compare/SKILL.md` |
 | **单项调试** | "调试"/"失败"/"不跑"/"异常" | `STRATEGY_DEBUG` | `.claude/skills/qsh-debug/SKILL.md` → `.claude/skills/embedded-debug/SKILL.md` |
-| **代码开发** | "实现"/"新建"/"编写"/"迁移" | `STRATEGY_DEV` | 按领域 Read 对应 skill |
+| **代码开发** | "实现"/"新建"/"编写"/"迁移" | `STRATEGY_DEV` | 按领域 Read 对应 skill → qsh-driver-review |
+| **驱动审核** | "审核"/"review"/"检查驱动" | `STRATEGY_DEV` | `.claude/skills/qsh-driver-review/SKILL.md` |
 | **问题分析** | "为什么"/"分析"/"根因" | `STRATEGY_ANALYZE` | `.claude/skills/debug-knowledge/SKILL.md` → `.claude/skills/embedded-debug/SKILL.md` |
 | **合规验证** | "验证"/"检查"/"validate" | `STRATEGY_VALIDATE` | `.claude/skills/qsh-test-validate/SKILL.md` |
 | **混合/多步** | 以上组合 | `STRATEGY_MULTI` | 拆分后分别路由 |
@@ -70,13 +73,54 @@ model: opus
 
 **STRATEGY_DEBUG**：匹配速查表 → qsh-debug §0 总流程（环境→复现→分层定位→断点）→ 每步查已知坑 → 3 轮未闭环则升级 → **→ 坑沉淀决策（领域招式→debug-knowledge §写入；通用坑→KNOWN_ISSUES）**
 
-**STRATEGY_DEV**：拆子任务 → **qsh-test-gen（生成）→ ★ qsh-test-validate（合规自检）→ FAIL 回 gen / PASS → ★ qsh-test-run（首次验证）→ ★ qsh-test-compare → 坑沉淀决策** → 构建失败读错误修复重试（最多 2 次）
+**STRATEGY_DEV**：拆子任务 → **qsh-test-gen（生成）→ ★ qsh-test-validate（合规自检）→ FAIL 回 gen / PASS → ★ qsh-driver-review（驱动代码审核，P0 发现回代码修改）→ ★ qsh-test-run（首次验证）→ ★ qsh-test-compare → 坑沉淀决策** → 构建失败读错误修复重试（最多 2 次）
 
 **STRATEGY_ANALYZE**：**debug-knowledge §装载（先查）** → 收集证据 → 形成假设（至少 2 个）→ 查知识库+代码分析 → 排除收敛 → **☆ debug-knowledge §写入（可复用招式入库）** → 报告结论
 
 **STRATEGY_VALIDATE**：读规范 → 逐项检查工程合规 → 标记违规+修复建议 → 合规报告
 
 **STRATEGY_MULTI**：拆子任务 → 按类型路由 → 串行执行+独立 state → 子任务失败不阻断兄弟
+
+---
+
+## 手动环境预检（STRATEGY_TEST 执行前必做）
+
+> run_all.py 内置预检有盲区（DebugServer 未启动时 erase 静默成功、precheck 探测
+> 连接本身制造残留）。启动批量脚本前，runner 必须**逐项手动验证**环境，不得把
+> 环境验证完全委托给 run_all.py 内置预检。
+
+逐项清单与命令见 **qsh-debug SKILL.md §2.4**（唯一来源）。任何一项不过 → 自愈
+（qsh-debug §2.5 阶梯）→ 重验 → 仍不过则中止并升级。全部通过后输出摘要，
+才启动 `run_all.py`。
+
+---
+
+## 心跳监控（长时间运行防卡死看门狗）
+
+> 本节的「看门狗」≠ reports/STATUS.md 的「进度心跳」（那是跨 agent 状态信号）。
+> 本节是脚本级超时之上的**外层兜底**：脚本自身 `case_timeout` / 90s no_boot 优先
+> （qsh-test-run §4.2）。
+
+`run_all.py` 用 **background 模式**启动（`run_in_background=true`），每 **60s** 检查
+一次进度：最新 session 日志是否增长、summary 行数是否推进。
+
+**静默豁免**：烧录/load 期（未设写包可 ~190s，qsh-debug §3）与 prime 轮（20s 输出
+丢弃，设计如此）不计入静默。静默阈值取该 case 的 `case_timeout`，不用固定值。
+
+### 卡死判定与恢复
+
+| 条件 | 判定 | 恢复 |
+|------|------|------|
+| 日志 >case_timeout 无增长 且 GDB 进程在 | 疑似 GDB 挂死 | 杀 GDB → run_all.py 自行处理下一个 case |
+| 日志 >case_timeout 无增长 且无 GDB 进程 | 疑似脚本卡死 | 检查 run_all.py 进程是否还在 |
+| run_all.py 进程消失 但测试未跑完 | 脚本崩溃 | 查日志尾部 → 按失败分类恢复 |
+| summary.md 行数在增长 | 正常推进 | 继续监控 |
+| 全部 case 在 summary 中有记录 | 执行完毕 | 读取结果，生成报告 |
+
+### 心跳日志
+
+每 60s 输出一行：`[HB] <时间> | case <n>/<总> <名> | last_log_update: <间隔> | <状态>`。
+状态 RUNNING / SUSPECT_STUCK（日志超过 case_timeout 无增长）。
 
 ---
 

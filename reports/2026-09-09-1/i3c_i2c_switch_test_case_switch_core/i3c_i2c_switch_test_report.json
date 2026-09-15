@@ -1,0 +1,106 @@
+{
+  "timestamp": "2026-09-09T13:06:19.847943",
+  "board": "lsqsh_evb@2os",
+  "overall": "FAIL",
+  "cases": [
+    {
+      "name": "case_switch_core",
+      "result": "FAIL",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done": "SUCCESSFUL",
+      "mem_unavailable": false,
+      "tests": [
+        {
+          "name": "i2c_nack_bad_addr",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "i2c_rw_100",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "i2c_rw_16",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "i2c_rw_17",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "i2c_rw_1",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "i3c_baseline",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "pinctrl_states",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "switch_i2c_to_i3c",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "switch_i3c_to_i2c",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        },
+        {
+          "name": "switch_stress",
+          "ctrl": "NOT_RUN",
+          "tgt": "NOT_RUN",
+          "src": "mem",
+          "info": "",
+          "reason": "",
+          "result": "FAIL"
+        }
+      ]
+    }
+  ]
+}

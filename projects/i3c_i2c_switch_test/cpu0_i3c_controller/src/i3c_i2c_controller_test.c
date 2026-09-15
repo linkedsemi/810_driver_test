@@ -32,14 +32,26 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/i3c.h>
+#include <zephyr/drivers/i3c/ccc.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
+#include <reg_i3c.h>
+#include <zephyr/devicetree.h>
 
 LOG_MODULE_REGISTER(i3c_i2c_master_test_impl, LOG_LEVEL_INF);
 
 /* ============ 全局状态 ============ */
+
+/* PA05 探针标记：switch_i2c_to_i3c 的 read 前拉高、read 后拉低，
+ * 示波器用 PA05 边沿定位 read 帧（I3C PJ10/PJ11 通道同时捕获）。 */
+static const struct device *probe_gpio = DEVICE_DT_GET(DT_NODELABEL(gpioa));
+#define PROBE_PIN 5
+#define PROBE_HIGH() gpio_pin_set(probe_gpio, PROBE_PIN, 1)
+#define PROBE_LOW()  gpio_pin_set(probe_gpio, PROBE_PIN, 0)
+#define PROBE_INIT() gpio_pin_configure(probe_gpio, PROBE_PIN, GPIO_OUTPUT_LOW)
 
 enum ctrl_mode {
 	MODE_I3C = 0,
@@ -139,48 +151,8 @@ static void ctrl_test_end(enum i3c_i2c_test_id id, bool via_bus)
 /* ============ 切换辅助（pinmux apply + 模式跟踪，纯 I2C 无切换） ============ */
 
 #ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
-/* ==== 临时调试探针：快照 GPIOJ 全部 pad 配置 + 功能路由位 ====
- * [0]  PU1_PU0   @0x4006f2a4  APP_PMU IO_CFG[9]（GPIOJ：PJ10/11 = i3c5 引脚）
- * [1]  PD_PU2    @0x4006f2a8
- * [2]  IEN1_IEN0 @0x4006f2ac
- * [3]  DS1_DS0   @0x4006f2b0
- * [4]  AE_DS2    @0x4006f2b4
- * [5]  OD_FIR    @0x4006f2b8
- * [6]  SL_ST     @0x4006f2bc
- * [7]  IO_FUNC[1][4] @0x400610b0  FUNC1(I2C) 使能位 GPIOJ 高半区 bit26/27
- * [8]  IO_FUNC[2][4] @0x400610d0  FUNC2(I3C) 使能位 GPIOJ 高半区 bit26/27
- * [9]  FUNC_SEL[9][2] @0x4008fcd8  FUNC1 alt 码（PJ10=byte2, PJ11=byte3）
- * 采样点：ctrl_apply_pinctrl 进入(pre)/返回(post) 各一次 + boot 一次。
- * write 失败时另存 dbg_err（10 个 pad 字 + I3C EVR/SER 错误码）。
- * 调试完必须删除（探针纪律 §8）。 */
-static volatile uint32_t dbg_snap[26][10];
-static volatile int dbg_snap_idx;
-/* dbg_err/dbg_err_valid 必须是全局符号：main.c 的 ctrl_i3c_write 在写失败时
- * 经 extern 引用它们另存 pad 字 + I3C EVR/SER 错误码（static 会链接失败）。 */
-volatile uint32_t dbg_err[12];
-volatile int dbg_err_valid;
 
-static void dbg_snapshot_regs(void)
-{
-	if (dbg_snap_idx < 26) {
-		volatile uint32_t *d = dbg_snap[dbg_snap_idx];
-
-		d[0] = *(volatile uint32_t *)0x4006f2a4;
-		d[1] = *(volatile uint32_t *)0x4006f2a8;
-		d[2] = *(volatile uint32_t *)0x4006f2ac;
-		d[3] = *(volatile uint32_t *)0x4006f2b0;
-		d[4] = *(volatile uint32_t *)0x4006f2b4;
-		d[5] = *(volatile uint32_t *)0x4006f2b8;
-		d[6] = *(volatile uint32_t *)0x4006f2bc;
-		d[7] = *(volatile uint32_t *)0x400610b0;
-		d[8] = *(volatile uint32_t *)0x400610d0;
-		d[9] = *(volatile uint32_t *)0x4008fcd8;
-		dbg_snap_idx++;
-	}
-}
-
-/* test_main 用的公开入口 */
-void dbg_snapshot_regs_pub(void) { dbg_snapshot_regs(); }
+static void ctrl_i3c_purge(void);
 
 static int ctrl_apply_pinctrl(bool to_i2c)
 {
@@ -188,17 +160,73 @@ static int ctrl_apply_pinctrl(bool to_i2c)
 				   : PINCTRL_STATE_DEFAULT;
 	int ret;
 
-	dbg_snapshot_regs();	/* 探针：apply 前 */
 	ret = pinctrl_apply_state(ctrl_pcfg, state_id);
-	dbg_snapshot_regs();	/* 探针：apply 后 */
 
 	if (ret == 0) {
 		ctrl_mode = to_i2c ? MODE_I2C : MODE_I3C;
+	}
+	if (ret == 0 && !to_i2c) {
+		ctrl_i3c_purge();
 	}
 	return ret;
 }
 
 /* 发切换命令（当前模式帧）→ 延时（> target 侧 TGT_SWITCH_DELAY_MS）→ 本侧切换 */
+
+/* 控制器侧帧外清洁：复刻驱动 ls_i3c_xfer_reset 序列。pinmux 往返后 i3c5
+ * 控制器 FIFO/状态残留会污染下一笔私有传输（实测切回后首笔 read 头部
+ * 出现确定性垃圾字节，RX FIFO 却为空 → 帧级污染）；i3c_transfer 成功
+ * 路径驱动不做帧外清理，CCC 路径才有（"先清 FIFO 再发起请求"），故
+ * 切回 I3C 后、首笔私有传输前在本侧补一次。 */
+static void ctrl_i3c_purge(void)
+{
+	I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c5));
+	int i;
+
+	/* 等总线空闲（BUSY 清零）：活动帧期间 flush 会打断帧 */
+	for (i = 0; (base->EVR & I3C_EVR_BUSY_MASK) != 0U && i < 10000; i++) {
+	}
+
+	/* 清帧完成/错误/接收终止残留标志（写 CEVR 清位，EVR 跨时钟域
+	 * 同步滞后，清一次足够：此处帧早已结束） */
+	base->CEVR = I3C_CEVR_CFCF_MASK | I3C_CEVR_CERRF_MASK |
+		     I3C_IER_RXTGTENDIE_MASK;
+
+	/* 排空 RX FIFO 残留字节（RXCOUNT + RXFNEF 双条件兜底） */
+	for (i = 0; i < 64; i++) {
+		uint32_t rxc = (base->SDATACTRL & I3C_SDATACTRL_RXCOUNT_MASK) >>
+			       I3C_SDATACTRL_RXCOUNT_POS;
+
+		if (rxc == 0U && (base->EVR & I3C_EVR_RXFNEF_MASK) == 0U) {
+			break;
+		}
+		(void)base->RDR;
+	}
+	/* RX flush 请求（CFGR 写 1 触发，异步清空需 settle） */
+	base->CFGR |= I3C_CFGR_RXFLUSH_MASK;
+	k_busy_wait(5);
+
+	/* TX FIFO flush 至空（TXFEF） */
+	for (i = 0; i < 100; i++) {
+		if ((base->EVR & I3C_EVR_TXFEF_MASK) != 0U) {
+			break;
+		}
+		base->CFGR |= I3C_CFGR_TXFLUSH_MASK;
+	}
+	k_busy_wait(5);
+	/* 控制 FIFO flush 至空（CFEF） */
+	for (i = 0; i < 100; i++) {
+		if ((base->EVR & I3C_EVR_CFEF_MASK) != 0U) {
+			break;
+		}
+		base->CFGR |= I3C_CFGR_CFLUSH_MASK;
+	}
+	k_busy_wait(5);
+	/* 状态 FIFO flush（SFLUSH） */
+	base->CFGR |= I3C_CFGR_SFLUSH_MASK;
+	k_busy_wait(5);
+}
+
 static bool ctrl_switch_to(bool to_i2c)
 {
 	uint8_t cmd = to_i2c ? CMD_SWITCH_TO_I2C : CMD_SWITCH_TO_I3C;
@@ -494,6 +522,60 @@ static void ctrl_test_i2c_wave(void)
 }
 #endif /* CONFIG_I3C_I2C_PURE_I2C_TEST */
 
+/* ============ 广播 NACK 恢复测试 ============
+ *
+ * 验证广播 CCC NACK 后，后续 CCC 传输恢复正常（驱动修复回归验证）：
+ *   1. target 切 I2C（不响应 I3C 广播），第一帧广播 RSTACT whole → NACK；
+ *   2. target 自动切回 I3C；
+ *   3. 后两帧广播 RSTACT peripheral / RSTDAA → 正常。 */
+static void ctrl_test_broadcast_nack_recovery(void)
+{
+	I3C_TypeDef *base = (I3C_TypeDef *)0x40094000;	/* i3c5 基地址 */
+	int r1, r2, r3;
+	uint8_t cmd;
+
+	ctrl_test_begin(TEST_BROADCAST_NACK_RECOVERY, true);
+
+	/* 1. 发 'N' 让 target 临时切 I2C，制造第一帧广播 CE2 NACK */
+	cmd = CMD_NACK_WINDOW;
+	if (ctrl_send_cmd(&cmd, 1) != 0) {
+		ctrl_set_fail("send_N");
+	}
+	/* target 收 'N' 后经 dispatcher(~1ms) → TGT_SWITCH_DELAY_MS(5ms) → pinctrl 切 I2C；
+	 * NACK_WINDOW_MS(2ms) 后自动切回 I3C。
+	 * 目标窗口：~6ms~8ms（dispatcher 开销可变）。
+	 * controller 等 6ms：RSTACT 到达时 target 大概率在 I2C 窗口内。
+	 * 若仍 FAIL（dispatcher 偏慢），可适当增大到 7ms。 */
+	k_sleep(K_MSEC(6));	/* 等 target 进入 I2C NACK 窗口 */
+
+	/* 2. 第一帧广播 RSTACT whole → 预期 NACK */
+	r1 = i3c_ccc_do_rstact_all(ctrl_i3c_dev, I3C_CCC_RSTACT_RESET_WHOLE_TARGET);
+	if (r1 == 0) {
+		ctrl_set_fail("rstact_whole_should_nack");
+	}
+
+	k_sleep(K_MSEC(3));	/* 等 target 自动切回 I3C */
+
+	/* 3. 第二帧广播 RSTACT peripheral → 预期正常 */
+	r2 = i3c_ccc_do_rstact_all(ctrl_i3c_dev, I3C_CCC_RSTACT_PERIPHERAL_ONLY);
+	if (r2 != 0) {
+		ctrl_set_fail("rstact_peripheral:%d", r2);
+	}
+
+	/* 4. 第三帧广播 RSTDAA → 预期正常 */
+	r3 = i3c_ccc_do_rstdaa_all(ctrl_i3c_dev);
+	if (r3 != 0) {
+		ctrl_set_fail("rstdaa:%d", r3);
+	}
+
+	/* 所有帧结束后总线应空闲，BUSY(bit12) 应为 0 */
+	if (base->EVR & I3C_EVR_BUSY_MASK) {
+		ctrl_set_fail("busy_bit_not_cleared");
+	}
+
+	ctrl_test_end(TEST_BROADCAST_NACK_RECOVERY, true);
+}
+
 /* ============ SUMMARY ============ */
 
 static void ctrl_print_summary(void)
@@ -539,8 +621,9 @@ void test_main(void)
 	ctrl_mode = MODE_I3C;
 	target_desc = NULL;
 
-	/* 探针：boot 初始状态（i3c5 init 已把引脚配成 I3C） */
-	dbg_snapshot_regs_pub();
+	/* PA05 探针初始化：switch_i2c_to_i3c 的 read 前拉高、read 后拉低，
+	 * 示波器用 PA05 边沿定位 read 帧。 */
+	PROBE_INIT();
 
 	ctrl_test_pinctrl_states();
 	ctrl_test_i3c_baseline();
@@ -552,7 +635,16 @@ void test_main(void)
 	ctrl_test_i2c_nack_bad_addr();
 	ctrl_test_switch_i2c_to_i3c();
 	ctrl_test_switch_stress();
+	ctrl_test_broadcast_nack_recovery();
 #endif
+
+	/* broadcast_nack_recovery 里 RSTDAA 清了 target 硬件动态地址（0x32），
+	 * 但 controller 侧 dev list 的 desc->dynamic_addr 不会同步清 → find 会
+	 * 误判"已就绪"。显式 i3c_do_daa 强制重新 ENTDAA 恢复 target 地址，
+	 * 否则下面 'P' 命令发不到 target → target 不打 EXECUTION → TGT=None
+	 * 假 FAIL。 */
+	(void)i3c_do_daa(ctrl_i3c_dev);
+	target_desc = i3c_dev_list_i3c_addr_find(ctrl_i3c_dev, I3C_SWITCH_TARGET_ADDR);
 
 	/* 通知 target 打印总结（此时处于 I3C 模式，'P' 走 i3c 帧），
 	 * 稍等让 target 的总结先出完再打印自己的 */

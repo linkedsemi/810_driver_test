@@ -228,7 +228,7 @@ def main():
     else:
         print(f"[dbg] flash {args.case} (single pass: reset + load + "
               f"capture {args.timeout}s) ...", flush=True)
-        gdb_send(proc, "reset", "load")
+        gdb_send(proc, "reset", "monitor flash erase_address 0x10000000 0x10000", "load")
         if not wait_load_done():
             print("[dbg] !!! load timeout/error, gdb tail:", flush=True)
             print("\n".join(gdb_out[-15:]), flush=True)

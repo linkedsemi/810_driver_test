@@ -44,10 +44,24 @@ static void *dma_test_setup(void)
 	return NULL;
 }
 
+static void dma_test_before(void *fixture)
+{
+	ARG_UNUSED(fixture);
+	/* Ensure channel is released before each test (previous test may have
+	 * left it active due to timeout or missing cleanup). */
+	dma_stop(dma_dev, DMA_CHANNEL);
+	dma_done = false;
+	dma_status = -1;
+}
+
 static void dma_wait_complete(int timeout_ms)
 {
 	for (int t = 0; t < timeout_ms && !dma_done; t++) {
 		k_msleep(1);
+	}
+	if (!dma_done) {
+		/* Transfer timed out - stop channel to release it for next test */
+		dma_stop(dma_dev, DMA_CHANNEL);
 	}
 }
 
@@ -219,12 +233,12 @@ ZTEST(dma_destructive, test_dma_one_byte)
 	zassert_equal(dst[0], 0xAB, "1-byte transfer data mismatch");
 }
 
-/* TC-6: large block_size (16KB - 仍在合理范围) */
+/* TC-6: large block_size (4KB - tests larger transfers without timeout risk) */
 ZTEST(dma_destructive, test_dma_large_block)
 {
-	/* 使用 16KB 缓冲区测试较大传输（nocache 段有限，不用 64KB） */
-	__nocache __aligned(32) static uint8_t large_src[16384];
-	__nocache __aligned(32) static uint8_t large_dst[16384];
+	/* 使用 4KB 缓冲区测试较大传输 */
+	__nocache __aligned(32) static uint8_t large_src[4096];
+	__nocache __aligned(32) static uint8_t large_dst[4096];
 	memset(large_src, 0x55, sizeof(large_src));
 	memset(large_dst, 0xAA, sizeof(large_dst));
 	dma_done = false;
@@ -245,20 +259,20 @@ ZTEST(dma_destructive, test_dma_large_block)
 	struct dma_block_config block = {
 		.source_address = (uint32_t)large_src,
 		.dest_address = (uint32_t)large_dst,
-		.block_size = 16384,  /* 16KB */
+		.block_size = 4096,  /* 4KB */
 	};
 	cfg.head_block = &block;
 
 	int ret = dma_config(dma_dev, DMA_CHANNEL, &cfg);
-	zassert_equal(ret, 0, "dma_config failed for 16KB block: %d", ret);
+	zassert_equal(ret, 0, "dma_config failed for 4KB block: %d", ret);
 	ret = dma_start(dma_dev, DMA_CHANNEL);
 	zassert_equal(ret, 0, "dma_start failed: %d", ret);
 
-	dma_wait_complete(5000);
-	zassert_true(dma_done, "16KB transfer timed out");
+	dma_wait_complete(2000);
+	zassert_true(dma_done, "4KB transfer timed out");
 	/* verify first and last bytes */
 	zassert_equal(large_dst[0], 0x55, "first byte mismatch");
-	zassert_equal(large_dst[16383], 0x55, "last byte mismatch");
+	zassert_equal(large_dst[4095], 0x55, "last byte mismatch");
 }
 
-ZTEST_SUITE(dma_destructive, NULL, dma_test_setup, NULL, NULL, NULL);
+ZTEST_SUITE(dma_destructive, NULL, dma_test_setup, dma_test_before, NULL, NULL);

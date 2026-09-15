@@ -22,17 +22,19 @@
 
 &i3c5_scl_pj10 {
     drive-strength = <2>;
+    drive-push-pull;
     bias-pull-up6;
 };
 
 &i3c5_sda_pj11 {
     drive-strength = <2>;
+    drive-push-pull;
     bias-pull-up6;
 };
 
 &i3c5 {
     status = "okay";
-    i3c-scl-hz = <1000000>;
+    i3c-scl-hz = <12500000>;
     // i2c-scl-hz = <1000000>;
     interrupts = <I3C5_IRQN 7>;
 

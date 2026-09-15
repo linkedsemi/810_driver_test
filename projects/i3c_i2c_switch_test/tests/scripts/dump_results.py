@@ -13,10 +13,9 @@ test_reasons[][]：失败原因）。本脚本连 DebugServer 直接读内存，
     - 读数组用 x/15db（有符号十进制字节），每行 "地址: 数值..."，split(':') 后解析。
     - 对 FAIL 项再 x/s 读 reason（reason 行宽 96，地址 = 基址 + i*96）。
 
-ztest 原生化说明：test_results 槽位顺序 = ztest_unit_test 段的**链接序**
-（ztest_glue 按链接下标记账；本工程 dispatcher 的结账记账也用同一口径），
-不再是 protocol.h 枚举序——本脚本 TEST_NAMES 硬编码为链接序列表
-（不再解析协议头，见 TEST_NAMES 注释）。
+本工程（i3c_i2c_switch_test）不使用 ztest 注册（ztest_unit_test_list 为空），
+test_results[] 槽位顺序 = protocol.h 枚举序（tr_record(enum_id,...) 按枚举下标写入），
+不是 ztest 链接序。本脚本 TEST_NAMES 硬编码为枚举序列表。
 
 用法:
     python dump_results.py --case case_switch_core                  # 只读当前内存
@@ -58,42 +57,26 @@ def win_path(p) -> str:
     return s
 
 
-# ★ 列表顺序 = ztest_unit_test 段的**链接序**（§10.27 + 协调者修正口径）：
-# 链接器对 ztest_unit_test 段 SORT_BY_NAME，且 TYPE_SECTION_ITERABLE 给段名
-# 追加尾下划线——比较的是完整段名（含尾 '_'），数字 '0'-'9'(0x30-0x39)
-# 排序在 '_'(0x5F) 之前，因此带数字后缀的测试名与裸名字符串字典序**相反**
-# （如 i2c_rw_100_ < i2c_rw_16_ < i2c_rw_17_ < i2c_rw_1_）。
-# ztest_glue 的 tr_record idx 按链接下标记账，本列表必须与之一一对齐，
-# 否则内存兜底结果张冠李戴（全 PASS 时潜伏不可见）。
-# 复核方法（构建后执行，切勿用普通 nm 名字典序输出）：
-#   nm --numeric-sort build/{controller,target}/zephyr/zephyr.elf \
-#       | grep z_ztest_unit_test
-# 地址升序 = 链接序；或对照 zephyr.map 的 ._ztest_unit_test.static.* 段序。
-# 实测（2026-08-29 构建产物）两核一致：
-#   z_ztest_unit_test__switch_ctrl__i2c_nack_bad_addr
-#   z_ztest_unit_test__switch_ctrl__i2c_rw_100
-#   z_ztest_unit_test__switch_ctrl__i2c_rw_16
-#   z_ztest_unit_test__switch_ctrl__i2c_rw_17
-#   z_ztest_unit_test__switch_ctrl__i2c_rw_1
-#   z_ztest_unit_test__switch_ctrl__i3c_baseline
-#   z_ztest_unit_test__switch_ctrl__pinctrl_states
-#   z_ztest_unit_test__switch_ctrl__switch_i2c_to_i3c
-#   z_ztest_unit_test__switch_ctrl__switch_i3c_to_i2c
-#   z_ztest_unit_test__switch_ctrl__switch_stress
-# （target 为 switch_tgt 前缀，顺序相同。）
-# 增删测试项后必须重新核对链接序并同步本列表与 run_i3c_i2c_switch_tests.py
-# 的 TEST_NAMES。
+# ★ 列表顺序 = protocol.h 枚举序（tr_record(enum_id,...) 按枚举下标写入 test_results[]）。
+# 本工程不使用 ztest 注册（ztest_unit_test_list 为空），无 ztest 链接序概念。
+# 枚举序（2026-09-09 从 preprocessed .c.i 确认，11 项）：
+#   0:pinctrl_states, 1:i3c_baseline, 2:switch_i3c_to_i2c,
+#   3:i2c_rw_1, 4:i2c_rw_16, 5:i2c_rw_17, 6:i2c_rw_100,
+#   7:switch_i2c_to_i3c, 8:i2c_nack_bad_addr, 9:switch_stress,
+#   10:broadcast_nack_recovery
+# 增删测试项后必须同步枚举序、本列表、run_test.py TEST_NAMES 三处。
 TEST_NAMES = [
-    "i2c_nack_bad_addr",
-    "i2c_rw_100",
+    "pinctrl_states",
+    "i3c_baseline",
+    "switch_i3c_to_i2c",
+    "i2c_rw_1",
     "i2c_rw_16",
     "i2c_rw_17",
-    "i2c_rw_1",
-    "i3c_baseline",
-    "pinctrl_states",
+    "i2c_rw_100",
     "switch_i2c_to_i3c",
-    "switch_i3c_to_i2c",
+    "i2c_nack_bad_addr",
     "switch_stress",
+    "broadcast_nack_recovery",
 ]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址

@@ -25,6 +25,7 @@
 | **debug-knowledge** | 🟢 自动 | 定位时自动查知识库 | 调试领域知识库 |
 | **qsh-test-gen** | 🟢 自动 | runner 策略 STRATEGY_DEV 自动调 | 新建工程/case 模板生成 |
 | **qsh-test-validate** | 🟢 自动 | 生成后/回归前自动调 | 合规性验证 + 编译检查 |
+| **qsh-driver-review** | 🟢 自动 | 修改驱动代码后自动调 | mutex 泄漏/资源清理/中断安全审核 |
 | ★ **qsh-test-run** | 🟢 自动 | runner 策略 STRATEGY_TEST 自动调 | 构建/烧录/跑用例 |
 | ★ **qsh-test-compare** | 🟢 自动 | 测试完成后自动调 | 结果解析/报告/对比 |
 | **skill-registry** | 🟢 自动 | 需要外部能力时自动查 | 外部插件/MCP 目录 |

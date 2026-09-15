@@ -118,6 +118,15 @@ enum i3c_test_id {
 	 * target spin 后 prefill 16B，>16 由续发路径补齐——验证跨 FIFO
 	 * 深度边界的回复能力 + 续发不缩小可用准备窗口 */
 	I3C_TEST_WRITE_DELAY_READ_LEN,
+	/* read_underrun_stress：连续 8 轮短读（target 准备 8B，controller 读 16B），
+	 * 压测 FC double-give 竞态 + 信号量计数泄漏 */
+	I3C_TEST_READ_UNDERRUN_STRESS,
+	/* multi_msg_short_read：4 段帧 W+R+W+R，末段 target 短发（8B/16B），
+	 * 验证多消息帧末尾短读 + 恢复 */
+	I3C_TEST_MULTI_MSG_SHORT_READ,
+	/* short_read_then_nack：4 轮 [短读 → 伪造地址 NACK → 恢复读]，
+	 * 验证跨帧 ERR+RXTGTEND 组合恢复 */
+	I3C_TEST_SHORT_READ_THEN_NACK,
 	/* SETAASA/SETDASA 放最后：测试会 RSTDAA 清动态地址再恢复，
 	 * 若恢复失败只影响这两项自身，不波及其他测试 */
 	I3C_TEST_SETAASA,
@@ -156,6 +165,9 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 	[I3C_TEST_WRITE_INDEXED_READ_16] = "write_indexed_read_16",
 	[I3C_TEST_WRITE_DELAY_READ_16] = "write_delay_read_16",
 	[I3C_TEST_WRITE_DELAY_READ_LEN] = "write_delay_read_len",
+	[I3C_TEST_READ_UNDERRUN_STRESS] = "read_underrun_stress",
+	[I3C_TEST_MULTI_MSG_SHORT_READ] = "multi_msg_short_read",
+	[I3C_TEST_SHORT_READ_THEN_NACK] = "short_read_then_nack",
 	[I3C_TEST_SETAASA] = "setaasa",
 	[I3C_TEST_SETDASA] = "setdasa",
 };
@@ -213,6 +225,9 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 #define I3C_TEST_EN_WRITE_INDEXED_READ_16 1
 #define I3C_TEST_EN_WRITE_DELAY_READ_16   1
 #define I3C_TEST_EN_WRITE_DELAY_READ_LEN  1
+#define I3C_TEST_EN_READ_UNDERRUN_STRESS  1
+#define I3C_TEST_EN_MULTI_MSG_SHORT_READ  1
+#define I3C_TEST_EN_SHORT_READ_THEN_NACK  1
 #define I3C_TEST_EN_SETAASA             1
 #define I3C_TEST_EN_SETDASA             1
 

@@ -1,0 +1,41 @@
+{
+  "driver": "trng_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@2os/lsqsh/cpu1",
+  "env": "tgt_uart=COM10, timeout=30s",
+  "timestamp": "2026-09-09T12:56:29",
+  "results": {
+    "basic_16": "PASS",
+    "not_all_zero": "PASS",
+    "not_all_ff": "PASS",
+    "isr_busywait": "PASS",
+    "large_1024": "PASS",
+    "invalid_args": "PASS",
+    "monobit_8k": "PASS",
+    "distinct_32": "PASS",
+    "throughput_64k": "PASS"
+  },
+  "infos": {
+    "monobit_8k": {
+      "ones": "32623",
+      "percent": "49.78"
+    },
+    "throughput_64k": {
+      "bytes": "65536",
+      "us": "9783",
+      "mbps": "53.59"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "basic_16": "src=token",
+    "not_all_zero": "src=token",
+    "not_all_ff": "src=token",
+    "isr_busywait": "src=token",
+    "large_1024": "src=token",
+    "invalid_args": "src=token",
+    "monobit_8k": "src=token",
+    "distinct_32": "src=token",
+    "throughput_64k": "src=token"
+  }
+}

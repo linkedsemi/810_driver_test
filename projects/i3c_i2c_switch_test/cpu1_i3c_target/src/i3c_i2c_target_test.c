@@ -31,8 +31,13 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
+#include <reg_i3c.h>
+#include <zephyr/devicetree.h>
 
 LOG_MODULE_REGISTER(i3c_i2c_target_test_impl, LOG_LEVEL_INF);
+
+/* tgt_apply_switch 切回 I3C 时重注册用（target_test_init 中赋值） */
+struct i3c_target_config *tgt_i3c_cfg_ptr;
 
 /* ============ 常量 ============ */
 
@@ -45,6 +50,7 @@ enum tgt_evt_type {
 	TGT_EVT_BEGIN,		/* 'B' <id>：开始记账 */
 	TGT_EVT_END,		/* 'E' <id>：结账 */
 	TGT_EVT_SWITCH,		/* 'S'/'Y'：切换 pinmux（id=1 切 I2C，0 切回 I3C） */
+	TGT_EVT_NACK_WINDOW,	/* 'N'：临时置 SLVNACK 制造广播 NACK 窗口（复现用） */
 	TGT_EVT_SUMMARY,	/* 'P'：打印 SUMMARY */
 };
 
@@ -118,6 +124,9 @@ static void tgt_parse_byte(uint8_t byte)
 		case CMD_SWITCH_TO_I3C:
 			tgt_queue_event(TGT_EVT_SWITCH,
 					 (byte == CMD_SWITCH_TO_I2C) ? 1U : 0U);
+			break;
+		case CMD_NACK_WINDOW:
+			tgt_queue_event(TGT_EVT_NACK_WINDOW, 0U);
 			break;
 		case CMD_WRITE_PATTERN:
 			tgt_ps = PS_WRITE_LEN;
@@ -340,6 +349,7 @@ static void tgt_handle_end(uint8_t id)
 }
 
 #ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
+
 static void tgt_apply_switch(bool to_i2c)
 {
 	uint32_t state_id = to_i2c ? PINCTRL_STATE_PINMUX_I2C
@@ -350,7 +360,34 @@ static void tgt_apply_switch(bool to_i2c)
 		tgt_failed = true;
 		snprintk(tgt_fail_reason, sizeof(tgt_fail_reason),
 			 "pinctrl_apply_state(%s):%d", to_i2c ? "i2c" : "i3c", ret);
+	} else if (!to_i2c) {
+		/* 切回 I3C：SLVENA 复位清硬件状态 + FLUSHTB 清 TX FIFO 残留，
+		 * 再重注册回调 + 重预填 16B pattern（恢复正式工作状态）。 */
+		I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+
+		base->SCONFIG &= ~I3C_SCONFIG_SLVENA_MASK;
+		k_busy_wait(10);
+		base->SCONFIG |= I3C_SCONFIG_SLVENA_MASK;
+		k_busy_wait(10);
+
+		i3c_target_unregister(tgt_i3c_dev, tgt_i3c_cfg_ptr);
+		base->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
+		i3c_target_register(tgt_i3c_dev, tgt_i3c_cfg_ptr);
+		for (int i = 0; i < (int)sizeof(tgt_tx_buf); i++) {
+			tgt_tx_buf[i] = (uint8_t)(TGT_READ_PATTERN_BASE + i);
+		}
+		tgt_tx_idx = 0;
+		tgt_i3c_prefill_tx();
 	}
+}
+
+/* NACK 窗口：切 I2C pinmux 让 target 不响应 I3C 广播（CE2），延时
+ * NACK_WINDOW_MS 后自动切回 I3C（不产生 I2C 帧，无需 'Y' 命令）。 */
+static void tgt_enter_nack_window(void)
+{
+	tgt_apply_switch(true);		/* 切 I2C，不响应 I3C 广播 */
+	k_sleep(K_MSEC(NACK_WINDOW_MS));
+	tgt_apply_switch(false);	/* 自动切回 I3C */
 }
 #endif
 
@@ -406,6 +443,13 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 			tgt_apply_switch(ev.id != 0);
 #else
 			/* 纯 I2C case 无切换命令（'S'/'Y' 不应到达） */
+			break;
+#endif
+			break;
+		case TGT_EVT_NACK_WINDOW:
+#ifndef CONFIG_I3C_I2C_PURE_I2C_TEST
+			tgt_enter_nack_window();
+#else
 			break;
 #endif
 			break;
@@ -479,6 +523,8 @@ void target_test_init(void)
 		.address = I3C_SWITCH_TARGET_ADDR,
 		.callbacks = &i3c_cb,
 	};
+	/* 供 tgt_apply_switch 重注册用 */
+	tgt_i3c_cfg_ptr = &i3c_cfg;
 
 	int ret = i3c_target_register(tgt_i3c_dev, &i3c_cfg);
 	if (ret != 0) {

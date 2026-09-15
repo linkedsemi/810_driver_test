@@ -12,7 +12,7 @@
 | §6.5 覆盖矩阵与预期数据 | 本文件 + `qsh-test-gen` |
 | §6.6 外部环境确认 | 本文件 + `qsh-test-gen` |
 | §6.7 XIP 烧录 | 本文件 + `qsh-test-run` §8 |
-| §6.8 Supervisor 运营规范 | 本文件 + `supervisor` agent |
+| §6.8 Supervisor 运营规范 | 本文件 + `runner` agent |
 
 ---
 
@@ -456,7 +456,7 @@ python tests/scripts/dbg_run.py --xip --bins ... --no-reset-run --gdb-reset
 ### 6.8 Supervisor 运营规范
 
 > Supervisor agent 的详细执行规则。agent profile（定位/铁律/路由表）见
-> `810_driver_test/.claude/agents/supervisor.md`。
+> `810_driver_test/.claude/agents/runner.md`。
 
 #### 6.8.1 策略详细实现
 
@@ -464,14 +464,11 @@ python tests/scripts/dbg_run.py --xip --bins ... --no-reset-run --gdb-reset
 ```text
 1. 读 cases.yaml 获取 case 清单
 2. 查 state → 过滤已完成 case
-3. 环境预检（DebugServer/串口/CKLink，见 qsh-debug §2.4）
-4. 逐 case 循环：
-   a. 执行 run_test.py --case <name>
-   b. 解析退出码：0=PASS，非0=FAIL
-   c. PASS → 记录，继续
-   d. FAIL → 失败分类（见 §6.8.2）→ 恢复或跳过
-   e. 更新 state
-5. 汇总总表（见 §6.8.4）
+3. ★ 手动环境预检（qsh-debug §2.4 六项：DebugServer 进程/1025 就绪/GDB 连通/串口数/冲突/残留，全过才继续；不得委托 run_all.py 内置预检）
+4. 启动 run_all.py（background 模式，run_in_background=true）
+5. 心跳监控循环（每 60s 查日志增长 + summary 行数；日志超过 case_timeout 无增长判卡死，按 runner.md「心跳监控」节判定表恢复；load/prime 期不计静默）
+6. 全部 case 完成后：读取 summary → 失败分类（见 §6.8.2）→ 恢复或跳过
+7. 汇总总表（见 §6.8.4）
 ```
 
 **STRATEGY_DEBUG（单项调试）**
@@ -524,11 +521,12 @@ python tests/scripts/dbg_run.py --xip --bins ... --no-reset-run --gdb-reset
 ```text
 1. 环境类（优先检查）
    特征: "CKLINK"/"cannot open"/"timeout"/"no banner"/"连接残留"/"DebugServer"
-   恢复: clean_gdb_residue → 重启 DebugServer(30s) → 重试
+   恢复: clean_gdb_residue → 重启 DebugServer(5s) → 重试
    最大: 2 次
 
 2. 超时类
    特征: 进程超过 5 分钟无输出 / subprocess.TimeoutExpired
+        （5 分钟为事后分类外层兜底；实时看门狗按 case_timeout 判定，见 runner.md「心跳监控」节）
    恢复: 杀进程 → 清理 → 重试（缩短 timeout）
    最大: 1 次
 
@@ -597,7 +595,7 @@ state["last_activity"] = now()
 需要人工处理:
   1. case_i3c_12m5: controller 核无 banner 输出，怀疑硬件接线
 
-State 已保存: regression/foreman_state.json
+State 已保存: <项目根>/runner_state.json
 ═══════════════════════════════════════
 ```
 
@@ -606,7 +604,7 @@ State 已保存: regression/foreman_state.json
 启动时检查 state 文件：
 
 ```text
-if foreman_state.json 存在:
+if runner_state.json 存在:
   读取 state
   if state.task 与当前任务匹配:
     过滤 items 中 status 为 PASS 的 → 跳过

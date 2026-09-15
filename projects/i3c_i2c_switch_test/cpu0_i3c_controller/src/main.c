@@ -45,29 +45,6 @@ int ctrl_i3c_write(struct i3c_device_desc *target, const uint8_t *buf, size_t le
 
 	int ret = i3c_transfer(target, &msg, 1);
 
-	if (ret != 0) {
-		/* 探针：write 失败时抓 pad 配置 + I3C 控制器错误码
-		 * （i3c_transfer 返回时 ERRF 已被驱动清掉，但 SER 的
-		 *  ANACK/DNACK/DOVR 类型位保留到下一次帧开始才更新）。
-		 * 调试完必须删除（探针纪律 §8）。 */
-		extern volatile uint32_t dbg_err[12];
-		extern volatile int dbg_err_valid;
-
-		dbg_err[0] = *(volatile uint32_t *)0x4006f2a4;	/* PU1_PU0 */
-		dbg_err[1] = *(volatile uint32_t *)0x4006f2a8;	/* PD_PU2  */
-		dbg_err[2] = *(volatile uint32_t *)0x4006f2ac;	/* IEN     */
-		dbg_err[3] = *(volatile uint32_t *)0x4006f2b0;	/* DS1_DS0 */
-		dbg_err[4] = *(volatile uint32_t *)0x4006f2b4;	/* AE_DS2  */
-		dbg_err[5] = *(volatile uint32_t *)0x4006f2b8;	/* OD_FIR  */
-		dbg_err[6] = *(volatile uint32_t *)0x4006f2bc;	/* SL_ST   */
-		dbg_err[7] = *(volatile uint32_t *)0x400610b0;	/* IO_FUNC[1][4] */
-		dbg_err[8] = *(volatile uint32_t *)0x400610d0;	/* IO_FUNC[2][4] */
-		dbg_err[9] = *(volatile uint32_t *)0x4008fcd8;	/* FUNC_SEL[9][2] */
-		dbg_err[10] = *(volatile uint32_t *)0x40094158;	/* EVR     */
-		dbg_err[11] = *(volatile uint32_t *)0x40094160;	/* SER     */
-		dbg_err_valid = (int)ret;	/* 非 0 = 有效，同时记录返回码 */
-	}
-
 	return ret;
 }
 

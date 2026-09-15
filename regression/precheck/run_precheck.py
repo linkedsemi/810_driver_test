@@ -19,7 +19,7 @@
   - DebugServer 探测连接会留残留（§10.17）→ 双核 load 前 clean_gdb_residue
     （先杀残留 gdb，ESTABLISHED 未释放或 server 已死才按需重启）
   - load 失败 / 双路均无 banner（§10.22 load_fail）→ 重启 DebugServer
-    （含 30s 稳定期，§10.20）重试 1 次；重试仍失败才判 FAIL
+    （含 5s 稳定期，§10.20）重试 1 次；重试仍失败才判 FAIL
 
 用法：
   python regression/precheck/run_precheck.py [--session-dir <dir>] [--timeout 40]
@@ -231,9 +231,9 @@ def clean_gdb_residue(force_restart: bool = False) -> None:
 
 def restart_debugserver() -> None:
     """重启 XuanTie DebugServer 并等稳定期（§10.20：新实例立即连跑会
-    间歇性 load_fail/断连，30s 稳定期后再连）。"""
+    间歇性 load_fail/断连，5s 稳定期后再连）。"""
     _restart_debugserver()
-    time.sleep(30)   # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
+    time.sleep(5)   # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
 
 
 def gdb_connect_ok() -> bool:
@@ -482,7 +482,7 @@ def check_dual_boot(timeout: int) -> bool:
 
     ctrl_lines, tgt_lines, load_ok, gdb_tail = gdb_flash_and_capture(timeout)
     if not load_ok or (not ctrl_lines and not tgt_lines):
-        # §10.22 load_fail 自愈：重启 DebugServer（含 30s 稳定期）重试 1 次
+        # §10.22 load_fail 自愈：重启 DebugServer（含 5s 稳定期）重试 1 次
         print("[precheck] load_fail/无 boot 输出 → 重启 DebugServer 后重试 1 次"
               "（§10.22/§10.20）", file=sys.stderr)
         restart_debugserver()

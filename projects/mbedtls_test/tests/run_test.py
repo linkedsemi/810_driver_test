@@ -188,9 +188,9 @@ def clean_gdb_residue(force_restart=False):
 
 
 def restart_debugserver():
-    """兜底重启 + 30s 稳定期（§10.20：新实例立即连跑会间歇性环境异常）。"""
+    """兜底重启 + 5s 稳定期（§10.20：新实例立即连跑会间歇性环境异常）。"""
     _restart_debugserver()
-    time.sleep(30)
+    time.sleep(5)
 
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")

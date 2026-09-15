@@ -1,0 +1,51 @@
+{
+  "driver": "rtc_ls_test",
+  "board": "lsqsh_evb@2os/lsqsh/cpu1",
+  "env": "tgt_uart=COM10, timeout=150s",
+  "timestamp": "2026-09-09T12:59:47",
+  "results": {
+    "set_get_roundtrip": "PASS",
+    "time_advances": "PASS",
+    "invalid_set_args": "PASS",
+    "alarm_set_get": "PASS",
+    "alarm_fires": "PASS",
+    "alarm_invalid_args": "PASS",
+    "calibration_roundtrip": "PASS",
+    "calibration_negative": "PASS",
+    "calibration_null_arg": "PASS",
+    "calendar_rollover": "PASS"
+  },
+  "infos": {
+    "alarm_fires": {
+      "value": "fire1"
+    },
+    "alarm_cb": {
+      "value": "callback"
+    },
+    "calendar_rollover": {
+      "value": "feb29_to_mar1_leap28"
+    },
+    "calibration_roundtrip": {
+      "value": "ppb=100000000"
+    },
+    "set_get_roundtrip": {
+      "value": "delta_s=0"
+    },
+    "time_advances": {
+      "value": "delta_s=2"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "set_get_roundtrip": "src=token",
+    "time_advances": "src=token",
+    "invalid_set_args": "src=token",
+    "alarm_set_get": "src=token",
+    "alarm_fires": "src=token",
+    "alarm_invalid_args": "src=token",
+    "calibration_roundtrip": "src=token",
+    "calibration_negative": "src=token",
+    "calibration_null_arg": "src=token",
+    "calendar_rollover": "src=token"
+  }
+}

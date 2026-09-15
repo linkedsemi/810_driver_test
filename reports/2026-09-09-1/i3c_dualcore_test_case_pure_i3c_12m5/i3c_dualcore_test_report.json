@@ -1,0 +1,331 @@
+{
+  "timestamp": "2026-09-09T13:11:18.095423",
+  "board": "lsqsh_evb@2os",
+  "overall": "FAIL",
+  "cases": [
+    {
+      "name": "case_pure_i3c_12m5",
+      "result": "FAIL",
+      "ctrl_done": "FAILED",
+      "tgt_done": null,
+      "mem_unavailable": false,
+      "tests": [
+        {
+          "name": "api_neg_paths",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "back_to_back_8x8",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "big_256",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ccc_basic",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ccc_rapid_8",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "daa_discovery",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "hot_join",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ibi",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "ibi_neg_paths",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "multi_msg_4",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "multi_msg_short_read",
+          "ctrl": "FAIL",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 197: ctrl_test_end: (ctrl_failed is true)",
+          "result": "FAIL"
+        },
+        {
+          "name": "nack_bad_addr",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_32_direct",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_master_abort",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_underrun_16_32",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_underrun_8_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "read_underrun_stress",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "setaasa",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "setdasa",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "short_read_then_nack",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_100",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_8",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_delay_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:critical_delay_ns=5900, first_short_step=106, master_stop_step=119, nack_recover_ok=1",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_delay_read_len",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:critical_ns=6450, first_short_step=-1, len=64, stop_step=130",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_indexed_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_15",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_17",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_1",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_read_32",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_15",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_16",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_17",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_1",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "write_stop_read_32",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        }
+      ]
+    }
+  ]
+}

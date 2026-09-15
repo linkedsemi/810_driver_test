@@ -250,7 +250,7 @@ def restart_debugserver() -> None:
     7 case 全无环境失败。重启后 warm_up_s 内不开始烧录。
     """
     _restart_debugserver()   # taskkill + 兜底杀 + Popen + 30s 就绪轮询
-    time.sleep(30)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
+    time.sleep(5)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
 
 
 def preflight_gdb() -> None:
@@ -889,7 +889,7 @@ def main() -> int:
     results: List[Dict] = []
     for case_dir in cases:
         clean_gdb_residue()  # 上一 case 杀 gdb 的残留不带到本 case
-        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 30s 稳定期，
+        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 5s 稳定期，
         # 见 restart_debugserver 注释）后重跑该 case 1 次——"重启后立即连跑
         # 不稳定"实测 2/2 复现（load_fail/断连/WDR 时序异常），稳定期后再跑
         # 可自愈；重试仍失败才中止/判 FAIL（不掩盖真环境故障）。

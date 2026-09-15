@@ -129,8 +129,10 @@ def main():
         "-ex", "set pagination off",
         "-ex", f"file {target_elf}",
         "-ex", "reset",
+        "-ex", "monitor flash erase_address 0x10000000 0x10000",
         "-ex", "load",
         "-ex", f"set $pc={TARGET_ROM_START}",
+        "-ex", "set {int}0x4002200c = 2",
         "-ex", "continue",
     ]
 

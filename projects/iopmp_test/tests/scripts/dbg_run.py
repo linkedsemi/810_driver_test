@@ -128,6 +128,7 @@ def main():
         "-ex", "set pagination off",
         "-ex", f"file {target_elf}",
         "-ex", "reset",
+        "-ex", "monitor flash erase_address 0x10000000 0x10000",
         "-ex", "set memory-write-packet-size 16384",
         "-ex", "set remotewritesize 16384",
         "-ex", "load",

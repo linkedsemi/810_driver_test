@@ -50,6 +50,7 @@ model: sonnet
 | qsh-test-compare | `.claude/skills/qsh-test-compare/SKILL.md` | 沉淀结果分析经验时 |
 | embedded-debug | `.claude/skills/embedded-debug/SKILL.md` | 沉淀通用调试方法论时 |
 | debug-knowledge | `.claude/skills/debug-knowledge/SKILL.md` | 知识库条目维护时 |
+| qsh-driver-review | `.claude/skills/qsh-driver-review/SKILL.md` | 审核驱动代码 / 审查 code review 相关 skill 时 |
 | skill-auditor | `.claude/skills/skill-auditor/SKILL.md` | 文档更新后验证闭环链 |
 | SPEC_REFERENCE | `SPEC_REFERENCE.md` | 规范查询/更新时 |
 | KNOWN_ISSUES | `KNOWN_ISSUES.md` | 坑沉淀/查询时 |
@@ -86,6 +87,20 @@ keeper 每次启动时扫描收件箱，按三分法分类处理，处理后从�
 ### 1.3 skill 库升级
 - skill 模板规则改进、职责边界调整时的文档同步
 - 新 skill 加入时的注册（`.claude/CLAUDE.md` 库成员表）
+
+### 1.3.1 Skill 文档合规与通用性审查
+
+keeper 审查 skill **文档本身**（SKILL.md）时，判断两项：
+
+1. **合规**：格式、结构、闭环链声明是否符合规范（DOC_EDIT_RULES + skill 模板）
+2. **通用性**：skill 内容是否过于指向某个特定模块/函数
+
+**通用性判断规则**：
+- skill 中的**规则和检查方法**必须用通用描述（特征、类别、模式），不得硬编码特定模块的函数名
+- 具体函数名/文件名只允许出现在**明确标注的"真实案例"或"示例报告"**中作为说明
+- 如果发现 skill 内容绑定了特定模块（如写死了 `ls_otbn_*`、`i3c_transfer` 等函数名在规则/检查方法中），判定为 **FAIL**，要求泛化为按特征匹配
+
+**注意**：keeper 只审 skill 文档，**不执行代码审查**。代码审查（按 qsh-driver-review 规则扫描 .c/.h 文件）由 **runner** 负责。
 
 ### 1.3.1 项目 skill 命名与注册
 
@@ -222,6 +237,7 @@ Step 5: 汇报改动清单（文件 + 行号 + 摘要 + 行数变化）
 | 索引维护 | `.claude/` 结构变更后 / 新工程初始化 | 扫描 `.claude/` 生成/更新根 CLAUDE.md 索引（≤40行） |
 | 项目注册 | 新项目 skill 需要加入库 | 按 §1.3.1 流程：命名+建 SKILL.md+注册路由表+更新关联表 |
 | 改进者 | gotchas 收件箱有累积反馈 | 扫描收件箱→对比 agent 输出 vs 人期望→提出最小聚焦 skill 改动 |
+| 审查 skill 合规与通用性 | 新建/修改 skill 后 | 合规检查 + 通用性判断（内容不得绑定特定模块） |
 
 ---
 

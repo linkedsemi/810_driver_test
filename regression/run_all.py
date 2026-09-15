@@ -180,9 +180,9 @@ def clean_gdb_residue(force_restart: bool = False) -> None:
 
 def restart_debugserver() -> None:
     """重启 XuanTie DebugServer 并等稳定期（§10.20：新实例立即连跑会
-    间歇性 load_fail/断连，30s 稳定期后再连）。"""
+    间歇性 load_fail/断连，5s 稳定期后再连）。"""
     _restart_debugserver()
-    time.sleep(30)   # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
+    time.sleep(5)   # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
 
 
 # ---- cases.yaml 读取与擦除编排 ----

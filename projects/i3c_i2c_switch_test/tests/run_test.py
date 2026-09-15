@@ -72,26 +72,25 @@ REPORT_BASE = f"{DRIVER_NAME}_report"        # i3c_i2c_switch_test_report.{md,js
 CTRL_BANNERS = ("CPU2 I3C_I2C_CTRL", "i3c_i2c_master_test")
 TGT_BANNERS = ("CPU1 I3C_I2C_TGT", "i3c_i2c_target_test")
 
-# 测试项顺序必须与 ztest_unit_test 段链接序一致（§10.27，协调者修正口径）：
-# SORT_BY_NAME 比较的完整段名带 TYPE_SECTION_ITERABLE 追加的尾下划线，
-# 数字(0x30-0x39) < '_'(0x5F)，带数字后缀的测试名与裸名字典序**相反**
-# （i2c_rw_100 < i2c_rw_16 < i2c_rw_17 < i2c_rw_1）。复核只认
-#   nm --numeric-sort <elf> | grep z_ztest_unit_test（地址序 = 链接序）。
-# 实测（2026-08-29 构建产物，两核一致）：
-#   i2c_nack_bad_addr, i2c_rw_100, i2c_rw_16, i2c_rw_17, i2c_rw_1,
-#   i3c_baseline, pinctrl_states, switch_i2c_to_i3c, switch_i3c_to_i2c,
-#   switch_stress
+# 测试项顺序 = protocol.h 枚举序（tr_record(enum_id,...) 按枚举下标写入 test_results[]）。
+# 本工程不使用 ztest 注册（ztest_unit_test_list 为空），无 ztest 链接序概念。
+# 枚举序（2026-09-09 从 preprocessed .c.i 确认，11 项）：
+#   0:pinctrl_states, 1:i3c_baseline, 2:switch_i3c_to_i2c,
+#   3:i2c_rw_1, 4:i2c_rw_16, 5:i2c_rw_17, 6:i2c_rw_100,
+#   7:switch_i2c_to_i3c, 8:i2c_nack_bad_addr, 9:switch_stress,
+#   10:broadcast_nack_recovery
 TEST_NAMES = [
-    "i2c_nack_bad_addr",
-    "i2c_rw_100",
+    "pinctrl_states",
+    "i3c_baseline",
+    "switch_i3c_to_i2c",
+    "i2c_rw_1",
     "i2c_rw_16",
     "i2c_rw_17",
-    "i2c_rw_1",
-    "i3c_baseline",
-    "pinctrl_states",
+    "i2c_rw_100",
     "switch_i2c_to_i3c",
-    "switch_i3c_to_i2c",
+    "i2c_nack_bad_addr",
     "switch_stress",
+    "broadcast_nack_recovery",
 ]
 
 
@@ -266,7 +265,7 @@ def restart_debugserver() -> None:
     7 case 全无环境失败。重启后 warm_up_s 内不开始烧录。
     """
     _restart_debugserver()   # taskkill + 兜底杀 + Popen + 30s 就绪轮询
-    time.sleep(30)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
+    time.sleep(5)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
 
 
 def preflight_gdb() -> None:
@@ -905,7 +904,7 @@ def main() -> int:
     results: List[Dict] = []
     for case_dir in cases:
         clean_gdb_residue()  # 上一 case 杀 gdb 的残留不带到本 case
-        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 30s 稳定期，
+        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 5s 稳定期，
         # 见 restart_debugserver 注释）后重跑该 case 1 次——"重启后立即连跑
         # 不稳定"实测 2/2 复现（load_fail/断连/WDR 时序异常），稳定期后再跑
         # 可自愈；重试仍失败才中止/判 FAIL（不掩盖真环境故障）。

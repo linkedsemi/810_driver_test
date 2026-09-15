@@ -27,8 +27,8 @@ detach 不能真正释放连接；唯一可靠 = 重启 DebugServer 进程。四
 Python subprocess 里 taskkill 用单斜杠 `/F /PID`（§16）；若杀不掉，fallback = bash 层 `taskkill //F //PID`（见 #2）。
 
 **20. DebugServer 重启后"不稳定期"**
-新实例立即连跑 → 间歇性 load_fail/断连/WDR 异常。实例稳定 ~30s 后正常。
-处理：run_test.py 自动重试 1 次（含 30s 稳定期）。
+新实例立即连跑 → 间歇性 load_fail/断连/WDR 异常。实例稳定 ~5s 后正常。
+处理：run_test.py 自动重试 1 次（含 5s 稳定期）。
 
 **33. ConnectType=0 在 DebugServer 会话后卡死**（2026-09-02）
 flash_program.py 用 `ConnectType=0` 会卡死 80s。已改为 `ConnectType: 1`（硬复位）。
@@ -290,3 +290,22 @@ RSTACT whole 预期 NACK → 切回后 RSTACT peripheral / RSTDAA 应正常 → 
   （test_results.c）在 minimal libc 下空实现（CONFIG_NEWLIB_LIBC=n）。
 - 验证：gdb 同时读 `test_reasons[枚举id]` 与 `[链接id]` 两位置对比；确认前别先入为主怪 vsnprintf。
   判 FAIL 的 reason 以串口 zassert printk / 探针为准，勿依赖 mem reason。
+
+**54. pinmux 双状态切换：I3C 引脚缺 `drive-push-pull` → 切回后开漏位残留，read 失效（2026-09-14，根因已定）**
+- 现象：I2C→I3C 切回后私有 read `ret=0 n=0`、GETBCR NACK；写正常；拔掉总线让 I3C5 独自切 pinmux 仍失败
+  （纯寄存器残留，与总线毛刺无关）；切不相干的 i3c6 pinmux 不影响（排除系统性副作用）。
+- 根因：I3C 引脚节点（`i3c5_scl_pj10`/`i3c5_sda_pj11`）**缺 `drive-push-pull`**。`pinctrl_configure_pin`
+  里 `if(drive_open_drain) io_cfg_opendrain()` / `if(drive_push_pull) io_cfg_pushpull()` 是互斥分支；
+  切 I2C 时 I2C5 引脚带 `drive-open-drain` 置了 `PMUJ_OD`（`IO_CFG[9].OD_FIR`，0x4006f2b8）的 bit(16+10)/bit(16+11)，
+  切回 I3C 时 i3c5 引脚无 `drive-push-pull` → 分支不执行 → 开漏位不清理，SCL/SDA 卡在开漏。
+- 实测：`PMUJ_OD` pre=`0x03000000`（PJ10/11 推挽）→ post=`0x0f000000`（PJ10/11 开漏残留）。
+- 为什么"只有整板 load 能恢复、模块 CRG 复位救不活"：`OD_FIR` 在 **PMU 电源域**（reg_map 注释
+  "power 域！模块复位不触碰"），I3C 模块 SRST3 复位不动它；只有全芯片复位把 PMU 一起复位回默认推挽。
+  此前据此误判为"硅级 erratum"，实为配置遗漏。
+- 复位默认 = 推挽（OD_FIR bit 清零），所以上电首次 I3C 正常；只有切换后泄漏。
+- 修复：i3c5 引脚节点补 `drive-push-pull;`（sim 工程 `cpu0_i3c_controller/app.overlay`）。
+  **target 侧同样隐患**：i3c_i2c_switch_test 的 i3c6（PJ08/09）也缺 `drive-push-pull`，回归时须同步补。
+- 防再犯：pinctrl 双状态（尤其外设复用同一组线 I3C/I2C 切换）时，**每个状态都必须显式声明完整电气
+  属性**（`drive-push-pull`/`drive-open-drain`/上下拉），否则上一次 apply 的电平配置会泄漏到下一次；
+  且 PMU 域 pad 配置模块复位清不掉，只有全芯片复位才还原——排查"切回后失效"优先扫 PMU 域寄存器。
+

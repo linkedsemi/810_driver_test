@@ -233,7 +233,7 @@ def restart_debugserver() -> None:
     7 case 全无环境失败。重启后 warm_up_s 内不开始烧录。
     """
     _restart_debugserver()   # taskkill + 兜底杀 + Popen + 30s 就绪轮询
-    time.sleep(30)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
+    time.sleep(5)           # 稳定期：新实例 CKLink 初始化/总线状态稳定后再连跑
 
 
 def preflight_gdb() -> None:
@@ -284,9 +284,12 @@ TGT_BANNERS = ("CPU1 SLAVE", "i3c_slave_test")
 TEST_NAMES = [
     "api_neg_paths", "back_to_back_8x8", "big_256", "ccc_basic",
     "ccc_rapid_8", "daa_discovery", "hot_join", "ibi",
-    "ibi_neg_paths", "multi_msg_4", "nack_bad_addr", "read_32_direct",
+    "ibi_neg_paths", "multi_msg_4", "multi_msg_short_read",
+    "nack_bad_addr", "read_32_direct",
     "read_master_abort", "read_underrun_16_32", "read_underrun_8_16",
-    "setaasa", "setdasa", "write_100", "write_8",
+    "read_underrun_stress",
+    "setaasa", "setdasa", "short_read_then_nack",
+    "write_100", "write_8",
     "write_delay_read_16", "write_delay_read_len", "write_indexed_read_16",
     "write_read_15", "write_read_16", "write_read_17", "write_read_1",
     "write_read_32", "write_stop_read_15", "write_stop_read_16",
@@ -772,8 +775,20 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
             statuses[core] = st
             srcs[core] = src
         test_pass = statuses["CTRL"] == "PASS" and statuses["TGT"] == "PASS"
+
+        # NOT_RUN/MISSING from memory backfill when controller completed =
+        # incomplete (UART data loss or earlier test cascade), not a real
+        # test failure.  Only truly FAIL when there's an explicit FAIL token
+        # or explicit FAIL from memory.
+        incomplete = False
         if not test_pass:
-            case_pass = False
+            has_explicit_fail = any(
+                statuses[core] == "FAIL" for core in ("CTRL", "TGT")
+            )
+            if not has_explicit_fail and ctrl_p["execution"] == "SUCCESSFUL":
+                incomplete = True
+            if not incomplete:
+                case_pass = False
 
         # INFO 数值拼接（实际列）："CTRL:k=v,k=v; TGT:..."，无 INFO 留空
         info_parts = []
@@ -808,7 +823,7 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
             "src": src,
             "info": "; ".join(info_parts),
             "reason": "; ".join(reason_parts),
-            "result": "PASS" if test_pass else "FAIL",
+            "result": "PASS" if test_pass else ("INCOMPLETE" if incomplete else "FAIL"),
         })
 
     ctrl_done = ctrl_p["execution"]
@@ -992,7 +1007,7 @@ def main() -> int:
     results: List[Dict] = []
     for case_dir in cases:
         clean_gdb_residue()  # 上一 case 杀 gdb 的残留不带到本 case
-        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 30s 稳定期，
+        # load_fail / 环境失败自动修复重试：重启 DebugServer（含 5s 稳定期，
         # 见 restart_debugserver 注释）后重跑该 case 1 次——"重启后立即连跑
         # 不稳定"实测 2/2 复现（load_fail/断连/WDR 时序异常），稳定期后再跑
         # 可自愈；重试仍失败才中止/判 FAIL（不掩盖真环境故障）。

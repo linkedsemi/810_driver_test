@@ -1023,6 +1023,9 @@ ZTEST_SUITE(multi_msg_4, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(write_indexed_read_16, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(write_delay_read_16, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(write_delay_read_len, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(read_underrun_stress, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(multi_msg_short_read, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(short_read_then_nack, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(setaasa, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(setdasa, NULL, NULL, NULL, NULL, NULL);
 
@@ -1290,6 +1293,33 @@ static void validate_multi_msg_4(void)
 	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
 }
 
+static void validate_read_underrun_stress(void)
+{
+	/* 8 轮短读（read_len=8）+ 1 轮恢复读（read_len=16）。
+	 * last_read_len 记录最后一次 CMD_SET_READ_LEN 的值。 */
+	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16 (recovery)",
+		   last_read_len);
+}
+
+static void validate_multi_msg_short_read(void)
+{
+	/* 多消息帧2个写段 + 恢复读1个写段 = 3 个占位字节 0xA5 */
+	TGT_EXPECT(write_len == 3, "write_len %zu != 3", (size_t)write_len);
+	for (size_t i = 0; i < write_len && i < 3; i++) {
+		TGT_EXPECT(write_data[i] == CMD_DUMMY_BYTE,
+			   "write_data[%zu] 0x%02x != 0x%02x",
+			   i, write_data[i], CMD_DUMMY_BYTE);
+	}
+	/* read_len 由最后一次 ctrl_set_read_len(8) 设定 */
+	TGT_EXPECT(last_read_len == 8, "last_read_len %u != 8", last_read_len);
+}
+
+static void validate_short_read_then_nack(void)
+{
+	/* 每轮短读后 controller 设 read_len=8 做恢复读 */
+	TGT_EXPECT(last_read_len == 8, "last_read_len %u != 8", last_read_len);
+}
+
 /* SETAASA/SETDASA 公共校验。
  * 证据链（i3c_peripheral_programmers_model.pdf DYNADDR @0x64）：
  * 1. 探针写在新地址上被收到（aasa_probe_seen）——地址切换后总线可达；
@@ -1385,5 +1415,8 @@ TGT_ZTEST(multi_msg_4)
 TGT_ZTEST(write_indexed_read_16)
 TGT_ZTEST(write_delay_read_16)
 TGT_ZTEST(write_delay_read_len)
+TGT_ZTEST(read_underrun_stress)
+TGT_ZTEST(multi_msg_short_read)
+TGT_ZTEST(short_read_then_nack)
 TGT_ZTEST(setaasa)
 TGT_ZTEST(setdasa)

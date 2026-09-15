@@ -16,6 +16,14 @@
  * pinctrl-noinit，i2c6 驱动 init 会把引脚切成 I2C 模式，破坏 i3c6 的
  * I3C 默认模式。引脚复用由 i3c6 节点的 pinctrl 双状态统一管理。 */
 
+&i3c6_scl_pj08 {
+    drive-push-pull;
+};
+
+&i3c6_sda_pj09 {
+    drive-push-pull;
+};
+
 &i3c6 {
     status = "okay";
     is-secondary;

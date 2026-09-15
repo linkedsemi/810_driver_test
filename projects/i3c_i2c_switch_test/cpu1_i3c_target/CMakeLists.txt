@@ -9,6 +9,9 @@ target_sources(app PRIVATE
     src/main.c
     src/i3c_i2c_target_test.c)
 
+# 禁用 cpu1 侧 PA05 toggle 线程（cpu2 用 PA05 做 read 探针标记）
+target_compile_definitions(app PRIVATE GPIO_TOGGLE_DISABLE_PA05=1)
+
 # 项目特定include目录
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include)

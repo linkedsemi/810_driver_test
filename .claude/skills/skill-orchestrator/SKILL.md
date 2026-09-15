@@ -27,15 +27,18 @@ description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式
 > ☆ = 条件转（满足条件才转）
 > — = 结束/回到调用方
 
-### STRATEGY_DEV（新建工程）
+### STRATEGY_DEV（新建工程 / 修改驱动）
 
 | 步骤 | skill | 完成后转 | 条件 |
 |------|-------|---------|------|
 | 1 | qsh-test-gen | ★ qsh-test-validate | 生成完成 |
 | 2 | qsh-test-validate | ☆ 回 qsh-test-gen | 存在 FAIL 项 |
-| 2 | qsh-test-validate | ★ qsh-test-run | 全部 PASS |
-| 3 | qsh-test-run | ★ qsh-test-compare | 首次采集完成 |
-| 4 | qsh-test-compare | ★ 坑沉淀决策 | 分析完成 |
+| 2 | qsh-test-validate | ★ qsh-driver-review | 全部 PASS（涉及驱动代码时） |
+| 2 | qsh-test-validate | ★ qsh-test-run | 全部 PASS（仅测试工程，不涉及驱动） |
+| 3 | qsh-driver-review | ☆ 回代码修改 | 存在 P0 发现 |
+| 3 | qsh-driver-review | ★ qsh-test-run | 全部 PASS / 只有 P1/P2 |
+| 4 | qsh-test-run | ★ qsh-test-compare | 首次采集完成 |
+| 5 | qsh-test-compare | ★ 坑沉淀决策 | 分析完成 |
 
 ### STRATEGY_DEBUG（调试）
 

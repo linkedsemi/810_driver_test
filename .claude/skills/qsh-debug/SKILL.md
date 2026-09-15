@@ -86,25 +86,36 @@ taskkill //F //IM DebugServerConsole.exe && cd C:/uaer_app/debug_server/bin && .
 
 ### 2.4 环境预检（Supervisor 执行前必做）
 
-执行任何碰硬件的任务前必须确认环境就绪：
+执行任何碰硬件的任务前必须确认环境就绪。**STRATEGY_TEST 启动 run_all.py 前，
+runner 必须逐项手动验证**（不得委托 run_all.py 内置预检——其 erase 在 DebugServer
+未启动时会静默成功、precheck 探测连接本身制造残留）：
 
 ```text
-1. DebugServer 在线？
-   → GDB 连 127.0.0.1:1025，能 detach 即在线
-   → 不在线 → 启动 DebugServer（§2.1）→ 等 port 1025 LISTENING（秒级，轮询 netstat）
+1. DebugServer 进程存在？
+   tasklist | grep -i DebugServer
+   → 无 → 启动（§2.1）→ 等 5s 稳定期 → 重验
 
-2. 无进程冲突？
-   → tasklist | grep -i -E "cskyflash|debugserver|python"
-   → FlashProgrammer 在 → 杀掉（CKLink 互斥，§2.2）
-   → 残留 python 占串口 → 杀掉
+2. Port 1025 就绪？
+   netstat -ano | grep ":1025.*LISTENING"
+   → 仅用于「刚启动后等就绪」的秒级轮询；判在线唯一靠项3 GDB，勿用 netstat 判离线
+   → 无 → 等 5s 重试 → 仍无 → 重启 DebugServer（§2.3 四步）→ 等 5s → 重验
 
-3. 串口可用？
-   → 枚举 COM 口，排除 CKLink（32bf）
-   → 双核工程需 2 路：CTRL + TGT
+3. GDB 能连上（★ 在线判定唯一依据）？
+   riscv64-unknown-elf-gdb -batch -ex "target remote 127.0.0.1:1025" -ex detach -ex quit 2>&1 | tail -5
+   → 含 "detached" 或退出码 0 = 通
+   → 失败 → 自愈四步（§2.3）→ 等 5s → 重验
 
-4. 连接残留？
-   → netstat -ano | findstr :1025
-   → ESTABLISHED 存在 → 自愈四步（§2.3）
+4. 串口数量够（排除 CKLink）？
+   python -c "from serial.tools.list_ports import comports; ps=[p.device for p in comports() if '32bf' not in (p.hwid or '').lower() and 'cklink' not in (p.description or '').lower()]; print(f'{len(ps)} ports: {ps}')"
+   → 双核需 ≥2，单核需 ≥1 → 不够则报告缺串口
+
+5. 无 FlashProgrammer 冲突？
+   tasklist | grep -i csky
+   → 有 → taskkill //F //PID <pid> → 重验
+
+6. 无 1025 ESTABLISHED 残留（上次会话遗留）？
+   netstat -ano | grep ":1025.*ESTABLISHED"
+   → 有 → clean_gdb_residue（§2.3 四步）→ 重验
 ```
 
 预检失败 → 自愈 → 重试 1 次 → 仍失败 → 升级（报告环境问题，需人工检查硬件连接）。
@@ -339,7 +350,7 @@ riscv64-unknown-elf-gdb -q \
 | 单遍烧录行为"慢一拍"（双核） | I-cache 残留 | 两遍烧录法（§3）；单核工程无此问题（reset 已刷 I-cache，§3.1） |
 | 目标停死、异常反复 | 调试期 while(1) 陷阱残留 | 清理探针（§8 / CLAUDE.md §10.6） |
 | 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（embedded-debug §2） |
-| DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~30s 稳定期再烧录；run_test.py 已自动重试 |
+| DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~5s 稳定期再烧录；run_test.py 已自动重试 |
 | 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（§10.21） |
 | load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
