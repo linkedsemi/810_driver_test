@@ -78,6 +78,14 @@ LOG_ERR 走 shell 后端阻塞 10ms+/条 → 中断饿死。ISR 只记账。
 **9. 改 overlay 删 build 全量重建**
 `-p auto` 不检测 Kconfig 缓存。
 
+**55. `-p always` 后台重建 + gdb load 竞态：gdb 加载了旧二进制**（2026-09-15）
+脚本用 `west build -p always ... &`（后台）立即起 gdb `load`，但构建尚未完成 →
+gdb load 的是 build 目录里的旧 .bin → 固件行为与源码不一致，极难定位。
+`-p always` 会先清 build 目录再重建，清完瞬间 .bin 不存在或残留旧版 → gdb load
+可能拿到旧文件或报 file not found。
+处理：**构建必须同步完成**（不加 `&`），或显式 `wait`/轮询构建进程退出后再起 gdb。
+已知安全模式：`west build ... && python dbg_run.py ...`（串行，构建完才跑脚本）。
+
 **26. CONFIG_ZTEST_VERBOSE_OUTPUT 门控**（迁移必查）
 =n 则 START/PASS/FAIL 行被抑制 → 全 MISSING 假失败。prj.conf 必须 =y。
 

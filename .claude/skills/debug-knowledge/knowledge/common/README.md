@@ -10,3 +10,4 @@
 | 主题 | 场景 | 一句话 |
 |---|---|---|
 | [I3C 对端上拉并联消失 → -EIO](bus-pullup-parallel-eio.md) | 动态切换/重使能后总线 -EIO（寄存器全对） | M1 完整实例 #1：对端上拉消失→RC 超位时间；示波器优先 |
+| [MSYS Bash `&;` 语法错误](msys-bash-bg-semicolon.md) | 脚本里 `cmd &; next` 报 syntax error | `&` 已是终止符，后面不能直接跟 `;`，用换行或空格替代 |
