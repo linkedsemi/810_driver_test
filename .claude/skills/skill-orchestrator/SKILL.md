@@ -7,6 +7,10 @@ description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式
 
 > **定位**：本文件是 skill 库的"总调度图"——不执行任何具体任务，
 > 只定义 skill 之间的转换规则。runner 每个策略执行前**必须 Read 本文件**。
+>
+> **环境范围**：§2 的链定义是 810/QSH 环境实例（引用 qsh-* skill）。
+> 迁移到新环境时本文件随库休眠保留；新环境由 env-adapter §4.2 指导
+> 生成等价 manifest（链骨架 STRATEGY_* 通用，替换 skill 名即可）。
 
 ## 1. 任务生命周期（闭环）
 
@@ -69,8 +73,8 @@ description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式
 | 坑类型 | 归处 | 执行者 |
 |--------|------|--------|
 | 领域可复用调试法 | debug-knowledge §写入 | 当前 agent |
-| 通用环境/工具链坑 | KNOWN_ISSUES.md + 对应 skill 速查 | keeper |
-| 模板缺陷 | qsh-test-gen 模板规则 + qsh-test-validate 检查项 | keeper |
+| 通用环境/工具链坑 | 写 `.claude/gotchas/INBOX.md` → keeper 沉淀到 KNOWN_ISSUES.md + 对应 skill 速查 | 写：当前 agent / 沉淀：keeper |
+| 模板缺陷 | 写 INBOX → keeper 沉淀到 qsh-test-gen 模板规则 + qsh-test-validate 检查项 | 写：当前 agent / 沉淀：keeper |
 | 文档漂移 | keeper 文档一致性维护 | keeper |
 | 一次性 bug | 问题总结 .md 存档 | 当前 agent（不入知识库） |
 

@@ -55,7 +55,8 @@ i3c case_pure_i3c_12m5 失败了帮我查  → Claude 自动走 debug → 分层
 ├── USER_GUIDE.md                ← 本文件（用户指南）
 │
 ├── agents/                      ← Claude 使用的 agent
-│   ├── runner.md            ← 硬件任务监督（串行化锁）
+│   ├── runner.md            ← 硬件任务监督通用框架（串行化锁）
+│   ├── runner-qsh-routing.md ← runner 的 QSH 环境路由插件
 │   └── keeper.md          ← 文档维护（纯文档任务）
 │
 ├── skills/                      ← skill 库（每个一个目录）
@@ -173,7 +174,8 @@ Claude 会：确认外部环境 → 生成骨架 → 合规检查 → 首次验�
 说"列出所有可用 skill"或读 `TOOLS_AND_SKILLS.md`。
 
 ### Q: 新工程没有 runner agent 怎么办？
-复制 `.claude/agents/runner.md` 过去，按新工程定制策略表即可。
+复制 `.claude/agents/runner.md`（通用框架，不用改）过去，再参照
+`runner-qsh-routing.md` 新建本环境的 `runner-<env>-routing.md` 即可（详见 env-adapter §4.2）。
 
 ### Q: 知识库条目怎么增加？
 不需要手动。调试/测试闭环后，Claude 自动把可复用招式写入

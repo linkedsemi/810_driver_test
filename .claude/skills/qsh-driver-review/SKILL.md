@@ -25,27 +25,8 @@ mutex 死锁、信号量泄漏、中断安全违规、错误路径资源遗漏�
 **规则**：任何 `k_mutex_lock()` / `k_sem_take()` 之后，函数的**所有**出口路径
 （包括错误提前返回）都必须有对应的 `k_mutex_unlock()` / `k_sem_give()`。
 
-**典型缺陷模式**：
-```c
-// ❌ 致死锁：错误路径 return 跳过了 unlock
-k_mutex_lock(&data->lock, K_FOREVER);
-if (bad_condition) {
-    return -EINVAL;   // ← 永久死锁！后续所有传输阻塞在 K_FOREVER
-}
-// ... 正常逻辑 ...
-k_mutex_unlock(&data->lock);
-
-// ✅ 正确：goto 统一出口
-k_mutex_lock(&data->lock, K_FOREVER);
-if (bad_condition) {
-    ret = -EINVAL;
-    goto out;
-}
-// ...
-out:
-k_mutex_unlock(&data->lock);
-return ret;
-```
+**典型缺陷**：错误路径 `return -EINVAL` 在持锁状态直接返回 → 永久死锁；
+正确模式 = `goto out` 统一出口（代码示例见 [ref-defect-patterns.md](ref-defect-patterns.md) §1）。
 
 **检查方法**：
 ```
@@ -71,24 +52,8 @@ return ret;
 **规则**：涉及硬件操作（DMA、外设寄存器、FIFO）的函数，错误路径必须执行
 硬件清理（reset FIFO、disable DMA、clear flags），否则硬件状态残留污染下一笔操作。
 
-**典型缺陷模式**：
-```c
-// ❌ 错误路径跳过了 xfer_reset，残留 FIFO 数据污染下一笔传输
-k_mutex_lock(&data->lock, K_FOREVER);
-hw_fifo_reset(base);
-ret = do_transfer(base);
-if (ret != 0) {
-    return ret;   // ← FIFO 未清理 + 锁未释放！
-}
-hw_fifo_reset(base);
-k_mutex_unlock(&data->lock);
-
-// ✅ 正确：错误路径也走 reset + unlock
-if (ret != 0) {
-    hw_fifo_reset(base);  // 清理硬件
-    goto out;
-}
-```
+**典型缺陷**：错误路径跳过 `xfer_reset`/`fifo_flush`，残留 FIFO 数据污染下一笔
+传输（代码示例见 [ref-defect-patterns.md](ref-defect-patterns.md) §2）。
 
 **检查方法**：
 ```
@@ -132,30 +97,9 @@ if (ret != 0) {
 **规则**：函数返回错误码（`int`、负 `errno`、特定框架错误码）时，
 调用方**必须**检查并处理错误，不得静默丢弃。
 
-**典型缺陷模式**：
-
-```c
-// ❌ 返回值完全丢弃 — 如果函数失败，后续操作在错误状态上继续
-hw_mem_read(remote_addr, buf, size);           // 可能返回错误
-data = parse(buf, size);                       // 读到的是垃圾数据
-
-// ❌ 返回值捕获但不检查 — err 被覆盖，前一步错误被吞掉
-hw_mem_write(addr1, data1, len);               // 错误码丢弃
-err = hw_mem_write(addr2, data2, len);         // 只检查了这一步
-
-// ❌ 回调函数指针返回值未检查 — 随机数/IO 等外部源失败时静默继续
-f_rng(p_rng, cc_buf, curve_size);              // f_rng 返回 int 错误码
-
-// ✅ 正确：检查每次调用的返回值
-err = hw_mem_read(remote_addr, buf, size);
-if (err != 0) {
-    goto exit;
-}
-err = parse(buf, result);
-if (err != 0) {
-    goto exit;
-}
-```
+**典型缺陷形态**（完整代码示例见 [ref-defect-patterns.md](ref-defect-patterns.md) §3）：
+返回值完全丢弃 / 捕获但不检查（err 被覆盖）/ 回调函数指针返回值未检查 /
+`err |=` 累积导致前面失败被吞掉。
 
 **高风险函数类别**（必须检查返回值，按特征识别而非硬编码函数名）：
 

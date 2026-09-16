@@ -141,8 +141,8 @@ dbg_run.py SUMMARY 里过滤的关键行（驱动/固件汇总）：
 
 ## 7. 坑沉淀要求
 
-对比分析中发现的新模式（如新假 PASS 形式），追加到 §2 假 PASS 识别 +
-CLAUDE.md §10。
+对比分析中发现的新模式（如新假 PASS 形式），往 `.claude/gotchas/INBOX.md`
+追加一条；沉淀到 §2 + KNOWN_ISSUES 归 keeper。
 
 ## → 下一步（闭环链）
 

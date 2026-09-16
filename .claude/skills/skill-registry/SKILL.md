@@ -59,6 +59,21 @@ description: 外部插件级 skill 与 MCP 能力目录（嵌入式开发相关�
    或从旧环境拷贝同版本插件目录（插件不独立，拷贝 skills/ 子目录无效，需整个插件随市场装）
 ```
 
+## 810 项目内置工具能力（tools/）
+
+非插件、随 810_driver_test 工程携带的可执行能力，登记在此统一查取。其中
+**`.claude/tools/gdb/` 为通用工具**（GDB 前缀、DebugServer 地址均为可配项，见 env-adapter §4.1），
+随 `.claude/` 整目录一起迁移；其余工程根 `tools/` 内容（如 flash_program）为工程专用，不随库走。
+
+| 能力 | 来源 | 用途 | 触发/调用 | 启用 |
+|---|---|---|---|---|
+| gdb_proxy.py | `.claude/tools/gdb/` | 统一 GDB CLI 中间件，JSON 输出，三后端自动降级（MCP→pygdbmi→batch） | `python .claude/tools/gdb/gdb_proxy.py <cmd>`（connect/load/break/continue/read-mem/read-reg/backtrace/exec/status/disconnect） | 零依赖（batch 兜底）；`pip install pygdbmi` 启用交互模式 |
+| gdb_mcp_server.py | `.claude/tools/gdb/` | GDB MCP Server，暴露 `gdb_*` 原生工具 | 注册后 agent 直接调 `gdb_connect`/`gdb_read_memory` 等 | `pip install pygdbmi mcp`；迁移时 env-adapter §4.2 自动注册 `.mcp.json`，手动注册见 `.claude/tools/gdb/README.md` |
+
+**gdb 工具新环境获取**：随 `.claude/` 整目录迁移后自然可用（`.claude/tools/gdb/` 随迁）；
+若目标环境缺失 → 从模板工程 `.claude/tools/gdb/` 整目录复制，或按 `.claude/tools/gdb/README.md`
+的接口说明重新生成。复制后按 env-adapter §4.1 调整 `gdb_proxy.py` 顶部默认常量。
+
 ## 维护
 
 - 新增/移除某项外部能力时同步更新本表（来源、触发、启用法三栏必填）。

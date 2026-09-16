@@ -28,9 +28,10 @@ description: Skill 库完整性自检 + 迁移后验证。检查所有 skill/age
 .claude/skills/skill-registry/SKILL.md
 ```
 
-工程专用（810/QSH，迁移时按需替换）：
+工程专用（810/QSH，随库迁移；非 810 环境休眠保留，不删）：
 
 ```text
+.claude/agents/runner-qsh-routing.md
 .claude/skills/qsh-driver-test/SKILL.md
 .claude/skills/qsh-debug/SKILL.md
 .claude/skills/qsh-test-gen/SKILL.md
@@ -44,7 +45,7 @@ description: Skill 库完整性自检 + 迁移后验证。检查所有 skill/age
 
 从所有 `.md` 文件中提取文件路径引用，逐一验证目标存在：
 
-1. **runner.md 的 skill 表**：每个"文件路径"列的路径可读
+1. **runner.md 的 skill 表 + runner-qsh-routing.md 的 §1 表**：每个"文件路径"列的路径可读
 2. **keeper.md 的 skill 表**：同上
 3. **各 SKILL.md 的交叉引用**：`qsh-debug` 引 `embedded-debug`、
    `qsh-test-gen` 引 `qsh-test-validate` 等

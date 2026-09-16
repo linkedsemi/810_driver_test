@@ -81,7 +81,16 @@
 
 ---
 
-## 六、你的操作清单（只需记住的）
+## 六、项目自研工具（810_driver_test/tools/）
+
+| 工具 | 调用方式 | 用法 | 说明 |
+|------|---------|------|------|
+| **gdb_proxy.py** | 🟢 自动 | `python .claude/tools/gdb/gdb_proxy.py <cmd>`（connect/load/break/continue/read-mem/read-reg/backtrace/exec/status/disconnect） | 统一 GDB CLI，JSON 输出，三后端降级（MCP→pygdbmi→batch），用法见 `.claude/tools/gdb/README.md` |
+| **gdb_mcp_server.py** | 🟢 自动 | 项目根 `.mcp.json` 注册后 agent 直接调 `gdb_*` 工具 | GDB MCP Server（需 `pip install pygdbmi mcp`） |
+
+---
+
+## 七、你的操作清单（只需记住的）
 
 ### 你手动做的事
 

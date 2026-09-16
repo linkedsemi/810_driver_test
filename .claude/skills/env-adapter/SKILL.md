@@ -88,19 +88,42 @@ CLAUDE 指引。若只带一个入口，带本 skill 即可引导出其余（§2
 | 地址 | `0x10000000`/`0x100c0000`/`0x4002200c` | grep 全部 .md | `<new_addrs>`（如架构不变可保留） |
 | 调试器路径 | `C:/uaer_app/debug_server` | grep qsh-debug | `<debug_server_path>` |
 | 工具链 | `riscv64-unknown-elf-gdb` | grep qsh-debug/qsh-test-run | `<toolchain_prefix>` |
+| .claude/tools/gdb 默认值 | `riscv64-unknown-elf-gdb`、`127.0.0.1:1025` | `.claude/tools/gdb/gdb_proxy.py` 顶部常量区（GDB/GDB_HOST/GDB_PORT） | `<gdb_prefix>`、`<debug_server_addr>`（README 环境要求节同步改） |
 
 ### 4.2 适配流程
 
 ```text
 1. 复制 .claude/ 到目标工程
-2. 确定哪些 skill 是"通用保留"、哪些是"工程专属需替换"
-   通用保留：skill-orchestrator, skill-auditor, env-adapter, embedded-debug,
-             debug-knowledge, skill-registry, keeper
-   工程专属：qsh-* 系列（删除或替换为新工程等价 skill）
-3. 按 §4.1 替换硬编码
-4. 生成新工程 CLAUDE.md（从模板工程 CLAUDE.md 提取结构，填入新工程信息）
-5. 调 skill-auditor 做迁移后验证（§1 完整性检查 + §2 闭环链检查）
-6. skill-auditor 通过 → 迁移完成
+2. ★ 休眠保留原则：不删除任何源工程 skill
+   - 整库迁移后，源工程专属 skill（如 qsh-* 系列、runner-qsh-routing.md）
+     在新环境中休眠保留：不删、不加载、但留在库中持续迭代
+   - 新工程按 keeper §1.3.1 命名规范新建自己的 <prefix>-* skill，
+     与休眠的 qsh-* 并存；回到 QSH 场景时原 skill 直接复用
+   - 通用层（skill-orchestrator 框架, skill-auditor, env-adapter,
+     embedded-debug, debug-knowledge, skill-registry, keeper）开箱即用
+3. 按 §4.1 替换硬编码（只改新工程要用的文件；休眠的 qsh-* 文件不动）
+4. runner 路由定制（runner.md 通用框架不动）：
+   - 参照 .claude/agents/runner-qsh-routing.md 结构，新建
+     .claude/agents/runner-<env>-routing.md，填写：
+     §1 环境专属 skill 关联表 / §2 策略→skill 链 / §3 预检清单来源 /
+     §4 心跳监控参数 / §5 规范外链
+   - 不新建则 runner 启动流程 Step 3.5 会提示按本节生成
+5. 注册 GDB MCP Server（可选，装了 pygdbmi+mcp 时）
+   检查：python3 -c "import pygdbmi, mcp" 成功 →
+   写入/合并项目根 .mcp.json：
+   {
+     "mcpServers": {
+       "gdb": {
+         "command": "python3",
+         "args": ["<工程根>/.claude/tools/gdb/gdb_mcp_server.py"]
+       }
+     }
+   }
+   已有 .mcp.json 时合并 mcpServers 节，不覆盖其他 server。
+   未装依赖则跳过（gdb_proxy.py batch 模式兜底仍可用）。
+6. 生成新工程 CLAUDE.md（从模板工程 CLAUDE.md 提取结构，填入新工程信息）
+7. 调 skill-auditor 做迁移后验证（§1 完整性检查 + §2 闭环链检查）
+8. skill-auditor 通过 → 迁移完成
 ```
 
 ### 4.3 新工程 CLAUDE.md 生成模板
@@ -137,12 +160,13 @@ west build -p always -b <board> <src>
 按需带走：
   □ common/ 公共模块（test_results/ztest_glue/report_dir/ztest_report 等）
   □ regression/ 回归框架（run_all.py/cases.yaml）
+  □ .claude/tools/gdb/ GDB 调试工具集（gdb_proxy.py + gdb_mcp_server.py + README.md，通用工具随 .claude/ 迁移）
 
 带走后必须做：
   □ 运行 skill-auditor §1 完整性检查
-  □ 按 §4.1 替换硬编码
+  □ 按 §4.1 替换硬编码（只改新工程要用的文件；qsh-* 休眠保留，不删不动）
+  □ 新建 runner-<env>-routing.md（§4.2 第 4 步；runner.md 通用框架不动）
   □ 运行 skill-auditor 二次验证
-  □ runner.md 策略表按新工程定制
 ```
 
 ## 验证

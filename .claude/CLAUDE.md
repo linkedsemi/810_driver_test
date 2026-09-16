@@ -26,7 +26,7 @@
 | `skill-orchestrator` | 闭环路由 manifest（runner 必读） |
 | `skill-auditor` | 完整性自检 + 迁移验证 |
 
-### 810 专用（不迁移）
+### 810 专用（随库迁移；非 810 环境休眠保留——不删、不加载）
 
 | skill | 定位 |
 |---|---|
@@ -41,8 +41,17 @@
 
 | agent | 定位 |
 |---|---|
-| `runner.md` | 自适应监督 agent（策略路由/失败恢复） |
+| `runner.md` | 自适应监督 agent 通用框架（策略骨架/监控/断点续跑），跨环境复用 |
+| `runner-qsh-routing.md` | runner 的 QSH 环境路由插件（810 专用，随库休眠保留）；新环境参照它新建 `runner-<env>-routing.md` |
 | `keeper.md` | 文档体系与 token 预算守护 |
+
+### 工具（`.claude/tools/`，随库迁移）
+
+| 目录 | 定位 |
+|---|---|
+| `.claude/tools/gdb/` | 通用 GDB 调试工具集（gdb_proxy.py + gdb_mcp_server.py + README.md）；能力登记见 skill-registry，用法见其 README.md |
+
+> `.claude/tools/` 随库整目录迁移。工程根 `tools/` 下的其他内容（如 flash_program）为工程专用二进制，不随库迁移。
 
 ## 加载机制
 

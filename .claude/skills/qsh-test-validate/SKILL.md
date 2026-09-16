@@ -11,17 +11,8 @@ description: 810_driver_test 测试工程合规性验证 skill：检查新建/�
 
 ## 0. 用法
 
-```bash
-# 在 agent 中调用：指定工程名或路径
-# 例：验证 otbn_test 工程
-# → 自动检查全部维度 + 尝试编译每个 case
-
-# 可单独检查某维度（跳过编译）：
-# → 只做静态检查（结构/配置/代码模式）
-
-# 全量验证（静态 + 编译）：
-# → 静态检查 + west build 每个 case
-```
+指定工程名或路径 → 默认全量验证（静态检查 + 逐 case 编译）；也可只做静态检查
+（结构/配置/代码模式，跳过编译）。
 
 ## 1. 检查维度清单
 
@@ -41,14 +32,7 @@ description: 810_driver_test 测试工程合规性验证 skill：检查新建/�
 | `common/test_results.{h,c}` 引用 | ✅ | ✅ | 必须（公共结果模块） |
 | `common/ztest_glue.c` 引用 | ✅ | ✅ | 必须（自动记账） |
 
-**检查方法**：
-```python
-# 伪代码
-project_dir = Path("810_driver_test/projects/<driver>_test")
-assert (project_dir / "tests").exists()
-for case_dir in (project_dir / "tests").glob("case_*"):
-    assert (case_dir / "test.sh").exists(), f"{case_dir} 缺 test.sh"
-```
+**检查方法**：遍历 `tests/case_*/` 确认每 case 有 `test.sh`，对照上表逐项确认存在性。
 
 ### 1.2 命名规范（必查）
 
@@ -61,13 +45,7 @@ for case_dir in (project_dir / "tests").glob("case_*"):
 | 纯片内单核 | `cpu1_<driver>` | `cpu1_trng_test/` |
 | **禁用混搭** | 不得 `host_master` / `device_slave` | — |
 
-**检查方法**：
-```python
-I3C_ROLES = {"controller", "target"}
-I2C_SPI_ROLES = {"master", "slave"}
-# 从工程类型推断期望角色词
-# 扫描 cpu*_ 目录前缀验证
-```
+**检查方法**：从工程类型推断期望角色词（I3C=`controller/target`，I2C/SPI/UART=`master/slave`），扫描 `cpu*_` 目录前缀验证。
 
 ### 1.3 prj.conf 配置（必查）
 
@@ -136,16 +114,8 @@ sys.path.insert(0, str(REPORTS_ROOT.parent / "common"))          # ztest_report,
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))  # dump_results
 ```
 
-**检查方法**：
-```python
-content = run_test_py.read_text()
-assert "common" in content and "sys.path" in content
-# 检查 scripts/ 是否在 sys.path 中（或用 subprocess 调 dump_results.py）
-has_scripts_path = 'scripts' in content and 'sys.path' in content
-# 如果用 subprocess 调 dump_results 则不需要 scripts 路径
-uses_subprocess_dump = 'dump_results.py' in content and 'subprocess' in content
-assert has_scripts_path or uses_subprocess_dump
-```
+**检查方法**：读 run_test.py 确认含 `sys.path.insert` 且覆盖 `common/` 与 `scripts/`
+（或用 subprocess 调 dump_results.py 则后者可免）。
 
 ### 1.6 ztest_glue 集成模式（必查）
 
@@ -183,76 +153,15 @@ TEST_NAMES 顺序一致且都与链接序相符（含注释里的实测序清单
 
 ### 1.9 模板缺陷防漏检查（必查，2026-09-07 沉淀）
 
-以下 4 项源自 6 个新工程实机跑测暴露的模板缺陷，**必须逐项检查**：
+以下 4 项源自 6 个新工程实机跑测暴露的模板缺陷，**必须逐项检查**
+（含检查方法代码）：[ref-template-defects.md](ref-template-defects.md)
 
-#### 1.9a cpu2 hold 步骤（串口 0 行最高频根因）
-
-dbg_run.py / run_test.py 的 gdb 命令序列必须包含：
-```
-set {int}0x4002200c = 2
-```
-此命令在 `reset` 前执行，保持 cpu2 复位防止其从 flash 自启劫持 uart1。
-
-**检查方法**：
-```python
-for script in [dbg_run_py, run_test_py]:
-    content = script.read_text()
-    assert "0x4002200c" in content, f"{script.name} 缺 cpu2 hold 步骤"
-```
-
-#### 1.9b overlay chosen 节点
-
-单核工程的 overlay 必须显式声明 console chosen 节点：
-```dts
-chosen {
-    zephyr,console = &uart1;
-};
-```
-双核 cpu2 侧走 `cpu2_console_uart5.overlay`（公共层），不需额外声明。
-
-**检查方法**：
-```python
-for case_dir in tests.glob("case_*"):
-    overlay = case_dir / "controller.overlay"  # 单核工程
-    if overlay.exists():
-        content = overlay.read_text()
-        assert "zephyr,console" in content, f"{overlay} 缺 chosen 节点"
-```
-
-#### 1.9c 测试代码禁用堆分配
-
-测试源码（`src/*.c`）不得调用 `k_malloc` / `k_calloc` / `k_realloc`，
-改用静态数组（`static uint8_t buf[N]`）。堆依赖极具迷惑性：
-k_malloc 返回 NULL → memset(NULL) → store fault → 系统挂死 →
-串口表现为 0 行（看似 console/log 配置问题，实际是崩溃）。
-
-**检查方法**：
-```python
-for src in project_dir.rglob("src/*.c"):
-    content = src.read_text()
-    for bad in ["k_malloc", "k_calloc", "k_realloc"]:
-        assert bad not in content, \
-            f"{src} 用了 {bad}（堆分配），改用静态数组"
-```
-
-#### 1.9d run_test.py 归档必须同时产出 .md + .json
-
-2026-09-08 沉淀：这 6 个新工程实机暴露，run_test.py 归档段若只写
-`<driver>_test_report.json`，summary.md 对应行就会链 .json，偏离
-SPEC §6.4.1 的 `.md`+`.json` 成对要求（根因 = 模板归档段漏写 md 步骤，
-非注解缺失）。
-
-**检查方法**：
-```python
-# run_test.py 归档段必须写 .md（write_markdown_report 或等价 _report.md 写入），
-# 且 update_summary 报告路径应指向 .md（与 json 同源）
-content = run_test_py.read_text()
-assert ("write_markdown_report" in content
-        or "_report.md" in content), \
-    f"{run_test_py.name} 归档缺 .md 报告（模板缺陷 §1.9d）"
-assert "REPORT_BASE" in content, \
-    f"{run_test_py.name} 缺 REPORT_BASE 定义"
-```
+| # | 检查项 | 一句话判定 |
+|---|--------|-----------|
+| a | cpu2 hold 步骤（串口 0 行最高频根因） | dbg_run.py/run_test.py 的 gdb 序列须含 `set {int}0x4002200c = 2`（reset 前） |
+| b | overlay chosen 节点 | 单核 overlay 须显式 `chosen { zephyr,console = &uart1; };` |
+| c | 测试代码禁用堆分配 | `src/*.c` 不得有 k_malloc/k_calloc/k_realloc（NULL→崩溃→串口 0 行假象） |
+| d | 归档成对 | run_test.py 归档必须同时写 `.md`+`.json`（含 write_markdown_report + REPORT_BASE） |
 
 ## 2. 编译验证（必做）
 
@@ -262,79 +171,27 @@ assert "REPORT_BASE" in content, \
 # 单核 1os
 west build -p auto -b lsqsh_evb@1os/lsqsh/cpu1 -d <case>/build <src> \
     -DDTC_OVERLAY_FILE=<overlay>
-
-# 双核 cpu1
-west build -p auto -b lsqsh_evb@2os/lsqsh/cpu1 -d <case>/build_cpu1 <src> \
-    -DDTC_OVERLAY_FILE=<overlay>
-
-# 双核 cpu2
-west build -p auto -b lsqsh_evb@2os/lsqsh/cpu2 -d <case>/build_cpu2 <src> \
-    -DDTC_OVERLAY_FILE=<overlay>
+# 双核 cpu1 / cpu2（board 分别为 lsqsh_evb@2os/lsqsh/cpu1、.../cpu2，
+# build 目录分别 <case>/build_cpu1、<case>/build_cpu2）
+west build -p auto -b <board> -d <build_dir> <src> -DDTC_OVERLAY_FILE=<overlay>
 ```
 
 **判定**：编译 rc=0 且无 error/warning（或只容忍已知无害 warning）。
 
 ## 3. cases.yaml 集成检查（建议查）
 
-若工程应加入全量回归，检查 `regression/cases.yaml` 中是否有对应条目：
-
-```python
-cases_yaml = Path("810_driver_test/regression/cases.yaml").read_text()
-for case_dir in project_tests.glob("case_*"):
-    case_rel = f"projects\\{project_name}\\tests\\{case_dir.name}"
-    case_rel_fwd = case_rel.replace("\\", "/")
-    assert case_rel in cases_yaml or case_rel_fwd in cases_yaml, \
-        f"{case_dir.name} 未在 cases.yaml 中注册"
-```
+若工程应加入全量回归，确认 `regression/cases.yaml` 含每个 `case_*` 的条目
+（路径形如 `projects/<project>/tests/<case>`，正/反斜杠任一）。
 
 ## 4. 验证输出格式
 
-验证结果输出为结构化报告：
-
-```markdown
-# <driver>_test 合规性验证报告
-- 日期: YYYY-MM-DD HH:MM
-- 工程: projects/<driver>_test
-- 类型: 单核/双核
-
-## 静态检查
-| 维度 | 结果 | 详情 |
-|------|------|------|
-| 目录结构 | ✅ PASS | 所有必需文件/目录存在 |
-| 命名规范 | ✅ PASS | 角色术语正确 |
-| prj.conf | ⚠️ WARN | case_xxx 缺 CONFIG_LOG_BUFFER_SIZE |
-| CMakeLists | ✅ PASS | 公共模块注入完整 |
-| sys.path | ❌ FAIL | run_test.py 缺 scripts/ 路径（P0 崩溃风险） |
-| ztest_glue | ✅ PASS | zt_init + zt_run_all |
-| test.sh | ✅ PASS | 三模式支持 |
-| cases.yaml | ⚠️ WARN | case_xxx 未注册 |
-
-## 编译验证
-| Case | Board | 结果 | 耗时 | 备注 |
-|------|-------|------|------|------|
-| case_default | 1os/cpu1 | ✅ | 12s | |
-| case_default | 2os/cpu1 | ✅ | 15s | |
-| case_default | 2os/cpu2 | ✅ | 10s | |
-
-## 总结
-- 静态检查: 6/8 PASS, 1 WARN, 1 FAIL
-- 编译: 3/3 PASS
-- 建议: 修复 sys.path 后再跑回归
-```
+结构化报告模板（静态检查表 + 编译验证表 + 总结）见
+[ref-report-template.md](ref-report-template.md) §1。
 
 ## 5. 修复建议模板
 
-对每个 FAIL 项，自动给出修复建议（参照 qsh-test-gen 规范）：
-
-| FAIL 项 | 修复 |
-|---------|------|
-| 缺 `tests/scripts/dump_results.py` | 从样板 `i3c_dualcore_test/tests/scripts/` 复制，改 TEST_NAMES |
-| 缺 `sys.path.insert(scripts/)` | `run_test.py` 顶部加 `sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))` |
-| 缺 `zt_init` / `zt_run_all` | `test_main()` 首行加 `zt_init("TGT")`，末尾加 `zt_run_all()` |
-| prj.conf 缺 `CONFIG_ZTEST_VERBOSE_OUTPUT=y` | 显式加上（§10.26：=n 则逐项输出被抑制） |
-| CMakeLists 缺 `test_results.c` | 加 `target_sources(app PRIVATE .../common/test_results.c)` |
-| case 未在 cases.yaml 注册 | 在 `regression/cases.yaml` 对应位置加一行 |
-| run_test.py 归档只有 .json 没 .md | 抄已迁移 run_test.py 的 write_markdown_report() + 归档段写 _report.md，update_summary 报告路径改指 .md |
+对每个 FAIL 项自动给出修复建议（缺文件复制样板、缺配置补配置等对照表）见
+[ref-report-template.md](ref-report-template.md) §2。
 
 ## 6. 典型验证场景
 

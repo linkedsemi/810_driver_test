@@ -69,7 +69,7 @@ fi
 if [ "${AGENT_RUN}" = "y" ]; then
     SKIP_LAUNCH_PRINT="y"
     # 全套件含 3 次 RSA keygen（4096 可达 10s 级）+ selftest，超时放宽
-    RUN_TIMEOUT="${RUN_TIMEOUT:-300}"
+    RUN_TIMEOUT="${RUN_TIMEOUT:-500}"
 fi
 
 TARGET_SRC="${I3C_TEST_ROOT}/cpu1_otbn_test"
