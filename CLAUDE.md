@@ -18,10 +18,12 @@
 
 ## 2. 测试工程
 
-**双核**：i3c_dualcore_test(8), i2c_pure_test(1), i3c_i2c_switch_test(1)
-**单核**：trng_test(1), rtc_ls_test(1), otbn_test(1), otbn_selftest(1), mbedtls_test(10)
+**双核**：i3c_dualcore_test(7), i2c_pure_test(1), i3c_i2c_switch_test(1), mbox_test(1)
+**单核**：trng_test(1), rtc_ls_test(1), otbn_test(1), otbn_selftest(1), mbedtls_test(10), adc_temper_test(1), dma_test(1), flash_test(1), wdt_test(1), iopmp_test(1)
 
-完整 case 清单：`regression/cases.yaml`。GPIO toggle 线程在 cpu1 侧自动编入（PA05/PA07，500ms），
+`(N)` = `regression/cases.yaml`（唯一权威源）中该工程**已启用**的 case 数。分型判定（单核 = 只有 cpu1 侧固件）
++ board/入口矩阵见 SPEC_REFERENCE §6.1.10；增删工程/case 的同步清单见 §6.4.5。
+GPIO toggle 线程在 cpu1 侧自动编入（PA05/PA07，500ms），
 配置集中于 `common/common_sources.cmake` + `common/gpio_toggle.c`。
 
 ## 3. 调用入口
@@ -58,8 +60,9 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | 规则 | 说明 |
 |------|------|
 | **统一 CMake 入口** | `include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)` |
+| **工程分型选 board** | 单核 `@1os/lsqsh/cpu1`、双核 `@2os/lsqsh/cpu{1,2}`；入口走 `TARGET_ROM_START` 不硬编码（SPEC_REFERENCE §6.1.10） |
 | **ztest 详细输出** | `CONFIG_ZTEST_VERBOSE_OUTPUT=y`，否则逐项 MISSING |
-| **libc 选择** | `CONFIG_NEWLIB_LIBC=n`（与 Zephyr POSIX types 冲突） |
+| **libc 三件套** | `CONFIG_PICOLIBC=y` + `CONFIG_NEWLIB_LIBC=n` + `CONFIG_MINIMAL_LIBC=n`（缺一构建失败，KNOWN_ISSUES #58） |
 | **overlay 修改后** | 必须删 build 全量重建 |
 | **复用收敛** | 多工程共用内容只改 `common/`（SPEC_REFERENCE §6.1.9） |
 
@@ -77,7 +80,8 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 |------|-----------|------|
 | DebugServer 起不来 | FlashProgrammer 占用 | `taskkill` → 重启 DS |
 | 串口只有 `\x00` | DS 连接残留 | gdb detach 一次 |
-| load 极慢（~190s） | 写包参数未调大 | `set memory-write-packet-size 16384` |
+| **load 后串口 0 行** | 崩溃 / `$pc` 设错（单核脚本硬编码 2os 入口）/ cpu2 未 hold / overlay 缺 chosen | **先抓 CPU 再查配置**（KNOWN_ISSUES #38/#39/#40/#56/#57） |
+| load 极慢（~190s） | 写包参数未调大 | `set remote memory-write-packet-size 16384` |
 | PASS/FAIL 相反 | ANSI 重绘前缀 | `re.search()` 不锚点 |
 | 逐项 MISSING | verbose 输出关了 | `CONFIG_ZTEST_VERBOSE_OUTPUT=y` |
 
@@ -87,6 +91,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 
 | 主题 | 文档 | 何时查阅 |
 |------|------|---------|
+| **未决项台账** | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | **开工前先看**：待拍板/待验证项；每轮回复末尾须附其未决清单 |
 | 硬件接线/环境配置 | [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md) | 初次搭建 |
 | **固件规范完整版** | [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md) | **编写/修改固件时必读** |
 | 已知坑完整清单 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 遇到问题时 |

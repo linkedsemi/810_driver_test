@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从 GDB 读内存取测试结果——串口不可用/串口 token 被刷掉时的兜底通道。
 
-TRNG 单核工程版：只读 cpu1（TGT）elf 的公共结果数组。
+DMA 单核工程版：只读 cpu1（TGT）elf 的公共结果数组。
 从 i3c_dualcore_test 样板 dump_results.py 改造（去掉 controller 核）。
 
 固件把每项测试的结果记账到 810_driver_test/common/test_results.h 公共模块的
@@ -27,6 +27,7 @@ test_reasons[][]：失败原因）。本脚本连 DebugServer 直接读内存，
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -38,18 +39,46 @@ TESTS_DIR = Path(__file__).resolve().parents[1]
 GDB = "riscv64-unknown-elf-gdb"
 NM = "riscv64-unknown-elf-nm"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = 0x100C0000
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 
 # 链接序 = ztest_unit_test 段 SORT_BY_NAME 字典序（§10.27：完整段名带尾
 # 下划线比较，数字 '0'-'9' 排在 '_' 之前——勿用 plain nm 名字典序，与
 # 真实链接序可能相反）。与 glue 的 tr_record idx（注册顺序）对齐；每次
 # 增删测试项后必须重新核对：
-#   nm --numeric-sort <elf> | grep _ztest_unit_test__trng__
-TEST_NAMES = [
-    "basic_16", "distinct_32", "invalid_args", "isr_busywait",
-    "large_1024", "monobit_8k", "not_all_ff", "not_all_zero",
-    "throughput_64k",
-]
+#   nm --numeric-sort <elf> | grep _ztest_unit_test__<suite>__
+#
+# ★ 每个 case 的套件名/项数可不同 → 按 case 分表（KNOWN_ISSUES #60）：
+# 单一表在启用新 case 时会把别 case 的名字套到本 case 的内存槽上，输出
+# 错位/张冠李戴的假结果（与 #50 同类，更隐蔽）。取值 = 各 case ELF 实测
+# ztest 链接序（本表 2026-09-16 由 nm --numeric-sort 实测）。
+TEST_NAMES_BY_CASE = {
+    # 套件 dma，4 项（case_default，1os 构建）
+    "case_default": [
+        "test_dma_channel_config_stop", "test_dma_invalid_channel",
+        "test_dma_loop_transfer", "test_dma_transfer_ones_zeros",
+    ],
+    # 套件 dma_destructive，6 项（case_destructive，1os 构建）
+    "case_destructive": [
+        "test_dma_block_too_large", "test_dma_data_size_zero",
+        "test_dma_invalid_data_size", "test_dma_large_block",
+        "test_dma_one_byte", "test_dma_self_copy_rejected",
+    ],
+}
+DEFAULT_CASE = "case_default"
+# 兼容别名：默认 case 的名字表（本仓库无外部导入方，保留以防引用）
+TEST_NAMES = TEST_NAMES_BY_CASE[DEFAULT_CASE]
+
+
+def test_names_for(case):
+    """按 case 选测试项名表；未登记 case 回退默认并告警（结果可能错位）。"""
+    if case in TEST_NAMES_BY_CASE:
+        return TEST_NAMES_BY_CASE[case]
+    print(f"WARNING: dump_results 未登记 case '{case}' 的名字表，回退 "
+          f"'{DEFAULT_CASE}'（启用该 case 前须按其 ELF 的 ztest 链接序补表）",
+          file=sys.stderr)
+    return TEST_NAMES_BY_CASE[DEFAULT_CASE]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址
 RESULT_SYM = "test_results"
@@ -107,12 +136,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", default="case_default")
     ap.add_argument("--run", type=float, default=None, help="先两遍烧录并运行 N 秒再 dump")
-    ap.add_argument("--count", type=int, default=len(TEST_NAMES))
+    ap.add_argument("--count", type=int, default=None,
+                    help="读取项数；默认 = 该 case 名字表长度")
     ap.add_argument("--reason-stride", type=int, default=96)
     ap.add_argument("--raw", action="store_true")
     ap.add_argument("--json", action="store_true",
                     help="JSON 输出（回归脚本兜底合并用，CLAUDE.md §12.3）")
     args = ap.parse_args()
+
+    # 按 --case 选名字表（KNOWN_ISSUES #60）；--count 未显式指定时随表长
+    names = test_names_for(args.case)
+    count = args.count if args.count is not None else len(names)
 
     for tool in (GDB, NM):
         if shutil.which(tool) is None:
@@ -163,17 +197,17 @@ def main():
     # 3. dump 会话：interrupt + 读结果数组
     log(args, f"[dump] connecting {GDB_HOST}:{GDB_PORT} to read memory ...")
     out = gdb_session([
-        "-ex", f"x/{args.count}db 0x{res}",
+        "-ex", f"x/{count}db 0x{res}",
     ])
     if args.raw:
         print("\n===== GDB RAW =====")
         print(out)
 
     # 4. 解析数组 → 结构化结果；FAIL 项再从 reason 数组读原因
-    vals = parse_x_bytes(out, args.count)
+    vals = parse_x_bytes(out, count)
     results = {}
     for i, v in enumerate(vals):
-        name = TEST_NAMES[i] if i < len(TEST_NAMES) else f"test_{i}"
+        name = names[i] if i < len(names) else f"test_{i}"
         if v < 0:
             results[name] = "NOT_RUN"
         elif v == 0:
@@ -202,11 +236,11 @@ def main():
 
     print("\n===== RESULTS FROM MEMORY =====")
     print("--- TGT (cpu1) ---")
-    if len(vals) < args.count:
+    if len(vals) < count:
         print("  (WARNING: 解析不到完整数组，gdb 输出见上)")
     passed = ran = 0
     for i, v in enumerate(vals):
-        name = TEST_NAMES[i] if i < len(TEST_NAMES) else f"test_{i}"
+        name = names[i] if i < len(names) else f"test_{i}"
         st = results[name]
         if st == "PASS":
             passed += 1

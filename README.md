@@ -19,6 +19,8 @@
 | GDB server | `127.0.0.1:1025`，由 PC 端 **XuanTie DebugServer** 提供 |
 
 > cpu2 默认控制台为 uart4，本工程统一改用 uart5（`common/cpu2_console_uart5.overlay`）。
+> **单核工程固件一律用 `lsqsh_evb@1os/lsqsh/cpu1`（cpu1 入口 `0x10000000`）编译测试**，不用 2os 变体；
+> 分型判定与 board/入口矩阵见 `SPEC_REFERENCE.md` §6.1.10。
 > 详细 GDB/Flash 配置见 `CLAUDE.md` §0、§15。
 
 ---
@@ -53,13 +55,13 @@ cd 810_driver_test/projects/<driver>_test/tests/case_<name>
 
 ### 3.2 单次烧录 + 采集 + 解析
 
-- **单核工程**（trng / rtc / otbn / mbedtls / gpio_toggle）：
+- **单核工程**（trng / rtc / otbn / otbn_selftest / mbedtls / adc_temper / dma / flash / wdt / iopmp）：
   ```bash
   cd 810_driver_test/projects/<driver>_test/tests
   python scripts/dbg_run.py --case case_<name> --timeout 35
   ```
 
-- **双核工程**（i2c_pure / i3c_i2c_switch / i3c_dualcore）：
+- **双核工程**（i2c_pure / i3c_i2c_switch / i3c_dualcore / mbox）：
   ```bash
   cd 810_driver_test/projects/<driver>_test/tests
   python run_test.py --case case_<name> --ctrl-uart COM15 --tgt-uart COM16
@@ -89,10 +91,15 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `otbn_test` | 单核 | 否 | OTBN 点运算 / RSA / hash |
 | `otbn_selftest` | 单核 | 否 | mbedtls selftest 全量套件 |
 | `mbedtls_test` | 单核 | 否 | 软件/硬件/OTBN 混合加密配置 |
+| `adc_temper_test` | 单核 | 否 | 片内 ADC 温感 (ch13) 读取 |
+| `dma_test` | 单核 | 否 | DMA (dmac1) M2M 传输 |
+| `flash_test` | 单核 | 否 | 片外 QSPI flash 读写擦 |
+| `wdt_test` | 单核 | 否 | WDT (sec_iwdg) 非破坏性用例 |
+| `iopmp_test` | 单核 | 否 | IOPMP HAL 寄存器操作 |
 | `i2c_pure_test` | 双核 | **是** | I2C5（cpu2 master）↔ I2C6（cpu1 slave） |
 | `i3c_i2c_switch_test` | 双核 | **是** | I3C/I2C 动态切换 |
 | `i3c_dualcore_test` | 双核 | **是** | I3C 主从跨核通信 |
-| `gpio_toggle_test` | 单核 | 否 | 示波器观察型，无自动化回归 |
+| `mbox_test` | 双核 | 否 | cpu1↔cpu2 共享 SRAM 邮箱 |
 
 外部接线见下表。
 
@@ -103,7 +110,6 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `i3c_dualcore_test` | I3C5_SCL(PJ10) ↔ I3C6_SCL(PJ08)，I3C5_SDA(PJ11) ↔ I3C6_SDA(PJ09)，共地，两侧上拉 |
 | `i3c_i2c_switch_test` | 同 `i3c_dualcore_test` |
 | `i2c_pure_test` | 同 `i3c_dualcore_test`（I2C 模式复用） |
-| `gpio_toggle_test` | PJ10/PJ11 输出 1s 方波，示波器挂 I3C5 总线焊点 |
 
 ---
 

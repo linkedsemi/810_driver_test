@@ -2,8 +2,9 @@
 # IOPMP minimal test
 #
 # What is tested:
-#   LinkedSemi IOPMP HAL: enable/disable, idempotent init, NAPOT round-trip,
-#   register readback. Minimal non-destructive coverage.
+#   LinkedSemi IOPMP HAL: enable + idempotent init (HAL 无有效 disable 路径,
+#   见 TC-1/TC-2 注释), NAPOT 编解码 + 非法参数拒绝契约, 条目寄存器读回
+#   (先存原值、测完恢复). Minimal non-destructive coverage.
 #
 # Usage:
 #   ./test.sh          # build only

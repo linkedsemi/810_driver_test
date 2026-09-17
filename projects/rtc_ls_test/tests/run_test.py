@@ -16,6 +16,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -36,8 +37,10 @@ from report_dir import allocate_session_dir, case_dir_for, update_summary  # noq
 
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = "0x100c0000"
-BOARD = "lsqsh_evb@2os/lsqsh/cpu1"
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")
+BOARD = "lsqsh_evb@1os/lsqsh/cpu1"   # 用户需求#8：单核固件一律 1os 编译测试
 DRIVER_NAME = "rtc_ls_test"
 REPORT_BASE = f"{DRIVER_NAME}_report"
 

@@ -11,13 +11,14 @@ Usage:
 UART role discovery (dynamic):
     - By default all non-CKLink COM ports are opened; after the flash/reset
       the firmware prints its banner on the matching UART:
-          "CPU1 TRNG" / "trng_test"  -> target (uart1)
+          "CPU1 ADC" / "adc_temper_test"  -> target (uart1)
       so the port role is resolved from actual output, no hardcoding.
     - Explicit override: --tgt-uart COM16.
 
 Assumes firmware is already built under tests/<case>/build/target.
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -28,7 +29,7 @@ from pathlib import Path
 import serial
 import serial.tools.list_ports as list_ports
 
-# tests/scripts/dbg_run.py -> parents[1] = trng_test/tests
+# tests/scripts/dbg_run.py -> parents[1] = adc_temper_test/tests
 TESTS_DIR = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))
@@ -36,9 +37,11 @@ from ztest_report import parse_ztest   # noqa: E402
 
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = "0x100c0000"
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")
 
-TGT_BANNERS = ("CPU1 TRNG", "trng_test", "TRNG test")
+TGT_BANNERS = ("CPU1 ADC", "adc_temper_test", "ADC temperature sensor test")
 
 # Zephyr console shell 重绘提示符会向串口发 ANSI 转义，token 行首可能混入
 # （如 \x1b[1;32muart:~$ \x1b[8D\x1b[J），先剥离再匹配。

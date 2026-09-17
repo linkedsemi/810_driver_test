@@ -149,4 +149,8 @@ ZTEST(flash, test_flash_write_out_of_bounds)
 	zassert_not_equal(ret, 0, "write beyond area should fail");
 }
 
-ZTEST_SUITE(flash, NULL, flash_test_setup, NULL, flash_test_teardown, NULL);
+/* ZTEST_SUITE(name, predicate, setup, before, after, teardown)：
+ * setup/teardown 为套件级（整个 suite 各调一次），before/after 为用例级。
+ * fa 在 setup 打开、teardown 关闭，二者必须成对落在同一层级，
+ * 否则会在用例间出现 fa==NULL 的空指针解引用。 */
+ZTEST_SUITE(flash, NULL, flash_test_setup, NULL, NULL, flash_test_teardown);

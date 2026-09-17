@@ -123,6 +123,21 @@
 - 判断标准：**"同一内容出现在 ≥2 个工程里且语义必须保持一致"→ 收敛到公共层**。
 - 新工程骨架默认引用公共层（qsh-test-gen 模板已固化）；合规检查见 qsh-test-validate。
 
+#### 6.1.10 工程分型与运行参数（单核 1os / 双核 2os）
+
+分型决定 board、入口地址、烧录遍数与脚本路径，**新建工程第一步先定型**（生成期约束见 qsh-test-gen §1.5，校验期见 qsh-test-validate §1.9f）。
+
+| 分型 | 判定依据 | board | cpu1 入口 | 烧录 |
+|------|---------|-------|----------|------|
+| 单核 | 只有 cpu1 侧固件目录 | `lsqsh_evb@1os/lsqsh/cpu1` | `0x10000000` | 单遍 |
+| 双核 | 有 **cpu1 之外的固件目录**（`cpu0_*` 或 `cpu2_*`） | `lsqsh_evb@2os/lsqsh/{cpu1,cpu2}` | `0x100c0000` | 两遍 |
+
+- **分型按"是否存在 cpu1 之外的固件目录（`cpu0_*` 或 `cpu2_*`）"判定**，不按工程名或关键词猜。第二核目录命名**跨工程不统一**（实测 `cpu0_i2c_master` / `cpu0_i3c_controller` / `cpu2_controller_mbox_test` 三种并存），靠 `controller`/`cpu2` 等关键词匹配会漏判——`i2c_pure_test` 第二核叫 `cpu0_i2c_master`（无 `cpu2`、无 `controller`），实为双核。
+- **单核固件一律 1os 编译测试**（用户需求 #8）；2os 只用于双核的 cpu1/cpu2 两侧。
+- **入口地址禁止从异型样板抄用**：设错 `$pc` → 固件根本没跑 → 串口 0 行，与"固件/配置问题"同症状。
+  - Python 脚本（dbg_run / run_test / dump_results）单核一律 `os.environ.get("TARGET_ROM_START", "0x10000000")`（`dump_results.py` 用 `int(..., 0)`，默认值即 1os 入口，无需覆盖）；双核显式给出 `0x100c0000`。
+  - shell 侧由 `scripts/test_common.sh` 分流：单核路径 `SINGLE_BOARD`/`SINGLE_ROM_START`（默认 1os + `0x10000000`），双核路径 `TARGET_BOARD`/`TARGET_ROM_START`（默认 2os + `0x100c0000`）。单核 test.sh 用 `build_single_test`/`load_and_run_single`，双核用 `build_test`/`load_and_run`——用错分型会强制错板级（KNOWN_ISSUES #43）。
+
 ### 6.2 Agent 与结果规范
 
 #### 6.2.1 ztest 原生输出即协议
@@ -261,6 +276,11 @@ python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
 ```
 
 - `cases.yaml`：YAML list（`cases:` 下每行一个 case 目录路径，相对 810_driver_test，反斜杠），`#` 开头 = 屏蔽跳过。VS Code YAML 模式下 `Ctrl+/` 可直接 toggle 注释。用例清单变更改这里，run_all.py 不硬编码 case。
+- **`cases.yaml` 是"哪些工程/case 已启用"的唯一权威源**。`CLAUDE.md` §2 各工程后的 `(N)` = 本文件该工程**已启用**的 case 数（≠ 工程目录里的 case 总数）。增删工程/case 时按此清单同步，勿只改一处：
+  1. `regression/cases.yaml` —— 增删条目（唯一权威源）
+  2. `CLAUDE.md` §2 —— 单核/双核清单 + `(N)`
+  3. `README.md` §4 工程表 + §「外部接线记录」（新工程登记接线，片内写"无"）
+  4. 工程自带 `tests/COVERAGE.md` / `expected/`（骨架见 qsh-test-gen）
 - 流程（按 run_all.py 代码实际顺序）：读清单 → **flash 全片擦除一次**（`--erase-only`，DebugServer 互斥退出后重启，用户 #6；失败=环境 FAIL 批量中止）→ **分配会话目录**（§6.4.1）→ 环境预检（§6.4.6，报告写入该会话目录 `precheck_report.md`；可 `--no-precheck` 跳过）→ 逐 case 调对应工程 run 脚本（`--case` + `--session-dir`）→ 每 case 日志独立存 `session/logs/` → 结束总表 + 退出码（全 PASS=0；有 FAIL=1；预检 FAIL=2）。
 - **单 case FAIL 不阻断后续 case**（日志记 FAIL 继续跑完）。
 - **双核 UART 由 run_all.py 配置区显式注入**（COM15/COM16，`--ctrl-uart/--tgt-uart` 传参）——双核 run 脚本**必须显式 UART**，不支持自动发现（2026-08-29 实测）。

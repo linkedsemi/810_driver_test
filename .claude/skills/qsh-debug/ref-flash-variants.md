@@ -21,15 +21,17 @@ python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提�
   再发 `load`，gdb 无任何输出（连 "Loading section" 都没有）→ 只能超时
   proc.kill()，且留 DebugServer 连接残留（按 ref-self-heal.md §2 重启才干净）。
   **不要在任何单会话流程里 load 第二次**
-- **写包提速（41x）**：load 前 `set memory-write-packet-size 16384` +
+- **写包提速（41x）**：load 前 `set remote memory-write-packet-size 16384` +
   `set remotewritesize 16384`，CKLink load 实测 1KB/s → 41KB/s（192KB 镜像
   ~190s → ~5s）；stub 不接受时回 `Remote failure`/`E22` 立即失败
 - **交互式流程（★ §10.25）**：reset+load 后等 "Transfer rate" 再 continue。
   一次性 -ex 链的 continue 在 load 刚完成瞬间发出，DebugServer 状态不佳时
   被静默丢弃 → CPU 停 halt 无 BOOT，detach 恢复运行（回归 3/3 复现）；
   dbg_run.py / run_test.py 均为交互式（0 失败）。手工 GDB 也照此
-- **免烧重跑 --no-load**：attach → `x/4wx 0x100c0000` sanity（镜像在？非全 0）
-  → `set $pc=0x100c0000` 重跑复位向量（重新初始化 .bss/.data，等效软复位）
+- **免烧重跑 --no-load**：attach → `x/4wx <TARGET_ROM_START>` sanity（镜像在？非全 0）
+  → `set $pc=<TARGET_ROM_START>` 重跑复位向量（重新初始化 .bss/.data，等效软复位）。
+  **入口地址按构建板型定**：单核 1os = `0x10000000`，2os = `0x100c0000`
+  （脚本内走环境变量 `TARGET_ROM_START`，勿硬编码，见 qsh-test-gen §1.5 / KNOWN_ISSUES #57）
 
 ## 2. flash boot 破坏性复位测试（bootrom 引导非 XIP）
 

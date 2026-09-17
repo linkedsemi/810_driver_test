@@ -58,7 +58,7 @@ python scripts/dbg_run.py --case case_pure_i3c_12m5 --timeout 35
   interrupt 后二次 load 实测两度静默挂死（gdb 无任何输出）；reset 已冲刷
   I-cache，load 后 .data/.bss 天然干净，结果与两遍烧录法逐项一致。
   双核 i3c 工程维持两遍烧录不变（prime 轮确实有用）
-- **写包提速默认开**：load 前发 `set memory-write-packet-size 16384` +
+- **写包提速默认开**：load 前发 `set remote memory-write-packet-size 16384` +
   `set remotewritesize 16384`，CKLink load 实测 **1KB/s → 41KB/s（41x）**
   （192KB 镜像 ~190s → ~5s）；`--wpacket-size 0` 关闭。stub 不接受时回
   E22 且立即失败，不会静默卡死
@@ -68,8 +68,11 @@ python scripts/dbg_run.py --case case_pure_i3c_12m5 --timeout 35
   跑起来，实测回归 3/3 复现；dbg_run.py 交互式 0 失败）。run_test.py
   已固化交互式 + 90s 无 BOOT 判 no_boot 强制 [RETRY] 自愈
 - **免烧重跑 `--no-load`**：镜像已在 RAM（此前 load 过、未断电）时
-  attach → sanity 查 0x100c0000 → `set $pc=入口` 重跑，0 烧录；
-  另有 dump_results.py 内存兜底秒读（qsh-test-compare §3）
+  attach → sanity 查入口地址 `TARGET_ROM_START`（单核 1os = `0x10000000`，
+  2os = `0x100c0000`，见 qsh-test-gen §1.5）→ `set $pc=TARGET_ROM_START` 重跑，
+  0 烧录；另有 dump_results.py 内存兜底秒读（qsh-test-compare §3）。**单核脚本
+  若把入口硬编码成 2os 的 0x100c0000，`$pc` 就设错、固件不跑、串口 0 行**
+  （KNOWN_ISSUES #57）
 
 **输出判读**：
 - `UART ROLE DISCOVERY` 全 `?` → 固件没跑，回 `qsh-debug` §2.3 清理连接残留
@@ -99,6 +102,17 @@ python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
 - **双核 UART 由 run_all.py 显式注入**（COM15/COM16，`--ctrl-uart/--tgt-uart`）
   ——双核 run 脚本**必须显式 UART，不支持自动发现**（2026-08-29 实测；
   单核脚本可自动发现）
+- **清理进程纪律（★ KNOWN_ISSUES #62）**：回归中要清残留时**只 `TaskStop` runner 的父任务**；
+  清 gdb 用 `netstat -ano | grep :1025` 取对端 PID、清 west/ninja 用
+  `tasklist | grep -E "west|ninja"` 取 PID，**一律按精确 PID**。
+  **禁 `taskkill //F //IM python.exe`** —— west/ninja/run_test.py 本体全是 python 进程，
+  按名字杀 = 连坐自杀，症状 = 每个 case **秒级整齐** `BUILD FAILED`（极易误判成代码回归）
+- **全量回归按"可续跑"设计（★ KNOWN_ISSUES #64）**：长时（>1h）后台批量任务在本环境会被
+  **外部中止**（实测 29 case 两次都在 ~66 分钟、第 21 case 处被 kill：整棵 python 树消失、
+  DebugServer 独活、**无** `BUILD FAILED`）→ **"单次连续跑完"不是可靠可达目标**。做法：
+  `run_all.py` 跑头部 + **幂等 resume 脚本**（写 done 标记、重跑自动跳过已完成 case）补齐尾部；
+  **中断点与续跑情况必须写进报告**，禁止拼成"一次跑完"。心跳里见"整棵 python 树消失"
+  = **外部中止**（非崩溃、非硬件、非上面 #62 的自杀）→ **直接续跑，勿重复排查环境**。
 
 ### 4.2 单工程/单 case 回归（run_test.py）
 
@@ -126,6 +140,10 @@ python run_test.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
 - **内存兜底合并**：case 跑完后调 `dump_results.py --case <case> --json`，
   串口缺项用内存值补，来源标 `mem`；数组全 -1 的项算 NOT_RUN 且 case 判 FAIL；
   GDB 读不到内存（连接残留等）标记 `mem-unavailable` 不阻断回归（§12.3）
+- **`--timeout` 决定覆盖度**（★ KNOWN_ISSUES #63）：太小会把尾部项目按超时截断成
+  `NOT_RUN`（慢速工程 rtc_ls/mbedtls 尤甚）。跨轮对比**必须同一 timeout**，
+  否则"上次 PASS 这次 FAIL"可能只是超时掩盖的潜伏项首次执行，**不是回归**
+  （判据/差异表规范见 qsh-test-compare §5）
 - Windows 下超时用 Python `subprocess.run(timeout=...)`，**不用 bash `timeout`**
 
 ## 5. ztest 原生输出格式与判定标准
@@ -168,6 +186,9 @@ PROJECT EXECUTION SUCCESSFUL|FAILED       # ztest 原生，本核套件完成标
 | flash_program.py 卡死 80s（`ConnectType=0`） | DebugServer 会话后芯片处于调试 halt 状态，普通连接无法重连 | **flash_program.py 已改为 `ConnectType: 1`（硬复位连接）**，实测解决（2026-09-02） |
 | 回归结束后下次 erase 卡死 | DebugServer 回归期间常驻，结束后未释放 CKLink | **run_all.py 已加 `cleanup_cklink()`（try/finally）**，回归结束必杀 DebugServer |
 | 构建报 `pthread_cond_t` 类型冲突 | `CONFIG_NEWLIB_LIBC=y` 与 Zephyr POSIX types 冲突 | 改为 `=n`（Zephyr minimal libc 足够），全工程统一 |
+| 全量回归**每个 case 秒级整齐** `BUILD FAILED`/`rc=1`（不是散点 FAIL） | 按名字杀了 `python.exe`（`//IM`）→ 连坐 west/ninja/run_test.py 本体 | 只 `TaskStop` runner 父任务；清 gdb/west/ninja 按精确 PID，**禁 `//IM python.exe`**（KNOWN_ISSUES #62） |
+| 上次 PASS、这次 FAIL，但两轮 `--timeout` 不同 | 短 timeout 截断出的 NOT_RUN 掩盖了潜伏缺陷 | 先核两轮 timeout 是否一致；不一致则不可对比，"新 FAIL"≠回归（qsh-test-compare §5 / KNOWN_ISSUES #63） |
+| 全量回归长任务中途被中止，**整棵 python 树消失、无 `BUILD FAILED`** | **外部中止**（非崩溃/非硬件；与 #62 的自杀相反） | 直接幂等续跑补齐尾部、中断点入报告；全量按可续跑设计（§4.1 / KNOWN_ISSUES #64） |
 
 ## 7. 坑沉淀要求
 

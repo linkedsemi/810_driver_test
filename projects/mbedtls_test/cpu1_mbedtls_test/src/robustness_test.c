@@ -142,6 +142,30 @@ ZTEST(robustness, sm4_bad_params)
 	ret = mbedtls_sm4_ctr_crypto(&ctx, ct, NULL, 16);
 	zassert_not_equal(ret, 0, "sm4 ctr NULL input should fail");
 
+	/* ECB 原语走内联寄存器操作（不经 HAL），须自行拒绝非法入参 */
+	ret = mbedtls_sm4_ecb_encrypt(NULL, ct, pt, 16);
+	zassert_not_equal(ret, 0, "sm4 ecb NULL ctx should fail");
+	ret = mbedtls_sm4_ecb_encrypt(&ctx, ct, NULL, 16);
+	zassert_not_equal(ret, 0, "sm4 ecb NULL input should fail");
+	ret = mbedtls_sm4_ecb_encrypt(&ctx, NULL, pt, 16);
+	zassert_not_equal(ret, 0, "sm4 ecb NULL output should fail");
+	ret = mbedtls_sm4_ecb_decrypt(&ctx, ct, NULL, 16);
+	zassert_not_equal(ret, 0, "sm4 ecb dec NULL input should fail");
+	ret = mbedtls_sm4_ecb_decrypt(&ctx, NULL, pt, 16);
+	zassert_not_equal(ret, 0, "sm4 ecb dec NULL output should fail");
+
+	/* 长度 0 与非 16 整块：进硬件前即须拒绝（CALC_LEN 下溢） */
+	ret = mbedtls_sm4_ecb_encrypt(&ctx, ct, pt, 0);
+	zassert_not_equal(ret, 0, "sm4 ecb len=0 should fail");
+	ret = mbedtls_sm4_ecb_encrypt(&ctx, ct, pt, 20);
+	zassert_not_equal(ret, 0, "sm4 ecb non-block len should fail");
+
+	/* 合法入参仍须成功——确认校验未误伤正常路径 */
+	ret = mbedtls_sm4_ecb_encrypt(&ctx, ct, pt, 16);
+	zassert_equal(ret, 0, "sm4 ecb valid ret=%d", ret);
+	ret = mbedtls_sm4_ecb_decrypt(&ctx, pt, ct, 16);
+	zassert_equal(ret, 0, "sm4 ecb dec valid ret=%d", ret);
+
 	mbedtls_sm4_free(&ctx);
 }
 #endif

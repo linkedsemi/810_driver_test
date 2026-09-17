@@ -22,12 +22,12 @@ description: QSH 驱动测试代码生成 skill（三大类②自动化测试代
 ### 1.1 目录骨架（CLAUDE.md §1，★ 工程统一收在 `projects/` 下）
 ```text
 810_driver_test/projects/<driver>_test/
-├── cpu0_<role>_controller/     # cpu2 侧固件（发起方）
-│   ├── src/main.c + src/<role>_controller_test.c
+├── cpu<other>_<driver>_<model>/ # 第二核固件（发起方：controller/master）；前缀实测有 cpu0_ / cpu2_ 两种
+│   ├── src/main.c + src/<driver>_<model>_test.c
 │   ├── prj.conf
 │   └── CMakeLists.txt          # 注入 common/cpu2_console_uart5.overlay + cpu2_mem_layout.overlay + test_results.c
-├── cpu1_<role>_target/         # cpu1 侧固件（响应方）
-│   ├── src/main.c + src/<role>_target_test.c(.h)
+├── cpu1_<driver>_<model>/      # cpu1 侧固件（响应方：target/slave）
+│   ├── src/main.c + src/<driver>_<model>_test.c(.h)
 │   ├── prj.conf
 │   └── CMakeLists.txt          # 注入 test_results.c
 └── tests/
@@ -41,10 +41,17 @@ description: QSH 驱动测试代码生成 skill（三大类②自动化测试代
     └── *.md                    # 问题总结
 ```
 
-> 固件目录 `cpu<N>_<role>/` 的 role 按 **CLAUDE.md §1.1 命名结构规范**选：
+> 固件目录 `cpu<N>_<driver>_<model>/` 的 **model** 按 **CLAUDE.md §1.1 命名结构规范**选：
 > I3C → controller/target；SPI/I2C/UART → master/slave；host/device 模型 →
 > host/device；**纯片内单核外设（无总线角色）→ 直接 `cpu1_<driver>`**（如
 > `cpu1_trng_test`）。角色名必须来自被测驱动标准术语，不臆造混搭名。
+>
+> **单核工程不建第二核目录，只有 `cpu1_<driver>/`**（board 走 1os，§1.5）。
+>
+> **分型判定取广义**：存在 cpu1 之外的固件目录（`cpu0_*` **或** `cpu2_*`）即双核。
+> 第二核目录前缀/命名跨工程不统一（实测 `cpu0_i2c_master` / `cpu0_i3c_controller` /
+> `cpu2_controller_mbox_test` 三种并存），靠 `controller`/`cpu2` 等关键词猜会漏判
+> （`i2c_pure_test` 第二核叫 `cpu0_i2c_master`，实为双核）。
 
 ### 1.2 关键注入（cpu2 侧 CMakeLists.txt，样板照抄；工程在 projects/ 下，common 引用比原来多一级 `../../../`）
 ```cmake
@@ -102,9 +109,11 @@ set(EXTRA_DTC_OVERLAY_FILE
    - CMakeLists 注入 `../../../common/ztest_glue.c` + `../../../common/
      test_results.c` + include dir（工程在 projects/ 下）；prj.conf 必带
      **`CONFIG_ZTEST_VERBOSE_OUTPUT=y`**（§10.26，=n 则逐项输出被抑制）
-   - **`CONFIG_NEWLIB_LIBC=n`**（★ 2026-09-02 实测：`=y` 与 Zephyr POSIX
-     types 冲突——`pthread_cond_t` 类型重定义导致构建失败；全工程统一 `=n`，
-     minimal libc 已覆盖 snprintf/strlen 等常用函数）
+   - **libc 三件套必配（全工程统一）**：`CONFIG_PICOLIBC=y` +
+     `CONFIG_NEWLIB_LIBC=n` + `CONFIG_MINIMAL_LIBC=n`。`NEWLIB_LIBC=y` 与
+     Zephyr POSIX types 冲突（`pthread_cond_t` 重定义，构建失败）；缺
+     `PICOLIBC=y` 则落到 minimal libc，它不含 `mktime` 等 POSIX 函数，
+     驱动/共享层一旦调用即构建失败（KNOWN_ISSUES #58）
    - `dump_results.py` 的 TEST_NAMES 按**链接序**（SORT_BY_NAME，§10.27）
      与 glue 记账 idx 对齐：`nm --numeric-sort <elf> | grep
      _ztest_unit_test__<suite>__`
@@ -123,11 +132,47 @@ set(EXTRA_DTC_OVERLAY_FILE
    load 后规定时间（LOAD_WINDOW）内收不到任何 log/ztest 输出 → **直接判
    该 case 失败**，不深挖根因（正常 load 后几秒内必出 log）。见
    CLAUDE.md §6.2。
+8. **ZTEST_SUITE 槽位纪律（★ 套件级 vs 用例级）**：签名是
+   `ZTEST_SUITE(name, predicate, setup, before, after, teardown)`——
+   **`setup`/`teardown` 是套件级（整个 suite 各跑一次），`before`/`after`
+   是用例级（每例前后都跑）**。凡在 `setup` 里 open/init 的共享资源，必须在
+   `teardown` 里 close/deinit，**两者落在同一层级**；用例间共享的句柄
+   （flash_area、设备指针等）一律走套件级 setup/teardown，**不要混用 after**。
+   落错槽的后果：共享句柄在第一个用例之后被置 NULL，第二个用例拿到 NULL →
+   空指针 → load access fault → SoC 异常入口 `while(1)` → **串口从此静默**
+   （症状极像配置/烧录问题，实测走了弯路）。
+   注：`before`/`after` 形参是 `void(*)(void*)`、`setup` 是 `void*(*)(void)`，
+   类型不通——所以"把 teardown 挪去 before/after"修不通，只能挪进 `teardown` 槽。
 
 ### 1.5 构建/加载（scripts/test_common.sh 复用）
 - `test_common.sh` 已通用化：设 `TEST_ROOT` 后 source，`run_test` 一把跑
 - case 的 test.sh 三模式：`./test.sh`（只编译）/ `-g`（+GDB 加载运行）/ `-r`（仅加载）
 - GDB 地址/串口全走环境变量（`GDB_SERVER_HOST/PORT`、`*_UART`），不硬编码
+- **先定工程分型（单核/双核），再选 board 与加载函数**（权威矩阵 SPEC_REFERENCE §6.1.10）：
+  - 单核 = 只有 cpu1 侧固件目录 → board `lsqsh_evb@1os/lsqsh/cpu1`、cpu1 入口
+    `0x10000000`、test.sh 用 `build_single_test`/`load_and_run_single`（单遍烧录）
+  - 双核 = 有 cpu1 之外的固件目录（`cpu0_*` 或 `cpu2_*`）→ board
+    `lsqsh_evb@2os/lsqsh/{cpu1,cpu2}`、cpu1 入口 `0x100c0000`、test.sh 用
+    `build_test`/`load_and_run`（两遍烧录）
+  - **单核固件一律 1os 编译测试**（用户需求 #8）；用错分型 = 板级/入口错 → 固件不启动
+- **入口地址不得从异型样板抄用**：单核 Python 脚本一律
+  `TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")`
+  （`dump_results.py` 用 `int(os.environ.get(...), 0)`；默认值即 1os 入口，无需覆盖），
+  双核显式给出 `0x100c0000`。从 2os 样板抄脚本最易漏改此常量 → `$pc` 设错 →
+  固件根本没跑 → **串口 0 行**，与"固件/配置问题"同症状，极易误判。
+- **脚本复制后必须改的样板残留**（逐项核对，漏一项即出上面这类假故障）：
+  - `dbg_run.py`：`TESTS_DIR` + `TGT_BANNERS`/`CTRL_BANNERS` 文案（残留上一驱动
+    banner，如 "CPU1 TRNG" → 角色识别全 `?` 并误报 "no firmware banner seen"）
+  - `dump_results.py`：`TARGET_ROM_START`（同入口规则）+ `TEST_NAMES`（必须=
+    **本工程自己的 ztest 链接序**；残留他工程名 → mem 兜底读本工程内存槽却按他
+    工程名映射 → **假 PASS**，见 KNOWN_ISSUES #59）
+  - `run_test.py`：`BOARD`（单核必须 `@1os/lsqsh/cpu1`）+ `TARGET_ROM_START`；
+    连接/打印文案不得残留他工程名（如报告头写别的驱动名）；删除样板遗留的死常量
+    （残留 2os 常量会误导后续改动）
+  - `test.sh`：`TEST_NAME` + 头注释各字段（§2）；**board 一律走 `SINGLE_BOARD`/`TARGET_BOARD`
+    变量（或 `build_single_test`），禁硬编码 `lsqsh_evb@...`**——硬编码 2os 板级却走单核
+    `load_and_run_single`（`$pc`=1os 入口）即与入口常量错配的**同族坑**（KNOWN_ISSUES #57）
+  范本 = 已迁移单核工程（otbn_test / otbn_selftest / mbedtls_test）。
 
 ### 1.6 覆盖矩阵 + 预期数据 + 回归脚本（CLAUDE.md §12/§13，★ 必做）
 1. **COVERAGE.md**：对着被测驱动源码逐路径列测试项（每个条件分支至少一个
@@ -135,6 +180,11 @@ set(EXTRA_DTC_OVERLAY_FILE
    状态`。维度从 §13.1 清单选（功能通路/边界长度/异常参数/统计性质/并发/
    中断时序/复位掉电）。**不得拍脑袋**：先读驱动源码（`zephyr/drivers/` 对应
    `.c`），把分支点抄进矩阵再设计用例。
+   **边界用例的常量必须有实测来源**：驱动掩码/数据手册，或（两者与实机不符时）
+   寄存器**写-回读实测上限**——凭"看起来安全"拍的值会在硬件量程处静默截断
+   （debug-knowledge mcu 域"寄存器位域以实测为准"）。
+   **缩容 / 缩短超时 / 加兜底钩子 ≠ 修复**：根因未解时大小两个值同因同果，
+   兜底钩子在前置条件不满足时还会空转，见 qsh-test-validate §1.9h。
 2. **expected/**：确定性测试（通信数据/状态字/加密向量）生成预期数据文件，
    固件 include 后逐字节比对：
    - 加密类 → 抽 NIST/官方测试向量生成 `expected/nist_vectors.h`
@@ -196,6 +246,10 @@ tests/case_<速记>/
      （会话目录），内容含预期/实际列
    - 会话目录最外层 summary.md 有本 case 行（§12.4，key `<project>_<case>`）
    - COVERAGE.md 所有测试项最终状态为 ✅（回归后对表）
+8. **注册与同步（★ 生成收尾，清单见 SPEC_REFERENCE §6.4.5）**：新工程/case 的启用
+   条目写入 `regression/cases.yaml`（唯一权威源），并同步 `CLAUDE.md` §2 清单与
+   `(N)`（= cases.yaml 中该工程已启用的 case 数）、`README.md` §4 工程表 +
+   §「外部接线记录」。漏同步 → 回归跑不到该 case / 清单与实际不符。
 
 ## 4. 常见生成错误
 

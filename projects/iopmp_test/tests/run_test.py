@@ -24,8 +24,10 @@ from report_dir import allocate_session_dir, case_dir_for, update_summary
 
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = "0x100c0000"
-BOARD = "lsqsh_evb@2os/lsqsh/cpu1"
+# 本工程为单核 1os 构建（cpu1 入口 = 0x10000000）：构建/烧录一律走
+# test.sh → test_common.sh 的 build_single_test/load_and_run_single
+# （SINGLE_BOARD / SINGLE_ROM_START），本脚本不消费 TARGET_ROM_START/BOARD。
+# 原 2os 硬编码常量（0x100c0000 / lsqsh_evb@2os）会误导，已删（KNOWN_ISSUES #57）
 DRIVER_NAME = "iopmp_test"
 REPORT_BASE = f"{DRIVER_NAME}_report"
 
@@ -263,7 +265,7 @@ def write_markdown_report(cdir, result):
         f"- 工程: {DRIVER_NAME}",
         f"- case: {result.get('case', '')}",
         f"- 日期: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        "- 板级: lsqsh_evb@2os",
+        "- 板级: lsqsh_evb@1os/lsqsh/cpu1",
         "",
         head,
         "",

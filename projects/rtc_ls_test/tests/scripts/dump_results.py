@@ -40,7 +40,9 @@ GDB = "riscv64-unknown-elf-gdb"
 NM = "riscv64-unknown-elf-nm"
 GDB_HOST = os.environ.get("GDB_SERVER_HOST", "127.0.0.1")
 GDB_PORT = os.environ.get("GDB_SERVER_PORT", "1025")
-TARGET_ROM_START = 0x100C0000
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 
 # rtc_test_names[] 枚举序必须与 protocol.h 一致；按 --count 截断
 TEST_NAMES = [

@@ -154,8 +154,12 @@ ZTEST(dma, test_dma_transfer_ones_zeros)
 /* TC-3: verify DMA channel works (config + start + stop on channel 0) */
 ZTEST(dma, test_dma_channel_config_stop)
 {
-	__nocache __aligned(32) static uint8_t buf[TRANSFER_SIZE];
-	memset(buf, 0, sizeof(buf));
+	/* 两个不同缓冲区：驱动显式拒绝 src == dst（-EINVAL），本项测的是
+	 * 通道生命周期（config → start → stop），不涉及同址拷贝。 */
+	__nocache __aligned(32) static uint8_t src_buf[TRANSFER_SIZE];
+	__nocache __aligned(32) static uint8_t dst_buf[TRANSFER_SIZE];
+	memset(src_buf, 0, sizeof(src_buf));
+	memset(dst_buf, 0, sizeof(dst_buf));
 	dma_done = false;
 
 	struct dma_config cfg = {
@@ -169,8 +173,8 @@ ZTEST(dma, test_dma_channel_config_stop)
 		.block_count = 1,
 	};
 	struct dma_block_config block = {
-		.source_address = (uint32_t)buf,
-		.dest_address = (uint32_t)buf,
+		.source_address = (uint32_t)src_buf,
+		.dest_address = (uint32_t)dst_buf,
 		.block_size = TRANSFER_SIZE,
 	};
 	cfg.head_block = &block;

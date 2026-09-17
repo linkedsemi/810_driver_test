@@ -118,7 +118,7 @@ model: opus
 
 | 条件 | 判定 | 恢复 |
 |------|------|------|
-| 日志 >case_timeout 无增长 且调试器进程在 | 疑似调试器挂死 | 杀调试器进程 → 脚本自行处理下一个 case |
+| 日志 >case_timeout 无增长 且调试器进程在 | 疑似调试器挂死 | 杀调试器进程（按 **PID** 精确杀；**禁 `//IM python.exe`** —— west/ninja/脚本本体都是 python，连坐后每 case 秒级 BUILD FAILED，KNOWN_ISSUES #62）→ 脚本自行处理下一个 case |
 | 日志 >case_timeout 无增长 且无调试器进程 | 疑似脚本卡死 | 检查脚本进程是否还在 |
 | 脚本进程消失 但测试未跑完 | 脚本崩溃 | 查日志尾部 → 按失败分类恢复 |
 | summary.md 行数在增长 | 正常推进 | 继续监控 |

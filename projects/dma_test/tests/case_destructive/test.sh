@@ -37,7 +37,10 @@ TARGET_ELF="${TARGET_BUILD}/zephyr/zephyr.elf"
 
 if [ "${AGENT_RUN}" != "y" ]; then
     rm -rf "${TARGET_BUILD}"
-    west build -p always -b lsqsh_evb@2os/lsqsh/cpu1 \
+    # 单核工程：走 test_common.sh 的 SINGLE_BOARD（默认 lsqsh_evb@1os/lsqsh/cpu1，
+    # 入口 0x10000000），与 load_and_run_single 的 $pc=SINGLE_ROM_START 一致。
+    # 原硬编码 @2os（入口 0x100c0000）与 $pc 错配，固件不跑。
+    west build -p always -b "${SINGLE_BOARD}" \
         "${TARGET_SRC}" \
         -d "${TARGET_BUILD}" \
         -- -DDTC_OVERLAY_FILE="${TARGET_OVERLAY}" \
@@ -47,7 +50,8 @@ if [ "${AGENT_RUN}" != "y" ]; then
 else
     if [ ! -f "${TARGET_ELF}" ]; then
         rm -rf "${TARGET_BUILD}"
-        west build -p always -b lsqsh_evb@2os/lsqsh/cpu1 \
+        # 同 build 分支：单核 SINGLE_BOARD（1os，入口 0x10000000）
+        west build -p always -b "${SINGLE_BOARD}" \
             "${TARGET_SRC}" \
             -d "${TARGET_BUILD}" \
             -- -DDTC_OVERLAY_FILE="${TARGET_OVERLAY}" \

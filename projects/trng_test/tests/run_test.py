@@ -20,6 +20,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -44,8 +45,10 @@ from report_dir import (allocate_session_dir, case_dir_for,  # noqa: E402
 
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = "0x100c0000"
-BOARD = "lsqsh_evb@2os/lsqsh/cpu1"
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")
+BOARD = "lsqsh_evb@1os/lsqsh/cpu1"   # 用户需求#8：单核固件一律 1os 编译测试
 DRIVER_NAME = "trng_test"          # §12.4 summary 行 `<driver>_test` 前缀
 REPORT_BASE = f"{DRIVER_NAME}_report"   # trng_test_report.{md,json}（避免 _test_test 重复）
 

@@ -28,7 +28,7 @@ description: 810_driver_test 测试工程合规性验证 skill：检查新建/�
 | `tests/scripts/dbg_run.py` | ✅ | ✅ | 必须（单次调试） |
 | `tests/COVERAGE.md` | ✅ | ✅ | 必须（覆盖矩阵） |
 | `cpu1_*/` 固件目录 | ✅ | ✅ | 必须 |
-| `cpu0_*_controller/` 或 `cpu2_*/` | ❌ | ✅ | 双核必须 |
+| cpu1 之外的固件目录（`cpu0_*/` 或 `cpu2_*/`） | ❌ | ✅ | 双核必须 |
 | `common/test_results.{h,c}` 引用 | ✅ | ✅ | 必须（公共结果模块） |
 | `common/ztest_glue.c` 引用 | ✅ | ✅ | 必须（自动记账） |
 
@@ -66,12 +66,17 @@ CONFIG_LOG_PRINTK=n
 # ztest 基础
 CONFIG_ZTEST=y
 
-# ★ NEWLIB 必须关闭（§10.35：=y 与 Zephyr POSIX types 冲突）
+# ★ libc 三件套必须显式写全（§10.35 + KNOWN_ISSUES #58）：NEWLIB=y 与 Zephyr POSIX
+# types 冲突；缺 PICOLIBC=y 落 minimal libc（无 mktime 等）→ 共享层调用即构建失败
+CONFIG_PICOLIBC=y
 CONFIG_NEWLIB_LIBC=n
+CONFIG_MINIMAL_LIBC=n
 ```
 
 **检查方法**：解析 prj.conf（简单 `key=value` 格式），逐项比对。
 注意：部分配置可能在 board defconfig 中，prj.conf 未显式写不算错——只检查**显式写了但值错**的项。
+**例外：libc 三件套必须显式写全，缺一即 FAIL**（历史遗漏点——单核工程漏 `PICOLIBC=y` 时，共享层
+一旦用到 mktime 等函数即构建失败，KNOWN_ISSUES #58）。
 
 ### 1.4 CMakeLists.txt 公共模块注入（必查）
 
@@ -151,9 +156,9 @@ ztest_unit_test **链接序**（SORT_BY_NAME）排列，与 ztest_glue 记账 id
 **检查方法**：若已编译，用 `nm --numeric-sort <elf> | grep _ztest_unit_test` 对比两份
 TEST_NAMES 顺序一致且都与链接序相符（含注释里的实测序清单）；新工程先核对再回归。
 
-### 1.9 模板缺陷防漏检查（必查，2026-09-07 沉淀）
+### 1.9 模板缺陷防漏检查（必查）
 
-以下 4 项源自 6 个新工程实机跑测暴露的模板缺陷，**必须逐项检查**
+以下 8 项源自新工程实机跑测暴露的模板缺陷，**必须逐项检查**
 （含检查方法代码）：[ref-template-defects.md](ref-template-defects.md)
 
 | # | 检查项 | 一句话判定 |
@@ -162,6 +167,10 @@ TEST_NAMES 顺序一致且都与链接序相符（含注释里的实测序清单
 | b | overlay chosen 节点 | 单核 overlay 须显式 `chosen { zephyr,console = &uart1; };` |
 | c | 测试代码禁用堆分配 | `src/*.c` 不得有 k_malloc/k_calloc/k_realloc（NULL→崩溃→串口 0 行假象） |
 | d | 归档成对 | run_test.py 归档必须同时写 `.md`+`.json`（含 write_markdown_report + REPORT_BASE） |
+| e | ZTEST_SUITE 槽位 | `setup`/`teardown`（套件级）须同层配对；共享句柄不得落在 `after`（用例级）；第 5 参不得是 `*_teardown` |
+| f | 分型与入口地址一致 | 分型按是否有 **cpu1 之外的固件目录（`cpu0_*` 或 `cpu2_*`）** 判（不按 `controller`/`cpu2` 关键词猜，命名跨工程不统一）；单核 = `@1os/lsqsh/cpu1` + 入口 `0x10000000`（`TARGET_ROM_START` 走 env），双核 = `@2os/lsqsh/{cpu1,cpu2}` + 入口 `0x100c0000`；混用 = FAIL（权威矩阵 SPEC_REFERENCE §6.1.10）。**另核 `test.sh` 的 board 与加载函数同源**：单核须走 `SINGLE_BOARD`/`build_single_test`（默认 1os）、双核走 `TARGET_BOARD`，**硬编码 `lsqsh_evb@...` 即 FAIL**（板级与入口常量是错配的两个独立面，须分别核；含未启用 case，KNOWN_ISSUES #57） |
+| g | 样板脚本残留识别常量 | dbg_run.py `TGT_BANNERS`/`CTRL_BANNERS` + dump_results.py `TEST_NAMES` + run_test.py 打印/连接文案 + **docstring/路径注释/文件头自述文字**，出现**其他驱动/工程名**即 FAIL（残留 TEST_NAMES → mem 兜底假 PASS，KNOWN_ISSUES #59）。判据 = 以他工程名标识**本工程/本文件**；标注"从 X 样板改造"的出处引用不算 |
+| h | 边界常量来源 + 缩容/兜底改动 | 边界用例常量须可溯源到驱动源码或寄存器**写-回读实测上限**，不得凭猜；`git diff` 出现"参数缩容 / 超时调小 / 加 before 钩子兜底"而**无根因说明**即 FAIL（根因未解时同因同果，钩子在前置条件不满足时还会空转） |
 
 ## 2. 编译验证（必做）
 

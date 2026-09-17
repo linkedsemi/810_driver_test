@@ -17,10 +17,12 @@ description: QSH 驱动 debug 调试 skill（三大类之一，QSH/810 环境实
 ## 0. 调试总流程（先走流程，再动手）
 
 ```text
-1. 确认环境   §1-3：DebugServer 在跑、能烧录、串口有 banner（全 ? 先清连接残留）
+1. 确认环境   §1-3：DebugServer 在跑、能烧录、串口有 banner（全 ? 先清连接残留）；
+              ★ 环境检查**有界**：烧录成功但串口静默 ⇒ 按固件挂死处理，先抓 CPU
+              （embedded-debug §2.1 / debug-knowledge riscv 域），**不循环查串口**
 2. 复现抓现象  qsh-test-run §3：dbg_run.py + token/SUMMARY；--raw 看原始日志
 3. 分层定位   embedded-debug §1（自上而下应用→驱动→硬件；QSH 补充见 §5 注）
-4. 断点抓现场 embedded-debug §2 方法 + 本 skill §6 QSH 命令模板
+4. 断点抓现场 embedded-debug §2/§2.1 方法 + 本 skill §6 QSH 命令模板
 5. 修复 → 验证 → 探针清理（embedded-debug §4 + 本 skill §8）→ 沉淀（embedded-debug §6）
 ```
 
@@ -147,7 +149,8 @@ bootrom 引导，KNOWN_ISSUES #49）。完整流程见
 → `write(b'\r\n')` → 等 1s 读 512 字节。
 - 有 shell 响应 `uart:~$` → 链路 OK，问题在采集脚本时机
 - 只有 `\x00` → 固件没跑（多半是 §2.3 连接残留）
-- PermissionError → 端口被占用（`tasklist | grep python` → taskkill）
+- PermissionError → 端口被占用（`tasklist | grep python` 取 **PID** →
+  `taskkill //F //PID <pid>`；**禁 `//IM python.exe`**，见 §7 / KNOWN_ISSUES #62）
 
 ### 4.3 采集要点（dbg_run.py 已实现，写新脚本时照抄）
 - reader 线程逐行读，`\x1b\[[0-9;?]*[A-Za-z]` 正则剥离 ANSI（shell 提示符
@@ -164,7 +167,8 @@ QSH/810 语境下的补充线索：
   类代码常是覆盖 bug 源头（把对侧设置的参数在 stop/end 回调里无条件重置）
 - **硬件层寄存器**：基址/偏移查驱动 reg 头文件；关键位域含义查
   `<driver>/ls_<x>/reg_<x>.h`（如 SERRWARN 的 TERM/URUN/URUNNACK 位 → 区分
-  "master 提前终止"还是"硬件欠载"）；寄存器读全对但波形异常 → 示波器（embedded-debug §3.3）
+  "master 提前终止"还是"硬件欠载"）；**位宽/掩码以写-回读实测为准**（头文件可能宽于
+  实机，见 debug-knowledge mcu 域）；寄存器读全对但波形异常 → 示波器（embedded-debug §3.3）
 - 应用层（token reason/记账变量）线索见 `qsh-test-compare`（假 PASS 识别 §2）
 
 ## 6. 断点抓现场（QSH 命令模板；方法 → embedded-debug §2）
@@ -183,16 +187,20 @@ QSH/810 语境下的补充线索：
 | DebugServer 起不来报 CKLINK used | CSKYFlashProgrammer 占用 | 杀它重启（§2.2） |
 | flash 输出正常但串口 0 行 / 只有 \x00 | gdb 被杀后连接残留，reset/load 无效 | detach 清理或重启 DebugServer（§2.3） |
 | banner 全 `?` | 固件没跑或口号错 | 先 §2.3 清理；再手动验证串口（§4.2） |
-| PermissionError 开串口 | 端口被占用 | `tasklist \| grep python` → taskkill |
+| PermissionError 开串口 | 端口被占用 | `tasklist \| grep python` 取 **PID** → `taskkill //F //PID <pid>`；**禁 `//IM python.exe`**（连坐 west/ninja/脚本本体，KNOWN_ISSUES #62） |
 | 单遍烧录行为"慢一拍"（双核） | I-cache 残留 | 两遍烧录法（§3）；单核工程无此问题（reset 已刷 I-cache，§3.1） |
 | 目标停死、异常反复 | 调试期 while(1) 陷阱残留 | 清理探针（§8 / CLAUDE.md §10.6） |
 | 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（embedded-debug §2） |
 | DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（§10.20） | 重启后等 ~5s 稳定期再烧录；run_test.py 已自动重试 |
 | 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（§10.21） |
-| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
+| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set remote memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
+| `-x xxx.gdbcmd` 中途报 `Error in sourced command file` 后 load/$pc/continue 全没跑（像烧录失败） | `-x` 源文件模式**遇错即中止整脚本**（`-ex` 链只跳过该条继续） | 手写 .gdbcmd 核命令名（如 `set memory-write-packet-size` 无效 → `set remote memory-write-packet-size`）；排障优先 `-ex` 链（KNOWN_ISSUES #61） |
+| `file` 用 MSYS 路径（`/d/...`）→ gdb 只回一行 `No such file` 却不中止；`load` 照常"成功"、断点命中却读到旧镜像 | Windows gdb 不认 `/d/...`，`file` 失败 → `load` 无可加载段静默 no-op，RAM 仍是上次会话旧固件（比 #61 更隐蔽：连报错都没有） | `file` 一律 `D:/...`（`cygpath -m` 亦可）；下断点后 `x/3i $pc` 对照 `objdump -d`，指令对不上 = 镜像不对（KNOWN_ISSUES #28） |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（§10.24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
 | 串口 0 行 + 系统完全无输出（★ 先查崩溃再查配置） | k_malloc 返回 NULL → memset(NULL) → store fault 挂死（迷惑性：看似 console/log 配置问题） | ★ 排查顺序：gdb attach `bt` 查 fault → 查 k_malloc/k_calloc（改静态数组 `static uint8_t buf[N]`）→ 最后才查配置（KNOWN_ISSUES #40） |
+| **烧录成功 + 串口静默**（无 banner、无 `\x00`） | 固件挂在异常入口的 `while(1)`（永久兜底，或调试期临时陷阱 `git diff` 可辨） | ★ **别再查串口**：先用**早标记分界**（embedded-debug §2.2）切开"链路 vs 固件"；判为固件则 gdb attach 读 PC，卡 trap 入口再读 `mcause`/`mepc`/`mtval`（§2.1 / debug-knowledge riscv 域） |
 | 烧 flash 后 bootrom 不引导（无固件输出） | 烧错 bin（zephyr.bin 无引导头）；或 GDB reset/detach halt CPU 阻止 bootrom | 见 §3.2：烧 `zephyr_flash_bram_*.bin` + `--reset-and-run`，别用 GDB（KNOWN_ISSUES #48/#49） |
+| 配 IOPMP 拒绝规则拦 DMA/外设访问：被拒页确实未写，但传输仍报"完成"、无 ERR | 该 SoC 对被拒/未解码访问**一律回 OKAY**，IOPMP 静默丢弃（**不是错误源**） | 别再用 IOPMP/未映射地址注入总线错误；改**代理实验 + 不变量论证**（KNOWN_ISSUES #65 / debug-knowledge mcu 域） |
 
 ## 8. 探针纪律（方法 → embedded-debug §4；本段留 QSH 实例）
 

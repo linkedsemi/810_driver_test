@@ -52,7 +52,7 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 | sm4_cbc | 测试层 CBC 组合（sm4_alt 无 CBC API） | 组合语义 | 32B CBC 向量 + 解密回环 | GB/T 32907（OpenSSL 复核） | ✅ |
 | sm4_ctr | mbedtls_sm4_setkey + setiv + sm4_ctr_crypto（HW） | 功能通路 | 32B CTR 向量 + 解密回环 | draft-ribose-cfrg-sm4-10 A.2.5.1（OpenSSL 复核） | ✅ |
 | aes_bad_params | mbedtls_aes_setkey_enc/crypt_cbc 异常参数 | 异常参数 | NULL ctx/input、错误 keybits 返回非 0 | API 契约 | ✅ |
-| sm4_bad_params | mbedtls_sm4_setiv/ctr_crypto 异常参数 | 异常参数 | NULL input 返回非 0 | API 契约 | ✅ |
+| sm4_bad_params | mbedtls_sm4_setiv/ctr_crypto（经 HAL）+ ecb_encrypt/ecb_decrypt（内联寄存器）异常参数 | 异常参数 | NULL ctx/in/out、len=0、非 16 整块返回非 0；合法入参仍返回 0 | API 契约 | ✅ |
 
 ### ECC / ECDSA
 

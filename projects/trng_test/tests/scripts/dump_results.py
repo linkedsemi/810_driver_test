@@ -27,6 +27,7 @@ test_reasons[][]：失败原因）。本脚本连 DebugServer 直接读内存，
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -38,7 +39,9 @@ TESTS_DIR = Path(__file__).resolve().parents[1]
 GDB = "riscv64-unknown-elf-gdb"
 NM = "riscv64-unknown-elf-nm"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = 0x100C0000
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 
 # 链接序 = ztest_unit_test 段 SORT_BY_NAME 字典序（§10.27：完整段名带尾
 # 下划线比较，数字 '0'-'9' 排在 '_' 之前——勿用 plain nm 名字典序，与

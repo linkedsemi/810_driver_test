@@ -121,11 +121,16 @@ agent 手工补报告时按同样规范：
 
 对比两次回归（如探针清理前后、修复前后、`reports/` 下不同日期归档）：
 1. 对齐同名测试项，生成差异表：`PASS→FAIL`（回归）/ `FAIL→PASS`（修复生效）/ 双 FAIL
-2. **改前改后对比时先确认环境一致**：DebugServer 无连接残留、同 case、同 timeout
+2. **改前改后对比时先确认环境一致**：DebugServer 无连接残留、同 case、**同 `--timeout`**
    （连接残留会让"修复"看起来像没生效，见 qsh-debug §2.3）
-3. 差异项先看 reason 再下结论；单次 FAIL 先重跑排除瞬态
+3. **timeout 不一致 = 不可对比**（KNOWN_ISSUES #63）：`--timeout` 决定一轮能跑多少项 ——
+   短 timeout 把尾部项目按超时截断成 `NOT_RUN`，拉长后**潜伏缺陷浮出水面**产生"新 FAIL"。
+   差异表须把"本次/上次 timeout"并列，区分两类：**同 timeout 下 PASS→FAIL = 真回归**；
+   **上次 NOT_RUN → 本次 FAIL = 超时掩盖，不算回归**（mbedtls 短 timeout 曾截断 11~17 项，
+   `sm4_bad_params` 即拉长后才首次执行到）。
+4. 差异项先看 reason 再下结论；单次 FAIL 先重跑排除瞬态
    （GDB 证据与串口日志矛盾时先重跑，排除 debug server 瞬态）
-4. 跨会话对比直接读 `reports/<date>-<idx>/<project>_<case>/<driver>_test_report.json`
+5. 跨会话对比直接读 `reports/<date>-<idx>/<project>_<case>/<driver>_test_report.json`
    （含 INFO 实际值，可对比数值漂移，如吞吐/占比随探针/时钟配置变化）；
    会话目录行粒度=case，`summary.md` 快速对全量差异（§12.4）
 

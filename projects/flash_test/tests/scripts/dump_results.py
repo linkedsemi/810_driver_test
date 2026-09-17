@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从 GDB 读内存取测试结果——串口不可用/串口 token 被刷掉时的兜底通道。
 
-TRNG 单核工程版：只读 cpu1（TGT）elf 的公共结果数组。
+Flash 单核工程版：只读 cpu1（TGT）elf 的公共结果数组。
 从 i3c_dualcore_test 样板 dump_results.py 改造（去掉 controller 核）。
 
 固件把每项测试的结果记账到 810_driver_test/common/test_results.h 公共模块的
@@ -27,6 +27,7 @@ test_reasons[][]：失败原因）。本脚本连 DebugServer 直接读内存，
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -38,17 +39,20 @@ TESTS_DIR = Path(__file__).resolve().parents[1]
 GDB = "riscv64-unknown-elf-gdb"
 NM = "riscv64-unknown-elf-nm"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = 0x100C0000
+# 单核 1os 构建入口 = 0x10000000（readelf 实测）；2os 构建需显式
+# TARGET_ROM_START=0x100c0000 覆盖。
+TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 
 # 链接序 = ztest_unit_test 段 SORT_BY_NAME 字典序（§10.27：完整段名带尾
 # 下划线比较，数字 '0'-'9' 排在 '_' 之前——勿用 plain nm 名字典序，与
 # 真实链接序可能相反）。与 glue 的 tr_record idx（注册顺序）对齐；每次
 # 增删测试项后必须重新核对：
-#   nm --numeric-sort <elf> | grep _ztest_unit_test__trng__
+#   nm --numeric-sort <elf> | grep _ztest_unit_test__flash__
 TEST_NAMES = [
-    "basic_16", "distinct_32", "invalid_args", "isr_busywait",
-    "large_1024", "monobit_8k", "not_all_ff", "not_all_zero",
-    "throughput_64k",
+    "test_flash_area_info", "test_flash_erase_all_ff",
+    "test_flash_erase_size_boundary", "test_flash_page_boundary",
+    "test_flash_read_write_basic", "test_flash_write_out_of_bounds",
+    "test_flash_write_read_multiple_patterns",
 ]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址

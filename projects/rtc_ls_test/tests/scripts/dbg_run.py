@@ -28,7 +28,7 @@ from pathlib import Path
 import serial
 import serial.tools.list_ports as list_ports
 
-# tests/scripts/dbg_run.py -> parents[1] = trng_test/tests
+# tests/scripts/dbg_run.py -> parents[1] = rtc_ls_test/tests
 TESTS_DIR = Path(__file__).resolve().parents[1]
 import os
 
@@ -36,7 +36,9 @@ GDB = "riscv64-unknown-elf-gdb"
 # WSL→Windows DebugServer 常用宿主机 IP；可用环境变量覆盖
 GDB_HOST = os.environ.get("GDB_SERVER_HOST", "127.0.0.1")
 GDB_PORT = os.environ.get("GDB_SERVER_PORT", "1025")
-TARGET_ROM_START = "0x100c0000"
+# 用户需求#8：单核一律 1os 构建，cpu1 入口 = 0x10000000（readelf 实测）；
+# 2os 构建入口 0x100c0000，需显式 TARGET_ROM_START=0x100c0000 环境变量覆盖
+TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")
 
 TGT_BANNERS = ("CPU1 RTC", "rtc_test", "RTC test")
 

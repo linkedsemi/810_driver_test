@@ -26,10 +26,10 @@ cases:
   - projects\mbedtls_test\tests\case_all_on_max
   - projects\adc_temper_test\tests\case_default
   - projects\dma_test\tests\case_default
+  - projects\dma_test\tests\case_destructive
   - projects\flash_test\tests\case_default
   - projects\mbox_test\tests\case_mbox_basic
   - projects\wdt_test\tests\case_non_destructive
   - projects\iopmp_test\tests\case_default
-
 
 # 待添加： spi、spi filter、i2c fillter 
