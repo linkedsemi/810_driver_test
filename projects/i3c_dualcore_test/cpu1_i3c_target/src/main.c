@@ -7,6 +7,7 @@
 #include "i3c_target_test.h"
 #include "i3c_dualcore_test_protocol.h"
 #include "ztest_glue.h"
+#include "rlog.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -22,10 +23,16 @@ uint8_t tgt_tx_buf[256];
 
 void test_main(void)
 {
-	/* BOOT 标记：harness 判定本固件已启动（§6.2 pass-2 判据）。
-	 * 不调用 zt_run_all()——test_main 不得返回（§4.1 dispatcher
-	 * k_thread_join），逐项 ztest 由 dispatcher 按 'E' 事件运行。 */
-	zt_init("TGT");
+	/* 不调用 zt_run_all()——test_main 不得返回（§4.1 dispatcher
+	 * k_thread_join），逐项 ztest 由 dispatcher 按 'E' 事件运行。
+	 *
+	 * 单出口（§6.9.3/§6.11.5）：本核是**从核**⇒ 不往自己串口打 token。
+	 * 逐项输出经 `tc_util_user_override.h` 把 PRINT_DATA 指向 RLOG 自动换
+	 * 出口；BOOT 走公共宏的 printk 路径 ⇒ 此处显式换出口。本核 LOG / panic
+	 * 现场仍走本核串口。本核不设 DONE：test_main 不返回（dispatcher join，
+	 * §4.1），收尾标记由主核侧给出（本工程 TGT 无 PROJECT EXECUTION 属设计）。 */
+	rlog_secondary_init();
+	RLOG_ZT_BOOT("TGT");
 
 	LOG_INF("[CPU1 SLAVE] I3C target test started");
 

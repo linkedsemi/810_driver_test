@@ -1,5 +1,10 @@
-# 810_driver_test 全量回归 case 清单（路径相对 810_driver_test）
-# 注释掉某行 = 屏蔽该 case（# 开头即跳过）
+# 810_driver_test 回归 case 清单
+#
+# 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略。
+# ⚠️ 路径行上不能写行内注释 —— 会被当成路径的一部分（已踩过）。
+#
+# 失败项的归因（A 驱动 / B 用例 / C 环境 / D 分不清）见 tmp/final/triage.md。
+
 cases:
   - projects\trng_test\tests\case_default
   - projects\rtc_ls_test\tests\case_default
@@ -31,5 +36,35 @@ cases:
   - projects\mbox_test\tests\case_mbox_basic
   - projects\wdt_test\tests\case_non_destructive
   - projects\iopmp_test\tests\case_default
+  - projects\spi_test\tests\case_default
+  - projects\spif_test\tests\case_default
+  - projects\spid_test\tests\case_default
+  - projects\i2cf_test\tests\case_default
+  - projects\eth_test\tests\case_mdio
+  - projects\eth_test\tests\case_phy_reset
+  - projects\qspi_flash_test\tests\case_default
+  - projects\qspi_flash_test\tests\case_no_calib
+  - projects\emmc_test\tests\case_block_driver
+  - projects\emmc_test\tests\case_block_pio
+  - projects\pwm_test\tests\case_default
+  - projects\app_iwdg_cpu2_test\tests\case_non_destructive
+  - projects\app_iwdg_cpu2_test\tests\case_quick_enable
+  - projects\app_iwdg_cpu2_test\tests\case_quick_invalid
+  - projects\wdt_test\tests\case_boundary
+  - projects\mbox_test\tests\case_mbox_big_crc
+  - projects\mbox_test\tests\case_mbox_consumers
+  - projects\mbox_test\tests\case_mbox_invalid
+  - projects\mbox_test\tests\case_mbox_rtc_sync
+  - projects\mbox_test\tests\case_mbox_stress
+  - projects\mbox_test\tests\case_mbox_fifo_full
 
-# 待添加： spi、spi filter、i2c fillter 
+# ---- 不能跑的（保持屏蔽）----
+#  - projects\eth_test\tests\case_link                  # 依赖 PC 对端
+#  - projects\eth_test\tests\case_arp_icmp               # 依赖 PC 对端
+#  - projects\eth_test\tests\case_udp_echo               # 依赖 PC 对端
+#  - projects\emmc_test\tests\case_fat_fs_api            # 上游 test，不链 810 公共结果模块
+#  - projects\emmc_test\tests\case_fs_sample             # 控制台 sample，非 ztest
+#  - projects\app_iwdg_cpu2_test\tests\case_reset        # 破坏性：cpu2 真实复位，单独跑
+#  - projects\wdt_test\tests\case_pmu_iwdg_full_reset    # 破坏性：整芯片复位
+#  - projects\wdt_test\tests\case_destructive_reset      # 破坏性：HART 复位
+#  - projects\io_probe_test\tests\case_default           # 一次性诊断工具，不入册

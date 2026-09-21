@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# mbox_test cpu2 (controller) 应用 Kconfig 根。
+# 必须先引入 Zephyr 主配置树，否则整个符号树缺失。
+
+source "$(ZEPHYR_BASE)/Kconfig.zephyr"
+
+# 扩展 case 选择（P1c 追加）。取值必须与 cpu1 侧同名符号一致。
+# 0 = 不编入扩展 case，走原有 mbox_controller_main()（case_mbox_basic 原行为）。
+config MBOX_TEST_CASE_ID
+	int "mbox 扩展 case 编号（0 = 不启用）"
+	default 0
+	help
+	  取值语义见 cpu1_target_mbox_test/Kconfig。

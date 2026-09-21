@@ -1,0 +1,12 @@
+/*
+ * case_mbox_rtc_sync - cpu2 (controller) overlay
+ *
+ * 复用工程既有 app.overlay（ch4/ch5 consumer 节点），仅追加使能 RTC。
+ * cpu2 侧的控制台/内存布局仍由 CMakeLists 的 EXTRA_DTC_OVERLAY_FILE 注入。
+ */
+
+#include "../../cpu2_controller_mbox_test/app.overlay"
+
+&rtc {
+	status = "okay";
+};

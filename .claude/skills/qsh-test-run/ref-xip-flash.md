@@ -1,6 +1,6 @@
 # XIP 固件固化与启动测试（flash 烧录）
 
-把固件烧进板载 SPI flash 后从 flash 启动测试（CLAUDE.md §15）。与 RAM load
+把固件烧进板载 SPI flash 后从 flash 启动测试（`SPEC_REFERENCE.md` §6.7）。与 RAM load
 互补：持久化、断电不丢，适合 XIP 启动类测试/固化镜像。
 
 ## 烧录命令
@@ -8,7 +8,7 @@
 ```bash
 # 单次烧录（读/写/校验都在 scripts/flash_program.py）
 python 810_driver_test/scripts/flash_program.py --bin zephyr_flash_xxx.bin@0x08000000 --verify
-# 双核 ★必须一次会话（全片擦会擦掉另一核，CLAUDE.md §10.14）
+# 双核 ★必须一次会话（全片擦会擦掉另一核，`KNOWN_ISSUES.md` #14）
 python 810_driver_test/scripts/flash_program.py --bin cpu1.bin@0x08000000 --bin cpu2.bin@0x08100000 --verify
 # 读回 + 与源比对
 python 810_driver_test/scripts/flash_program.py --dump-out rb.bin --dump-addr 0x08000000 --dump-len 0x1000 --compare cpu1.bin
@@ -18,7 +18,7 @@ python tests/scripts/dbg_run.py --xip --bins cpu1.bin@0x08000000,cpu2.bin@0x0810
 python tests/scripts/dbg_run.py --xip --bins hello.bin@0x08000000 --timeout 10 --prefix HELLO
 ```
 
-## 要点（实测，CLAUDE.md §15/§10）
+## 要点（实测，`SPEC_REFERENCE.md` §6.7 / `KNOWN_ISSUES.md`）
 
 - **默认测试（单核/双核）= 全 RAM**（现有流程，不烧 flash）
 - **XIP 标准组合 = cpu1 XIP + cpu2 RAM**（★ 默认 XIP 场景）：

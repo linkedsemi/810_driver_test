@@ -1,0 +1,57 @@
+{
+  "task": "io_probe_test 测量缺陷修复 + 重跑（硬件串行）",
+  "started": "2026-09-18",
+  "strategy": "STRATEGY_DEV + STRATEGY_TEST",
+  "hardware_exclusive": true,
+  "state_file_note": "本任务是工程内独立任务，状态落在工程目录内，避免与并发 runner 抢写根 runner_state.json",
+  "write_domain": "810_driver_test/projects/io_probe_test/**  +  tmp/iofix/**  +  .claude/gotchas/INBOX.md（追加）",
+  "chain": {
+    "1_diagnose_root_cause": "done - 首跑已复核：HAL io_cfg_input() 清错 OE_DIN 半区，OUTPUT->INPUT 撤不掉输出使能（含驱动读回口径）",
+    "2_qsh_test_gen_fix": "done - 6 项必修全部落地（见 artifacts.changes）",
+    "3_qsh_test_validate": "done - COVERAGE §9 已重跑；原 3 项授权豁免（harness 三件套）已消除",
+    "4_qsh_driver_review": "n/a - 未改任何驱动代码（HAL 缺陷只报不改）",
+    "5_qsh_test_run": "done - run_test.py 实机跑通；reports/2026-09-18-6 / -7",
+    "6_qsh_test_compare": "done - 3 次一致；首跑 vs 修复轮逐项比对见 COVERAGE §7.1",
+    "7_gotcha_sink": "done - INBOX G-IOFIX-1..4"
+  },
+  "artifacts": {
+    "firmware": "projects/io_probe_test/cpu1_io_probe_test/src/io_probe_test.{c,h}",
+    "harness": [
+      "projects/io_probe_test/tests/run_test.py",
+      "projects/io_probe_test/tests/scripts/dump_results.py",
+      "projects/io_probe_test/tests/scripts/dbg_run.py"
+    ],
+    "coverage": "projects/io_probe_test/tests/COVERAGE.md",
+    "readme": "projects/io_probe_test/README.md",
+    "build_dir": "projects/io_probe_test/tests/case_default/build/target",
+    "logs": "tmp/iofix/{build1.log,run2_dbg.txt,run3_dbg.txt}",
+    "reports": ["reports/2026-09-18-6/io_probe_test_case_default/", "reports/2026-09-18-7/io_probe_test_case_default/"]
+  },
+  "ztest_items_link_order": [
+    "claim_i2c234_bus",
+    "claim_spi_spif_interconnect",
+    "dump_full_matrix",
+    "pin_controllable",
+    "pin_restorable",
+    "positive_control_i3c_link",
+    "same_pin_groups",
+    "symmetry_report"
+  ],
+  "result": {
+    "verdict": "7/8 PASS - pin_controllable FAIL (真实缺陷，未放宽)",
+    "links": 22,
+    "upper_bound": 2775,
+    "asym": 0,
+    "not_restored": 0,
+    "not_controlled": 2,
+    "baseline_low": 1,
+    "settle_us_max": 39,
+    "restore_us_max": 22,
+    "runs_reproduced": 3
+  },
+  "open_items": [
+    "PH12(spif4.SCKI) / PG07(spif4.IO3_IN) 驱动后读回仍高 -> 不受 GPIO 控制，真因未定，超出写域",
+    "PF12(spif4.IO2_IN) 基线即低（外部压住）",
+    "regression/cases.yaml 注册 + 上层文档同步（写域外，未做）"
+  ]
+}

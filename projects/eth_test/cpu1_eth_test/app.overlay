@@ -1,0 +1,25 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Ethernet 单核测试 overlay（cpu1，lsqsh_evb@1os/lsqsh/cpu1）。
+ *
+ * 硬件：eth1@40064000（compatible "linkedsemi,ethernet"）+
+ *       mdio1@40064000（compatible "snps,dwmac-mdio"）+
+ *       板载 RTL8211F PHY（mdio1 下 ethernet-phy@0；其 reset-gpios 在 GPIOG 的
+ *       pin1、int-gpios 在 GPIOG 的 pin5，均由板级 dts 给出）。
+ *
+ * 板级 dts 已把 &mdio1 / &eth1 / 其 PHY 子节点置 status="okay"
+ * （zephyr/boards/linkedsemi/lsqsh_evb/lsqsh_evb_cpu1.dts:263-276），
+ * 故本 overlay 不重复声明节点状态，只补 console 与公共 GPIO 片段。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）。
+ * CPU1 侧固件编入 gpio_toggle.c，cpu2 侧不编入。 */
+#include "../../../common/gpio_toggle.dtsi"

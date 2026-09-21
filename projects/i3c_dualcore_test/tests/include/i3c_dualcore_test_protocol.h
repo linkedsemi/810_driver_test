@@ -236,3 +236,14 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 #endif
 
 #endif /* I3C_DUALCORE_TEST_PROTOCOL_H */
+
+/* 单出口（SPEC_REFERENCE §6.9.3/§6.9.4）：cpu1 的逐项 token 经 RLOG 交 cpu2
+ * 打印，cpu2 转发时加 `<前缀>:<核>:` 核信封 ⇒ 采集侧（acquire.split_relay_lines）
+ * 按同一前缀分拣回 serial_TGT.log。须与 common/ztest_report.py 的
+ * NATIVE_PREFIXES 登记一致（沿用既有 banner_key 前缀 "I3C_TEST:"）。 */
+#define I3C_TEST_PREFIX "I3C_TEST"
+
+/* 单出口收尾的**静默判据**（§6.9.3）：连续这么久没有新的从核行即认为到齐。
+ * 从核本工程无 DONE 帧（设计如此：target 侧 test_main 不返回）⇒ 用静默而
+ * 非固定 sleep，避免慢路径上截断末项。 */
+#define RLOG_QUIET_MS 200

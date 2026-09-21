@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# app_iwdg_cpu2_test cpu2 (controller) 应用 Kconfig 根。
+# 必须先引入 Zephyr 主配置树，否则整个符号树缺失（prj.conf 全部报
+# "undefined symbol" 并中止构建）。
+source "$(ZEPHYR_BASE)/Kconfig.zephyr"
+
+# case 选择：一个 firmware 目录 + 四种构建输入，case 差异只体现在
+# tests/case_*/controller.conf + controller.overlay（SPEC_REFERENCE §6.1.8）。
+#
+#   0 = case_non_destructive     ztest：app_iwdg API 通路 / 异常参数 / 边界
+#   1 = case_quick_enable        ztest：iwdt_init quick-enable 正常分支
+#   2 = case_quick_invalid       ztest：iwdt_init quick-timeout-ms=0 -> -EINVAL
+#   3 = case_reset               自定义 main：app_iwdg HART 复位 + 复位原因回读
+#
+# ⚠ ZTEST_SUITE 槽位纪律（qsh-test-gen §1.4 第 8 条）由各用例实现文件自行遵守。
+
+config APP_IWDG_TEST_CASE_ID
+	int "app_iwdg_cpu2_test case id (0 = non-destructive ztest)"
+	default 0
+	help
+	  0..2 = ztest 用例，3 = 破坏性 HART 复位状态机。
+	  取值与 tests/include/app_iwdg_test_protocol.h 的 APP_IWDG_TEST_CASE_* 一一对应。

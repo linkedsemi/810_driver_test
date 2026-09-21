@@ -22,3 +22,15 @@
  * 使能 GPIOA（PA05/PA07 翻转线程所在端口），label 调整只改公共文件。
  * GPIO toggle 仅 cpu1 使用，cpu2 侧固件不编入 gpio_toggle.c、不 include 本片段。 */
 #include "../../../common/gpio_toggle.dtsi"
+
+/* RLOG 单出口通道（SPEC_REFERENCE §6.9.3）：两核 token 汇成一路串口流。
+ * `channel` 单元格必须等于本节点在 `&mbox` 子节点中的**序号**（驱动按
+ * DT_INST_FOREACH_CHILD_STATUS_OKAY 的遍历序索引 FIFO）：板级已占 0..3，
+ * 本项目追加 ⇒ 序号 4。两核必须一致；宽 128 与本工程 RLOG 帧长（127B）匹配。 */
+&mbox {
+	rlog_channel: rlog_channel {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 4 128 8 128 8>;
+		mbox-names = "mbox";
+	};
+};

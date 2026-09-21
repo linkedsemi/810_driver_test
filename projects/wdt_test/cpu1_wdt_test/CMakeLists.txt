@@ -11,6 +11,16 @@ if(WDT_DESTRUCTIVE_RESET)
         src/main.c
         src/wdt_destructive_test.c)
     target_compile_definitions(app PRIVATE WDT_DESTRUCTIVE_RESET=1)
+elseif(WDT_BOUNDARY_TEST)
+    target_sources(app PRIVATE
+        src/main.c
+        src/wdt_boundary_test.c)
+    target_compile_definitions(app PRIVATE WDT_BOUNDARY_TEST=1)
+elseif(WDT_PMU_RESET_TEST)
+    target_sources(app PRIVATE
+        src/main.c
+        src/wdt_pmu_reset_test.c)
+    target_compile_definitions(app PRIVATE WDT_PMU_RESET_TEST=1)
 else()
     target_sources(app PRIVATE
         src/main.c

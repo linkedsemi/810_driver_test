@@ -312,11 +312,18 @@ static void tgt_handle_begin(uint8_t id)
 
 	tgt_cur_id = id;
 	tgt_tx_idx = 0;
-	tgt_data_mismatch = false;
 	if (id != tgt_last_id) {
 		/* 新测试清失败累计；同 id 多轮 begin（STRESS）不清 */
 		tgt_failed = false;
 		tgt_fail_reason[0] = '\0';
+		/* 写内容校验标志同口径**粘滞**（仅换测试项时清）：
+		 * STRESS 每轮发 3 次 'B'（I3C→I2C→I3C 三个子轮）却只在轮末 'E'
+		 * 判账。原实现每次 begin 都清 tgt_data_mismatch ⇒ 前 2 个子轮的写
+		 * 通道损坏被后一次 begin 抹掉，TGT 侧永远抓不到；而 CTRL 侧
+		 * ctrl_failed 是同 id 粘滞（ctrl_test_begin），两侧口径不一致会让
+		 * "双核双 PASS"里的 TGT 一半失去判别力。改后本项内所有 'B' 子轮的
+		 * 失配都会累积到轮末 'E' 一并判账。 */
+		tgt_data_mismatch = false;
 		tgt_last_id = id;
 	}
 }
@@ -479,10 +486,17 @@ static void tgt_self_check_pinctrl_states(void)
 	if (ok) {
 		I3C_I2C_TGT_PASS("pinctrl_states");
 		tr_record(TEST_PINCTRL_STATES, TR_PASS, "");
-	} else {
+	} else if (tgt_pcfg->state_cnt >= 2) {
 		snprintk(tgt_fail_reason, sizeof(tgt_fail_reason),
 			 "states:%u[%u,%u]", tgt_pcfg->state_cnt,
 			 tgt_pcfg->states[0].id, tgt_pcfg->states[1].id);
+		I3C_I2C_TGT_FAIL_VAR("pinctrl_states", tgt_fail_reason);
+		tr_record(TEST_PINCTRL_STATES, TR_FAIL, "%s", tgt_fail_reason);
+	} else {
+		/* 守卫：state_cnt < 2 时 states[1] 越界（原实现无条件读
+		 * states[0]/states[1]，state_cnt<2 属内存安全缺陷）。 */
+		snprintk(tgt_fail_reason, sizeof(tgt_fail_reason),
+			 "state_cnt:%u (<2)", tgt_pcfg->state_cnt);
 		I3C_I2C_TGT_FAIL_VAR("pinctrl_states", tgt_fail_reason);
 		tr_record(TEST_PINCTRL_STATES, TR_FAIL, "%s", tgt_fail_reason);
 	}

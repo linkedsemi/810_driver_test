@@ -34,12 +34,19 @@
  #include <zephyr/ztest.h>
  #include <zephyr/kernel.h>
  #include <zephyr/device.h>
+ #include <zephyr/devicetree.h>
  #include <zephyr/drivers/rtc.h>
  #include <zephyr/logging/log.h>
- 
+
  LOG_MODULE_DECLARE(rtc_test, LOG_LEVEL_INF);
- 
+
  extern const struct device *rtc_dev;
+
+ /* RTC 硬件寄存器直读（reg_rtcv2_type.h：reg_rtc_t 布局 CTRL@0x00 / CALIB@0x04）。
+  * 基址取自 DT 的 rtc 节点，不硬编码。用于对"驱动写了什么寄存器"做独立断言
+  * （calibration_negative 的黄金值），避免复用驱动自身公式反推。 */
+ #define RTC_LS_REG_CTRL  (*(volatile uint32_t *)(DT_REG_ADDR(DT_NODELABEL(rtc)) + 0x00))
+ #define RTC_LS_REG_CALIB (*(volatile uint32_t *)(DT_REG_ADDR(DT_NODELABEL(rtc)) + 0x04))
  
  static enum rtc_test_id current_test_id;
  static bool rtc_any_failed;
@@ -683,7 +690,8 @@
  #endif /* RTC_EN_CALIBRATION_ROUNDTRIP */
  
  /* 8. 负校准值：set -100000000 → ret==0（驱动负值路径 floor_custom_divisor
-  *    分支，cyc_1hz 减 1 + calib_cyc 补 60；get 反推不等价，只验证接受）。
+  *    分支，cyc_1hz 减 1 + calib_cyc 补 60）；**断言写后的 CALIB/CTRL 寄存器
+ *    黄金值（独立手算 0x36007FFE），不用驱动公式反推**（get 反推不等价）。
   *    测试后恢复 0。 */
  #if RTC_EN_CALIBRATION_NEGATIVE
  ZTEST(rtc, calibration_negative)
@@ -692,6 +700,26 @@
  
 	 int ret = rtc_set_calibration(rtc_dev, -100000000);
 	 RTC_TEST_EXPECT(ret == 0, "set_calibration(-1e8) ret %d", ret);
+	/* ---- 独立黄金值断言（不再只看 ret==0）----
+	 * 驱动负值路径（rtc_ls.c:357-368）唯一出口是 return 0（:371）⇒ 分支算错 /
+	 * 写 0 / 写错字段时旧断言照样 PASS（测试有效性审计 A 组 P0-4）。此处直接断言
+	 * 驱动写进硬件寄存器的值，黄金值由源码语义**独立手算**、不复用驱动公式：
+	 *   RTC_CALIB_MAX_PPB = 1e9（rtc_ls.c:34），cfg->cyc_1hz = DT cyc-1hz = 32768
+	 *   calibration = -1e8：
+	 *     floor_custom_divisor(-1e8, 1e9) = -1     ⇒ cyc_1hz_act = 32768-1 = 32767
+	 *     calib_cyc = 60 + (-1e8 % 1e9)*60/1e9 = 60 + (-6e9/1e9) = 60-6 = 54
+	 *   rtc_cycle_config() 写 CALIB = (calib_cyc<<24) | ((cyc_1hz_act-1) & 0xFFFFF)
+	 *                              = (54<<24) | 32766 = 0x36007FFE
+	 *   并置 CTRL.CALIB_EN(BIT1)=1（rtc_ls.c:57-63）。 */
+	uint32_t calib_reg = RTC_LS_REG_CALIB;
+	uint32_t ctrl_reg  = RTC_LS_REG_CTRL;
+
+	RTC_TEST_TGT_INFO_VAR(rtc_test_name(), "calib_reg=0x%08x,ctrl=0x%08x",
+			      (unsigned)calib_reg, (unsigned)ctrl_reg);
+	RTC_TEST_EXPECT(calib_reg == 0x36007FFEU,
+			"CALIB reg 0x%08x != golden 0x36007FFE", (unsigned)calib_reg);
+	RTC_TEST_EXPECT((ctrl_reg & 0x2U) != 0U,
+			"CTRL.CALIB_EN(BIT1) not set: ctrl=0x%08x", (unsigned)ctrl_reg);
 	 rtc_set_calibration(rtc_dev, 0);
  
 	 rtc_finish();
@@ -711,7 +739,246 @@
 	 rtc_finish();
  }
  #endif /* RTC_EN_CALIBRATION_NULL_ARG */
- 
+
+ /* ==================================================================
+  * P1a 新增用例（2026-09-17）
+  *
+  * 编译开关在本文件内给默认值 1（`#ifndef` 守卫），**不改 CMakeLists.txt 的
+  * 既有 target_compile_definitions**；如需裁掉某新项，可从 CMakeLists 传 0。
+  * 每项自建前置（自行 set_time / 注册回调并还原），可独立通过。
+  * ================================================================== */
+
+ #ifndef RTC_EN_INVALID_SET_ARGS_EXT
+ #define RTC_EN_INVALID_SET_ARGS_EXT 1
+ #endif
+ #ifndef RTC_EN_LEAP_YEAR_DATES
+ #define RTC_EN_LEAP_YEAR_DATES 1
+ #endif
+ #ifndef RTC_EN_ALARM_SUPPORTED_FIELDS
+ #define RTC_EN_ALARM_SUPPORTED_FIELDS 1
+ #endif
+ #ifndef RTC_EN_UPDATE_CALLBACK_NOTSUP
+ #define RTC_EN_UPDATE_CALLBACK_NOTSUP 1
+ #endif
+ #ifndef RTC_EN_DRIFT_MEASURE
+ #define RTC_EN_DRIFT_MEASURE 1
+ #endif
+
+ #if RTC_EN_INVALID_SET_ARGS_EXT || RTC_EN_LEAP_YEAR_DATES
+
+ /* 填 rtc_time。wday 由调用方给定：驱动只做 0..6 范围校验、不按日期重算
+  * 星期，故本组用例无需 Sakamoto 推导（与 calendar_rollover 的 tm_at 解耦）。 */
+ static void rtc_tm_fill(struct rtc_time *tm, int year, int mon, int mday,
+			 int hour, int min, int sec, int wday)
+ {
+	 memset(tm, 0, sizeof(*tm));
+	 tm->tm_year = year;
+	 tm->tm_mon = mon;
+	 tm->tm_mday = mday;
+	 tm->tm_wday = wday;
+	 tm->tm_hour = hour;
+	 tm->tm_min = min;
+	 tm->tm_sec = sec;
+	 tm->tm_yday = -1;
+	 tm->tm_isdst = -1;
+ }
+ #endif /* RTC_EN_INVALID_SET_ARGS_EXT || RTC_EN_LEAP_YEAR_DATES */
+
+ /* 10. is_valid_time() 剩余拒绝分支（现有 invalid_set_args 只覆盖 sec=99 /
+  *     mday=32 / 2026-02-29）：分/时/月/星期越界、日=0、30 天月份取 31。 */
+ #if RTC_EN_INVALID_SET_ARGS_EXT
+ ZTEST(rtc, invalid_set_args_ext)
+ {
+	 rtc_begin(RTC_TEST_INVALID_SET_ARGS_EXT);
+
+	 struct rtc_time bad;
+	 int r;
+
+	 /* 基准：2026-07-15(周三) 12:00:00 合法；每轮只破坏一个字段 */
+ #define RTC_CHK_BAD(member, value) \
+	 do { \
+		 int _r; \
+		 rtc_tm_fill(&bad, 126, 6, 15, 12, 0, 0, 3); \
+		 bad.member = (value); \
+		 _r = rtc_set_time(rtc_dev, &bad); \
+		 RTC_TEST_EXPECT(_r == -EINVAL, \
+				 #member "=" #value " ret %d != -EINVAL", _r); \
+	 } while (0)
+
+	 RTC_CHK_BAD(tm_min, 60);
+	 RTC_CHK_BAD(tm_hour, 24);
+	 RTC_CHK_BAD(tm_mon, 12);   /* 月份合法区间 [0,11] */
+	 RTC_CHK_BAD(tm_wday, 7);   /* 星期合法区间 [0,6] */
+	 RTC_CHK_BAD(tm_mday, 0);   /* 日合法区间 [1,max_day] */
+
+ #undef RTC_CHK_BAD
+
+	 /* 4 月只有 30 天 → 31 应被拒（30 天月份分支） */
+	 rtc_tm_fill(&bad, 126, 3, 31, 12, 0, 0, 4);
+	 r = rtc_set_time(rtc_dev, &bad);
+	 RTC_TEST_EXPECT(r == -EINVAL, "apr31 ret %d != -EINVAL", r);
+
+	 /* 反向确认：同一基准值本身必须合法（防止"全拒"被当成通过） */
+	 rtc_tm_fill(&bad, 126, 6, 15, 12, 0, 0, 3);
+	 RTC_TEST_EXPECT(rtc_set_time(rtc_dev, &bad) == 0,
+			 "baseline 2026-07-15 12:00:00 rejected");
+
+	 rtc_finish();
+ }
+ #endif /* RTC_EN_INVALID_SET_ARGS_EXT */
+
+ /* 11. 闰年判定三分支（is_leap_year）：4 整除 / 400 整除 / 100 整除但非 400。 */
+ #if RTC_EN_LEAP_YEAR_DATES
+ ZTEST(rtc, leap_year_dates)
+ {
+	 rtc_begin(RTC_TEST_LEAP_YEAR_DATES);
+
+	 struct rtc_time s;
+	 struct rtc_time g = { 0 };
+	 int ret;
+
+	 /* (a) 2028-02-29：4 整除且非 100 整除 → 闰年，应被接受并可回读 */
+	 rtc_tm_fill(&s, 128, 1, 29, 12, 0, 0, 3);
+	 ret = rtc_set_time(rtc_dev, &s);
+	 RTC_TEST_EXPECT(ret == 0, "2028-02-29 set ret %d", ret);
+	 if (ret == 0) {
+		 /* 硬件载入 CUR 为 ms 级异步（rtc_ls_set_time 注释） */
+		 k_sleep(K_MSEC(5));
+		 ret = rtc_get_time(rtc_dev, &g);
+		 RTC_TEST_EXPECT(ret == 0, "2028-02-29 get ret %d", ret);
+		 RTC_TEST_TGT_INFO_VAR(rtc_test_name(), "y2028_get=%04d-%02d-%02d",
+					       g.tm_year + 1900, g.tm_mon + 1, g.tm_mday);
+		 RTC_TEST_EXPECT(g.tm_year == 128 && g.tm_mon == 1 && g.tm_mday == 29,
+				 "2028-02-29 readback %04d-%02d-%02d",
+				 g.tm_year + 1900, g.tm_mon + 1, g.tm_mday);
+	 }
+
+	 /* (b) 2000-02-29：400 整除 → 闰年（世纪闰年分支） */
+	 rtc_tm_fill(&s, 100, 1, 29, 12, 0, 0, 2);
+	 ret = rtc_set_time(rtc_dev, &s);
+	 RTC_TEST_EXPECT(ret == 0, "2000-02-29 set ret %d", ret);
+
+	 /* (c) 2100-02-29：100 整除但非 400 → 平年，必须拒绝 */
+	 rtc_tm_fill(&s, 200, 1, 29, 12, 0, 0, 1);
+	 ret = rtc_set_time(rtc_dev, &s);
+	 RTC_TEST_EXPECT(ret == -EINVAL, "2100-02-29 ret %d != -EINVAL", ret);
+
+	 /* (d) 2027-02-29：普通平年，必须拒绝 */
+	 rtc_tm_fill(&s, 127, 1, 29, 12, 0, 0, 1);
+	 ret = rtc_set_time(rtc_dev, &s);
+	 RTC_TEST_EXPECT(ret == -EINVAL, "2027-02-29 ret %d != -EINVAL", ret);
+
+	 rtc_finish();
+ }
+ #endif /* RTC_EN_LEAP_YEAR_DATES */
+
+ /* 12. alarm_get_supported_fields 契约 + alarm_set_callback 注册/注销分支。 */
+ #if RTC_EN_ALARM_SUPPORTED_FIELDS
+ ZTEST(rtc, alarm_supported_fields)
+ {
+	 rtc_begin(RTC_TEST_ALARM_SUPPORTED_FIELDS);
+
+	 const uint16_t expect = RTC_ALARM_TIME_MASK_SECOND |
+				 RTC_ALARM_TIME_MASK_MINUTE |
+				 RTC_ALARM_TIME_MASK_HOUR |
+				 RTC_ALARM_TIME_MASK_MONTHDAY |
+				 RTC_ALARM_TIME_MASK_MONTH |
+				 RTC_ALARM_TIME_MASK_YEAR;
+	 uint16_t mask = 0;
+	 int ret = rtc_alarm_get_supported_fields(rtc_dev, 0, &mask);
+
+	 RTC_TEST_EXPECT(ret == 0, "alarm_get_supported_fields ret %d", ret);
+	 RTC_TEST_TGT_INFO_VAR(rtc_test_name(), "mask=0x%04x,expect=0x%04x",
+			       mask, expect);
+	 RTC_TEST_EXPECT(mask == expect, "supported mask 0x%04x != 0x%04x",
+			 mask, expect);
+
+	 /* 注册与注销（NULL）都应成功返回 */
+	 RTC_TEST_EXPECT(rtc_alarm_set_callback(rtc_dev, 0, alarm_cb, NULL) == 0,
+			 "alarm_set_callback(cb) failed");
+	 RTC_TEST_EXPECT(rtc_alarm_set_callback(rtc_dev, 0, NULL, NULL) == 0,
+			 "alarm_set_callback(NULL) failed");
+
+	 /* 结束时保持"无回调"（本项自建自清，不影响其他用例） */
+	 rtc_alarm_set_callback(rtc_dev, 0, NULL, NULL);
+
+	 rtc_finish();
+ }
+ #endif /* RTC_EN_ALARM_SUPPORTED_FIELDS */
+
+ /* 13. rtc_ls_update_set_callback 桩：驱动在 CONFIG_RTC_UPDATE=y 时挂入该 API，
+  *     实现固定返回 -ENOTSUP（硬件无 update 事件）。 */
+ #if RTC_EN_UPDATE_CALLBACK_NOTSUP
+ ZTEST(rtc, update_callback_notsup)
+ {
+	 rtc_begin(RTC_TEST_UPDATE_CALLBACK_NOTSUP);
+
+ #if defined(CONFIG_RTC_UPDATE)
+	 int ret = rtc_update_set_callback(rtc_dev, NULL, NULL);
+
+	 RTC_TEST_TGT_INFO_VAR(rtc_test_name(), "ret=%d", ret);
+	 RTC_TEST_EXPECT(ret == -ENOTSUP, "update_set_callback ret %d != -ENOTSUP", ret);
+ #else
+	 /* 未开 CONFIG_RTC_UPDATE 时该 API 未编入 → 显式判失败，不留裸通过 */
+	 RTC_TEST_TGT_INFO_VAR(rtc_test_name(), "skipped=CONFIG_RTC_UPDATE_off");
+	 RTC_TEST_EXPECT(false, "CONFIG_RTC_UPDATE not enabled");
+ #endif
+
+	 rtc_finish();
+ }
+ #endif /* RTC_EN_UPDATE_CALLBACK_NOTSUP */
+
+ /* 14. 走时偏差（统计/性质）：以 k_uptime 为参考，测 10s 内 RTC 秒计数与
+  *     参考时钟的偏差，实测值经 INFO 上报（§13.4）；门限放宽到 ±1000ms
+  *     （晶振偏差为 ppm 级，不会越界，只拦"RTC 停走/乱跳"）。 */
+ #if RTC_EN_DRIFT_MEASURE
+ ZTEST(rtc, drift_measure)
+ {
+	 rtc_begin(RTC_TEST_DRIFT_MEASURE);
+
+	 struct rtc_time base;
+	 struct rtc_time t1 = { 0 };
+	 struct rtc_time t2 = { 0 };
+	 int64_t u1;
+	 int64_t u2;
+	 int ret;
+
+	 rtc_tm_fill(&base, 126, 6, 15, 12, 0, 0, 3);
+	 ret = rtc_set_time(rtc_dev, &base);
+	 RTC_TEST_EXPECT(ret == 0, "set base ret %d", ret);
+
+	 k_sleep(K_MSEC(100));   /* 等 CUR 载入 */
+	 ret = rtc_get_time(rtc_dev, &t1);
+	 u1 = k_uptime_get();
+	 RTC_TEST_EXPECT(ret == 0, "get#1 ret %d", ret);
+
+	 k_sleep(K_MSEC(10000));
+
+	 ret = rtc_get_time(rtc_dev, &t2);
+	 u2 = k_uptime_get();
+	 RTC_TEST_EXPECT(ret == 0, "get#2 ret %d", ret);
+
+	 if (ret == 0) {
+		 int64_t rtc_ms = (int64_t)(tm_total_sec(&t2) - tm_total_sec(&t1)) * 1000;
+		 int64_t up_ms = u2 - u1;
+		 int64_t drift_ms = rtc_ms - up_ms;
+
+		 RTC_TEST_TGT_INFO_VAR(rtc_test_name(),
+				       "rtc_ms=%lld,uptime_ms=%lld,drift_ms=%lld",
+				       (long long)rtc_ms, (long long)up_ms,
+				       (long long)drift_ms);
+		 RTC_TEST_EXPECT(up_ms > 9000 && up_ms < 12000,
+				 "uptime delta %lld ms out of (9000,12000)",
+				 (long long)up_ms);
+		 RTC_TEST_EXPECT(drift_ms >= -1000 && drift_ms <= 1000,
+				 "rtc drift %lld ms out of ±1000",
+				 (long long)drift_ms);
+	 }
+
+	 rtc_finish();
+ }
+ #endif /* RTC_EN_DRIFT_MEASURE */
+
  /* ========== 汇总 ========== */
  
  static void rtc_print_summary(void)

@@ -47,7 +47,7 @@
 | 缺 `tests/scripts/dump_results.py` | 从样板 `i3c_dualcore_test/tests/scripts/` 复制，改 TEST_NAMES |
 | 缺 `sys.path.insert(scripts/)` | `run_test.py` 顶部加 `sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))` |
 | 缺 `zt_init` / `zt_run_all` | `test_main()` 首行加 `zt_init("TGT")`，末尾加 `zt_run_all()` |
-| prj.conf 缺 `CONFIG_ZTEST_VERBOSE_OUTPUT=y` | 显式加上（§10.26：=n 则逐项输出被抑制） |
+| prj.conf 缺 `CONFIG_ZTEST_VERBOSE_OUTPUT=y` | 显式加上（`KNOWN_ISSUES.md` #26：=n 则逐项输出被抑制） |
 | CMakeLists 缺 `test_results.c` | 加 `target_sources(app PRIVATE .../common/test_results.c)` |
 | case 未在 cases.yaml 注册 | 在 `regression/cases.yaml` 对应位置加一行 |
 | run_test.py 归档只有 .json 没 .md | 抄已迁移 run_test.py 的 write_markdown_report() + 归档段写 _report.md，update_summary 报告路径改指 .md |

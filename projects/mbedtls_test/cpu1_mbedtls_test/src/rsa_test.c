@@ -1,11 +1,15 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * rsa 套件：RSA-2048（软件路径，Phase 1 所有 case 均不开 RSA OTBN ALT）。
+ * rsa 套件：RSA-2048/3072/4096 KAT。**路由随 case 变化**：case_otbn_rsa /
+ * case_otbn_all / case_all_on_max / case_otbn_sha256_hw_sm3 / case_thread_mix
+ * 开了 `CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT`（走 OTBN hook）；其余 case
+ * 走纯软件。注意：hook 失败会**静默回落软件**，KAT 相等不证明 OTBN 被使用 ⇒
+ * 由 `rsa2048_otbn_hit`（见文末）显式断言 OTBN 命中。
  *   - rsa2048_modexp：导入预置密钥对 → public modexp（encrypt）+ private
  *     modexp（decrypt）+ PKCS#1 v1.5 sign/verify + OpenSSL 黄金密文/签名 KAT
  *   - rsa2048_keygen：F4 / 2048 一档 keygen → check_privkey → sign/verify
- *     （3072/4096 Phase 2 再加；keygen 用 TRNG 真随机源）
+ *     （keygen 用 TRNG 真随机源）
  *
  * modexp KAT（expected/rsa_vectors.h，OpenSSL 生成，otbn_test 同源）保证
  * 判定向量化：decrypt(黄金密文)==黄金明文、sign(黄金摘要)==黄金签名。
@@ -186,7 +190,7 @@ ZTEST(rsa, rsa2048_keygen)
 }
 
 /* ---- modexp helper for fixed n/d/e vectors ---- */
-static int rsa_modexp_kat(int bits,
+static int rsa_modexp_kat(const char *ztest_name, int bits,
 			  const unsigned char *n, size_t n_len,
 			  const unsigned char *d, size_t d_len,
 			  const unsigned char *e, size_t e_len,
@@ -226,7 +230,7 @@ static int rsa_modexp_kat(int bits,
 					 "rsa%d kat_decrypt", bits);
 		}
 		us = (uint32_t)k_cyc_to_us_floor64(k_cycle_get_32() - t0);
-		ZT_INFO("rsa%d_modexp", "algo=rsa%d,stage=dec,us=%u", bits, us);
+		ZT_INFO(ztest_name, "algo=rsa%d,stage=dec,us=%u", bits, us);
 	}
 
 	if (ret == 0) {
@@ -256,7 +260,7 @@ static int rsa_modexp_kat(int bits,
 						       hash, sig);
 		}
 		us = (uint32_t)k_cyc_to_us_floor64(k_cycle_get_32() - t0);
-		ZT_INFO("rsa%d_modexp", "algo=rsa%d,stage=signverify,us=%u",
+		ZT_INFO(ztest_name, "algo=rsa%d,stage=signverify,us=%u",
 			bits, us);
 	}
 
@@ -267,7 +271,7 @@ static int rsa_modexp_kat(int bits,
 /* ---- RSA-3072 modexp KAT ---- */
 ZTEST(rsa, rsa3072_modexp)
 {
-	int ret = rsa_modexp_kat(3072,
+	int ret = rsa_modexp_kat("rsa3072_modexp", 3072,
 				 rsa3072_n, sizeof(rsa3072_n),
 				 rsa3072_d, sizeof(rsa3072_d),
 				 rsa3072_e, sizeof(rsa3072_e),
@@ -280,7 +284,7 @@ ZTEST(rsa, rsa3072_modexp)
 /* ---- RSA-4096 modexp KAT ---- */
 ZTEST(rsa, rsa4096_modexp)
 {
-	int ret = rsa_modexp_kat(4096,
+	int ret = rsa_modexp_kat("rsa4096_modexp", 4096,
 				 rsa4096_n, sizeof(rsa4096_n),
 				 rsa4096_d, sizeof(rsa4096_d),
 				 rsa4096_e, sizeof(rsa4096_e),
@@ -289,3 +293,82 @@ ZTEST(rsa, rsa4096_modexp)
 
 	zassert_equal(ret, 0, "rsa4096_modexp ret=%d", ret);
 }
+
+/* ==================================================================
+ * P1-2（2026-09-18）：OTBN RSA 通路命中的可观测性断言
+ *
+ * 背景（测试有效性审计 A 组 P1-2）：mbedtls 的 OTBN hook（rsa_alt.c）返回非 0
+ * 时，rsa.c 会**静默回落软件 modexp**——`mbedtls_rsa_public` 的 `rsa.c:1287-1293`
+ * 与 `mbedtls_rsa_private` 的 `:1518-1524` 都把 hook 的返回值**改写为 0** 后继续
+ * 走软件路径，无日志、无错误上抛。因此 rsa2048/3072/4096_modexp 的 KAT 逐字节
+ * 相等**不能证明 OTBN 被使用**（sw_baseline 与 case_otbn_rsa 的结果逐字节相同）。
+ *
+ * 本项给出两条可判 FAIL 的观测：
+ *   ① 直调非 static 的 `mbedtls_rsa_public_otbn()`（rsa.c:52 声明，zephyr.map 已
+ *      确认链接进固件）——返回 0 ⟺ OTBN 硬件完成了 2048-bit modexp 并读回结果
+ *      （rsa_alt.c:188-202 全链路成功才 return 0；尺寸不符/会话失败/执行失败
+ *       都返回非 0）。
+ *   ② `ls_otbn_imem_firmware_get()` == `OTBN_FIRMWARE_RSA_MODEXP`（8）——证明
+ *      rsa.c 的 hook 集成路径确实被走到（若回落到软件，IMEM 里仍是别的固件）。
+ *   ③ 公/私 modexp 回环（public → private 还原输入）——抓"返回 0 但结果错"。
+ *
+ * 仅在开启 RSA OTBN ALT 的 case 下编入（`MBEDTLS_RSA_OTBN_HOOK`，由
+ * `zephyr/modules/mbedtls/configs/config-linkedsemi-alt.h:22-24` 从
+ * `CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT` 派生）；纯软件 case 不编入。
+ * ================================================================== */
+#if defined(MBEDTLS_RSA_OTBN_HOOK)
+
+#include <ls_otbn_config.h>   /* ls_otbn_imem_firmware_get / OTBN_FIRMWARE_RSA_MODEXP */
+
+/* rsa.c:52-59 的非 static 全局符号（本文件不改 modules/**，仅在测试侧补原型） */
+extern int mbedtls_rsa_public_otbn(mbedtls_rsa_context *ctx,
+				   const unsigned char *input,
+				   unsigned char *output);
+
+ZTEST(rsa, rsa2048_otbn_hit)
+{
+	mbedtls_rsa_context rsa;
+	unsigned char in[256];
+	unsigned char out_otbn[256];
+	unsigned char back[256];
+	size_t back_len = 0;
+	int ret;
+
+	ret = rsa_import_test_key(&rsa);
+	zassert_equal(ret, 0, "import test key ret=%d", ret);
+	if (ret != 0) {
+		return;
+	}
+
+	for (int i = 0; i < (int)sizeof(in); i++) {
+		in[i] = (unsigned char)(i + 1);   /* 确定性输入，首字节非 0 ⇒ < n */
+	}
+	memset(out_otbn, 0, sizeof(out_otbn));
+
+	/* ① 直调 OTBN hook：返回 0 才算"OTBN 命中" */
+	ret = mbedtls_rsa_public_otbn(&rsa, in, out_otbn);
+	ZT_INFO("rsa2048_otbn_hit", "hook_ret=%d", ret);
+	zassert_equal(ret, 0,
+		"mbedtls_rsa_public_otbn ret=%d：OTBN RSA 通路不可用（尺寸/会话/执行失败），"
+		"本 case 的 RSA KAT 实为软件回落", ret);
+
+	/* ② 集成证据：IMEM 固件已切到 RSA_MODEXP（rsa.c 未走软件回落）。
+	 *    必须紧跟 RSA 调用读取——任何后续 OTBN hash/ECC 操作都会改写该状态。 */
+	otbn_firmware_t fw = ls_otbn_imem_firmware_get();
+
+	ZT_INFO("rsa2048_otbn_hit", "imem_firmware=%u", (unsigned)fw);
+	zassert_equal((unsigned)fw, (unsigned)OTBN_FIRMWARE_RSA_MODEXP,
+		"IMEM firmware=%u != OTBN_FIRMWARE_RSA_MODEXP(%u)：rsa.c 可能走了软件回落",
+		(unsigned)fw, (unsigned)OTBN_FIRMWARE_RSA_MODEXP);
+
+	/* ③ 正确性回环：public 后再 private 必须还原输入（抓"返回 0 但结果错"） */
+	ret = mbedtls_rsa_private(&rsa, mt_rng_lcg, NULL, out_otbn, back);
+	zassert_equal(ret, 0, "mbedtls_rsa_private ret=%d", ret);
+	if (ret == 0) {
+		back_len = sizeof(in);
+		mt_assert_mem_eq(back, in, back_len, "otbn public->private roundtrip");
+	}
+
+	mbedtls_rsa_free(&rsa);
+}
+#endif /* MBEDTLS_RSA_OTBN_HOOK */

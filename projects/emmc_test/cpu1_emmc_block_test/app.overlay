@@ -1,0 +1,24 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * eMMC 块层测试 overlay（cpu1，lsqsh_evb@1os/lsqsh/cpu1）。
+ *
+ * 硬件：板载 eMMC（非外插卡），7.28 GiB，8-bit，
+ *       sdhci1@40049000（别名 sdhc0），盘名 "SD2"（zephyr,mmc-disk）。
+ *       零外部接线。
+ *
+ * 说明：sdhci1 / mmc_disk1 已在板级 dts（lsqsh_evb_cpu1.dts:283-293）
+ * 置 status="okay" 且声明 disk-name = "SD2" / bus-width = <8>，
+ * 本 overlay 只需补 chosen 与公共 GPIO 片段。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）。
+ * GPIO toggle 仅 cpu1 使用，cpu2 侧固件不编入 gpio_toggle.c、不 include 本片段。 */
+#include "../../../common/gpio_toggle.dtsi"

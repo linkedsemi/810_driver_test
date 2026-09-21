@@ -1,0 +1,31 @@
+/*
+ * app_iwdg_cpu2_test - cpu1 (target) side overlay
+ *
+ * cpu1 是 2os 的引导核（负责释放 cpu2），本身不是被测对象：
+ * app_iwdg@0x40099000 属 cpu2 应用域，cpu1 板级 dts 不使能该节点
+ * （本文件**不得**使能 app_iwdg——cpu1 侧用例显式断言该节点非 okay）。
+ *
+ * 控制台用板级默认 uart1（PN04/PN03）。GPIO toggle 片段按复用收敛原则
+ * 引用公共层（SPEC_REFERENCE §6.1.9）。
+ */
+
+#include "../../../common/gpio_toggle.dtsi"
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+/* RLOG 单出口通道（SPEC_REFERENCE §6.9.3）：两核 token 汇成一路串口流。
+ * `channel` 单元格必须等于本节点在 `&mbox` 子节点中的**序号**（驱动按
+ * DT_INST_FOREACH_CHILD_STATUS_OKAY 的遍历序索引 FIFO）：板级已占 0..3，
+ * 本项目追加 ⇒ 序号 4。两核必须一致；宽 128 与本工程 RLOG 帧长（127B）匹配。 */
+&mbox {
+	rlog_channel: rlog_channel {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 4 128 8 128 8>;
+		mbox-names = "mbox";
+	};
+};

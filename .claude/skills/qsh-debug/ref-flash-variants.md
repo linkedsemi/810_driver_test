@@ -4,7 +4,7 @@
 > 烧录法；本文件是两个变体专题：单核工程单遍烧录（otbn_test/otbn_selftest）、
 > flash boot 破坏性复位测试（wdt_test）。用到对应工程时才需要本文件。
 
-## 1. 单核工程烧录（otbn_test/otbn_selftest，★ §10.23/§10.24）
+## 1. 单核工程烧录（otbn_test/otbn_selftest，★ `KNOWN_ISSUES.md` #23/#24）
 
 与双核两遍烧录法**不同**，单核工程用**单遍烧录**（dbg_run.py 已固化）：
 
@@ -24,7 +24,7 @@ python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提�
 - **写包提速（41x）**：load 前 `set remote memory-write-packet-size 16384` +
   `set remotewritesize 16384`，CKLink load 实测 1KB/s → 41KB/s（192KB 镜像
   ~190s → ~5s）；stub 不接受时回 `Remote failure`/`E22` 立即失败
-- **交互式流程（★ §10.25）**：reset+load 后等 "Transfer rate" 再 continue。
+- **交互式流程（★ `KNOWN_ISSUES.md` #25）**：reset+load 后等 "Transfer rate" 再 continue。
   一次性 -ex 链的 continue 在 load 刚完成瞬间发出，DebugServer 状态不佳时
   被静默丢弃 → CPU 停 halt 无 BOOT，detach 恢复运行（回归 3/3 复现）；
   dbg_run.py / run_test.py 均为交互式（0 失败）。手工 GDB 也照此
@@ -60,3 +60,15 @@ python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提�
 - **GDB 清 noinit 重启测试**：
   `riscv64-unknown-elf-nm elf | grep test_phase` 找地址 →
   gdb `set {int}0x<addr> = 0`（run_destructive.sh 用它清 test_phase/phase0_passed 后重跑）
+- **★ 采集窗口不得按"标称超时"设（2026-09-20）**：`WDT_TIMEOUT_MS 2000` 是驱动给的**标称**值，
+  sec_iwdg 实际复位延迟受 IWDT 时钟/复位域影响可达 **~34s**（实测 PHASE 0 后 33.9s 才重启，
+  另一样例 4.1s ⇒ 不确定）⇒ 18/20/25s 窗内"再无输出"**被误判成"没复位"**。
+  **判据优先取跨复位 `__noinit` 终态**（`test_phase==2`），只能看串口时窗取 **≥60s**。
+  同类：`app_iwdg_cpu2_test case_reset`、`case_pmu_iwdg_full_reset`（KNOWN_ISSUES #100）。
+- **★ 2os 上 cpu2 不会自己起（2026-09-20）**：**本板 bootrom 只引导 cpu1** —— 把 cpu2 镜像烧到
+  flash `0x08100000` **不等于**它会启动。cpu1 build 若 `# CONFIG_CPU2_IMAGE_HEADER is not set`，
+  `boot_cpu2()` 只 `app_cpu_dereset_by_addr(0x10000000)`、**不搬运镜像** ⇒ cpu2 RAM 里是上次残留
+  （GDB 读 `0x10000000` 非本次构建的 ELF）。**判别**：读 `0x10000000` 的 ELF magic + `e_entry`，
+  与本次 cpu2 产物 `objdump` 对照；**修法**：把 cpu2 镜像先 staging 进 RAM（GDB `restore` 或
+  cpu1 boot 搬运），或按 SPEC_REFERENCE §6.7.4 换 CPU1 构建变体。实例：`app_iwdg_cpu2_test case_reset`
+  的 `run_reset.sh`（文件头自述已列该未校准项）。见 KNOWN_ISSUES #102 / SPEC_REFERENCE §6.7.3。

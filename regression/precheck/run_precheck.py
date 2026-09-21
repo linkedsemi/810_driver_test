@@ -289,8 +289,16 @@ def _gdb_session_a() -> str:
 def _gdb_session_b_proc():
     """会话 B：reset → restore cpu2 bin @0x10000000 → set $pc=入口 → continue。
 
-    返回 gdb 子进程（continue 挂住等目标，由调用方在采集结束后干净退出：
-    interrupt → detach → quit；proc.kill 会留连接残留，§10.1）。
+    返回 `(gdb 子进程, 输出行列表)`（continue 挂住等目标，由调用方在采集结束后
+    干净退出：interrupt → detach → quit；proc.kill 会留连接残留，§10.1）。
+
+    ★ stdout 必须**从 Popen 那一刻起持续排空**（drain 线程），不能等收尾时才读：
+    `restore` 把 cpu2 镜像的分段进度整段打到 stdout，采集窗内无人读该管道 ⇒
+    Windows 匿名管道缓冲写满 ⇒ gdb 阻塞在写 stdout ⇒ DebugServer 会话停摆
+    目标被中途 halt（**KNOWN_ISSUES #97 的同一机制**；本轮同族第 4 处）。
+    ★ 收尾也不得用 `communicate()` 驱动：`communicate()` 会 close stdin（#101）
+    ⇒ 其后的 `\\x03` 发不出去 ⇒ interrupt+detach 退化成 kill ⇒ 连接残留（§10.1）。
+    故统一用「drain 线程 + `proc.wait()`」。
     """
     cmd = [GDB,
            "-ex", f"target remote {GDB_HOST}:{GDB_PORT}",
@@ -304,9 +312,20 @@ def _gdb_session_b_proc():
            "-ex", "set mem inaccessible-by-default on",
            "-ex", "set print pretty on",
            "-ex", "continue"]
-    return subprocess.Popen(cmd, stdin=subprocess.PIPE,
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
+    lines: List[str] = []
+
+    def _drain():
+        try:
+            for ln in proc.stdout:
+                lines.append(ln)
+        except Exception:                      # noqa: BLE001  管道关闭即自然结束
+            pass
+
+    threading.Thread(target=_drain, daemon=True).start()
+    return proc, lines
 
 
 def _reader(ser, lines, stop):
@@ -371,7 +390,7 @@ def gdb_flash_and_capture(timeout: int):
 
     print(f"[precheck] gdb 会话 B: restore {CONTROLLER_BIN.name} (cpu2) + continue, "
           f"capture {timeout}s", flush=True)
-    proc = _gdb_session_b_proc()
+    proc, out_b_lines = _gdb_session_b_proc()
     deadline = time.time() + timeout
 
     # 提前退出判据：若角色已知，双核 banner 齐了即停；否则至少跑满 timeout
@@ -388,8 +407,9 @@ def gdb_flash_and_capture(timeout: int):
             break
         time.sleep(0.2)
 
-    # 干净退出（interrupt → detach → quit），避免连接残留（§10.1）
-    out_b = ""
+    # 干净退出（interrupt → detach → quit），避免连接残留（§10.1）。
+    # ★ 用 proc.wait() 而不是 communicate()：communicate() 会 close stdin，
+    #   后续无 stdin 可用（#101）。输出由 drain 线程持续收集，见 _gdb_session_b_proc。
     if proc.poll() is None:
         try:
             proc.stdin.write("\x03")   # interrupt: 暂停目标
@@ -397,12 +417,11 @@ def gdb_flash_and_capture(timeout: int):
             time.sleep(1.0)
             proc.stdin.write("detach\nquit\n")
             proc.stdin.flush()
-            out_b, _ = proc.communicate(timeout=10)
+            proc.wait(timeout=10)
         except Exception:
             proc.kill()                # 兜底（正常路径不走到）
-            out_b, _ = proc.communicate()
-    else:
-        out_b, _ = proc.communicate()
+            proc.wait()
+    out_b = "".join(out_b_lines)
     load_ok = load_ok and "Restoring" in out_b
 
     for name in ports:

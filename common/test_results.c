@@ -13,6 +13,10 @@
 int8_t test_results[TR_MAX_COUNT];
 char test_reasons[TR_MAX_COUNT][TR_REASON_LEN];
 
+/* 有效性哨兵：默认 0（.bss）= "固件未初始化"；tr_init() 末尾置 TR_VALID_MAGIC。
+ * dump_results.py 见到非魔数（含旧 ELF 无此符号）即判内存结果无效。 */
+int8_t test_results_valid;
+
 void tr_init(uint8_t count)
 {
 	if (count > TR_MAX_COUNT) {
@@ -22,6 +26,8 @@ void tr_init(uint8_t count)
 		test_results[i] = TR_NOT_RUN;
 		test_reasons[i][0] = '\0';
 	}
+	/* 槽位全部填完后再置哨兵：半初始化状态不得判有效（dump 侧 fail-closed） */
+	test_results_valid = TR_VALID_MAGIC;
 }
 
 void tr_record(int idx, int result, const char *fmt, ...)

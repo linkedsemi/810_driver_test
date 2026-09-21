@@ -1,0 +1,80 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * spif_test overlay（单核 cpu1 安全域）：使能 SPIF1..4（SPI filter / monitor）
+ * 以及它们配对的 SPI master 控制器（spi1/spif1 用 spi3；spif3/spif4 用 spi4）。
+ *
+ * 外部条件（SPEC_REFERENCE §6.6）：
+ *   - SPIF 的 "in 侧" 管脚（滤波/监视模式的输入，以及 master 模式下 SPI 主控
+ *     的 CLK/IO0..3/CSN 输出）在板级连到 **spi3 / spi4 上挂的 flash**。
+ *     本工程 master 模式用例（`master_read_jedec_id`）走这条外部路径。
+ *   - 其余寄存器级用例零外部条件。
+ *
+ * ⚠️ 配对控制器必须让渡引脚（P4.7 裁定，依据参考资产 spi_master_communication /
+ *    spi_monitor_filter 的 overlay，二者在实机跑通）：
+ *    SPIF 切 master 模式走的是 **SPIF 自己的 `pinctrl-2`(master 态)** 管脚
+ *    （如 spif3 → PF09/PF05/PF03/PF11/PF07 + CSN PI00），而配对的 DW SPI 控制器
+ *    默认仍持板级 pinctrl（spi3 → PG14/PG15/PG03/PE01/PE00；spi4 → PQ00/PQ03…）。
+ *    两组管脚不同 ⇒ 不清空配对控制器的 `pinctrl-0` 就是"两个 owner 抢一组 net"，
+ *    真实总线由谁驱动不确定。故此处显式清空。
+ *    （同型问题见 gotchas G-P4-4「配对 I2C 控制器 pinctrl-noinit」/ G-P4.7-1。）
+ */
+
+#include "lsqsh_pinctrl_pfr_tpm.dtsi"
+
+/ {
+	aliases {
+		spif = &spif3;
+		spifmaster = &spif3;
+	};
+
+	chosen {
+		zephyr,console = &uart1;
+	};
+};
+
+&spif1 {
+	status = "okay";
+};
+
+&spif2 {
+	status = "okay";
+};
+
+&spif3 {
+	status = "okay";
+};
+
+&spif4 {
+	status = "okay";
+};
+
+/* CS 数组下标与 SPIF 的 cs-gpios 对应（SPIF3 → CS0 = GPIOI 0） */
+&spi3 {
+	cs-gpios = <&gpioi 8 GPIO_ACTIVE_LOW>,
+		    <&gpiog 2 GPIO_ACTIVE_LOW>;
+	/* 引脚让渡给 SPIF master 态（spif1/spif2 的 spi = <&spi3>） */
+	pinctrl-0 = <>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&spi4 {
+	cs-gpios = <&gpioi 0 GPIO_ACTIVE_LOW>,
+		    <&gpioq 0 GPIO_ACTIVE_LOW>;
+	/* 引脚让渡给 SPIF master 态（spif3/spif4 的 spi = <&spi4>） */
+	pinctrl-0 = <>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&dmac1 {
+	status = "okay";
+};
+
+&dmac2 {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛） */
+#include "../../../common/gpio_toggle.dtsi"

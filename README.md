@@ -21,7 +21,7 @@
 > cpu2 默认控制台为 uart4，本工程统一改用 uart5（`common/cpu2_console_uart5.overlay`）。
 > **单核工程固件一律用 `lsqsh_evb@1os/lsqsh/cpu1`（cpu1 入口 `0x10000000`）编译测试**，不用 2os 变体；
 > 分型判定与 board/入口矩阵见 `SPEC_REFERENCE.md` §6.1.10。
-> 详细 GDB/Flash 配置见 `CLAUDE.md` §0、§15。
+> 详细 GDB/Flash 配置见 `HARDWARE_SETUP.md`、`SPEC_REFERENCE.md` §6.7。
 
 ---
 
@@ -38,7 +38,7 @@ tasklist | grep -i csky
 tasklist | grep -i python
 ```
 
-任一项异常，先按 `CLAUDE.md` §2 / `qsh-debug` skill 排查。
+任一项异常，先按 `CLAUDE.md` §5 / `qsh-debug` skill 排查。
 
 ---
 
@@ -93,13 +93,25 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `mbedtls_test` | 单核 | 否 | 软件/硬件/OTBN 混合加密配置 |
 | `adc_temper_test` | 单核 | 否 | 片内 ADC 温感 (ch13) 读取 |
 | `dma_test` | 单核 | 否 | DMA (dmac1) M2M 传输 |
-| `flash_test` | 单核 | 否 | 片外 QSPI flash 读写擦 |
+| **`flash_test`** | 单核 | 否 | **`qspi1` 挂的引导 flash**（系统的一部分，4 MiB）—— 与 `qspi_flash_test` 是**两颗不同的 flash、两套驱动栈** |
 | `wdt_test` | 单核 | 否 | WDT (sec_iwdg) 非破坏性用例 |
 | `iopmp_test` | 单核 | 否 | IOPMP HAL 寄存器操作 |
 | `i2c_pure_test` | 双核 | **是** | I2C5（cpu2 master）↔ I2C6（cpu1 slave） |
 | `i3c_i2c_switch_test` | 双核 | **是** | I3C/I2C 动态切换 |
 | `i3c_dualcore_test` | 双核 | **是** | I3C 主从跨核通信 |
 | `mbox_test` | 双核 | 否 | cpu1↔cpu2 共享 SRAM 邮箱 |
+| **`app_iwdg_cpu2_test`** | **双核** | 否 | cpu2 侧 app_iwdg 复位与上报 |
+| **`spi_test`** | 单核 | **是** | `spi_ls.c`（`spi1`/`spi2`）；回环需 **`spi3`(PG13) ↔ `spi1`(PA03)** 跳线 |
+| **`spif_test`** | 单核 | 否 | PFR `spi_filter`；master 模式经 `spi4` 驱动**板上 flash** |
+| **`spid_test`** | 单核 | **是** | TPM SPI slave；用 SoC 自己的 SPI master 自环 |
+| **`i2cf_test`** | 单核 | **是** | PFR `i2c_filter`；**I2C4 ↔ I2CF4** + 外接 EEPROM |
+| **`eth_test`** | 单核 | 部分 | `case_mdio` **无需接线**；`case_link`/`arp_icmp`/`udp_echo` 需**网线接 PC** |
+| **`emmc_test`** | 单核 | 否 | **板载** eMMC（`sdhci1`，8-bit）；破坏性 —— 允许格式化整片 |
+| **`qspi_flash_test`** | 单核 | 否 | **`qspi2` 挂的板载 32 MiB NOR**（JEDEC `85 23 19`）；驱动 `qspi_ls.c` |
+| **`pwm_test`** | 单核 | 否 | 仅验接口可用性；**波形正确性需示波器确认**（报告已备注） |
+| ~~`io_probe_test`~~ | 单核 | 否 | **一次性诊断工具**（测板上有哪些 IO 互联），**不在回归套件内** |
+
+**注**：工程全貌与分层（L3 编排 / L1 采集 / L0 契约 / L2 处理）见 [FRAMEWORK_MAP.md](FRAMEWORK_MAP.md)。
 
 外部接线见下表。
 
@@ -110,6 +122,7 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `i3c_dualcore_test` | I3C5_SCL(PJ10) ↔ I3C6_SCL(PJ08)，I3C5_SDA(PJ11) ↔ I3C6_SDA(PJ09)，共地，两侧上拉 |
 | `i3c_i2c_switch_test` | 同 `i3c_dualcore_test` |
 | `i2c_pure_test` | 同 `i3c_dualcore_test`（I2C 模式复用） |
+| `eth_test` | `case_mdio`：**无**（片内 MDIO + 板载 RTL8211F PHY）<br>`case_link`：**板载 RJ45 ↔ PC 网口（网线）**，对端网口须上电且开启自协商 |
 
 ---
 
@@ -127,7 +140,7 @@ PROJECT EXECUTION SUCCESSFUL|FAILED
 ```
 
 - 单核：全项 `PASS` + 本核 `PROJECT EXECUTION SUCCESSFUL`。
-- 双核：同名项两核各自 `PASS` + 两核各自 `SUCCESSFUL`（`i3c_dualcore_test` 例外见 `CLAUDE.md` §6）。
+- 双核：同名项两核各自 `PASS` + 两核各自 `SUCCESSFUL`（`i3c_dualcore_test` 例外见 `SPEC_REFERENCE.md` §6.2.1）。
 
 失败时：
 
@@ -135,7 +148,7 @@ PROJECT EXECUTION SUCCESSFUL|FAILED
 2. 串口被刷掉/无输出时，用 `dump_results.py --case <name> --json` GDB 读内存兜底。
 3. 连接问题先走 `qsh-debug` skill。
 
-详细判据见 `CLAUDE.md` §6。
+详细判据见 `SPEC_REFERENCE.md` §6.2。
 
 ---
 
@@ -161,7 +174,7 @@ python scripts/flash_program.py --bin cpu1.bin@0x08000000 --bin cpu2.bin@0x08100
 ```
 
 - 与 DebugServer 互斥，烧 flash 前需退出 DebugServer。
-- 详细用法见 `CLAUDE.md` §15。
+- 详细用法见 `SPEC_REFERENCE.md` §6.7。
 
 ---
 

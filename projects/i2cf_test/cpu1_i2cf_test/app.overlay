@@ -1,0 +1,101 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * i2cf_test overlay（单核 cpu1 安全域）：使能 I2CF1..4 及其配对的 I2C1..4。
+ *
+ * ── 拓扑 ────────────────────────────────────────────────────────────────────
+ *
+ * 【DT 决定的（写死在生效 DT 里，无可协商）】
+ *     i2cf4.i2c      = <&i2c4>                                   ← 配对控制器
+ *     i2cf4.pinctrl-0 = <&i2cf4_sclo_pe02 &i2cf4_sdao_pb00
+ *                        &i2cf4_scli_pe03 &i2cf4_sdai_pb02>
+ *   即：i2cf4 的 **SCLO/SDAO(PE02/PB00) 与 i2c4 同引脚**（片内复用），
+ *   i2cf4 的 **SCLI/SDAI(PE03/PB02) 是独立引脚**。
+ *
+ *   ⇒ i2c4 是滤波器**输出/下游**侧的配对控制器（旁路 master：
+ *     `switch_to_master()` 让它顶替滤波器直驱该侧）。
+ *   ⇒ **i2c4 不可能是被滤波器门控的上游 master**（引脚互斥：filter 模式下
+ *     i2c4 的引脚归滤波器，master 模式下滤波器被旁路 —— 两个角色不可共存）。
+ *
+ * 【DT **不**决定的（纯外部跳线，仓库里查不到）】
+ *   谁被跳线接到 SCLI/SDAI(PE03/PB02) 当**上游 master**、以及 SCLO/SDAO 侧
+ *   挂的是外接 EEPROM 还是另一路被跳线过来的控制器 —— 这些只有硬件接线能定。
+ *
+ *   本工程把上游 master 做成 **DT alias `i2cfupstream`**（见下），
+ *   当前取值 = 用户最新口述链路「I2C2 > I2CF4 > I2C3」的左端。
+ *   ⚠️ **若实测发现上游 master 实际是别的实例，只改这一行 alias + 对应
+ *      `status="okay"` / `/delete-property/ pinctrl-noinit;` 即可**，
+ *      用例代码无需改动（全部通过 alias 取设备）。
+ *
+ * 外部条件（SPEC_REFERENCE §6.6）：
+ *   - `外部: 上游 master（alias i2cfupstream）跳线到 i2cf4.SCLI/SDAI(PE03/PB02)`
+ *   - `外部: i2cf4.SCLO/SDAO(PE02/PB00) 侧的外接从设备（地址 0x51 或 0x52，
+ *            **未经实测**）；仅 `filter_blocks_*` / `filter_passthrough_*` /
+ *            `master_eeprom_rw` 三项依赖它，其余用例零外部器件。
+ */
+
+#include "lsqsh_pinctrl_pfr_tpm.dtsi"
+
+/ {
+	aliases {
+		i2cfilter = &i2cf4;
+		/* 旁路 master：DT 固定（i2cf4.i2c），不可换 */
+		i2cmaster = &i2c4;
+		/* ↓ 上游 master：外部跳线决定，**唯一可换的一行**（见文件头注释） */
+		i2cfupstream = &i2c2;
+	};
+
+	chosen {
+		zephyr,console = &uart1;
+	};
+};
+
+&i2cf1 {
+	status = "okay";
+};
+
+&i2cf2 {
+	status = "okay";
+};
+
+&i2cf3 {
+	status = "okay";
+};
+
+&i2cf4 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+/*
+ * i2c2 ── 当前被指定为**上游 master**（跳线到 i2cf4 的 SCLI/SDAI）。
+ *
+ * 注意：i2c2 的 DT 配对滤波器是 i2cf2（PB04/PB01 同引脚）；本工程不使能 i2cf2，
+ * 且 PB04/PB01 与 i2cf4 的引脚无重叠，故 i2c2 可以自由用作上游 master。
+ *
+ * 模块 dtsi 给 i2c1..i2c4 一律标了 `pinctrl-noinit`（它们是各 i2cfN 的配对
+ * 控制器，引脚默认归滤波器所有）。i2c_ls 驱动只在 `!pinctrl_noinit` 时于 init
+ * 挂载 pinctrl（zephyr/drivers/i2c/i2c_ls.c:901），因此这里去掉该标记，让
+ * PB04/PB01 在初始化时即复用为 I2C 功能，否则上游 master 根本驱动不了总线
+ * （引脚停在 GPIO/模拟态，症状会伪装成"接线错/器件不在位"）。
+ */
+&i2c2 {
+	status = "okay";
+	/delete-property/ pinctrl-noinit;
+};
+
+&i2c3 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛） */
+#include "../../../common/gpio_toggle.dtsi"
+
+

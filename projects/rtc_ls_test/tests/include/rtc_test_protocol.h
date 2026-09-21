@@ -36,6 +36,12 @@ enum rtc_test_id {
 	RTC_TEST_CALIBRATION_NEGATIVE,
 	RTC_TEST_CALIBRATION_NULL_ARG,
 	RTC_TEST_CALENDAR_ROLLOVER,
+	/* ---- P1a 新增（追加在尾部，既有槽位索引不变） ---- */
+	RTC_TEST_INVALID_SET_ARGS_EXT,
+	RTC_TEST_LEAP_YEAR_DATES,
+	RTC_TEST_ALARM_SUPPORTED_FIELDS,
+	RTC_TEST_UPDATE_CALLBACK_NOTSUP,
+	RTC_TEST_DRIFT_MEASURE,
 	RTC_TEST_COUNT
 };
 
@@ -51,6 +57,11 @@ static const char *const rtc_test_names[RTC_TEST_COUNT] = {
 	[RTC_TEST_CALIBRATION_NEGATIVE] = "calibration_negative",
 	[RTC_TEST_CALIBRATION_NULL_ARG] = "calibration_null_arg",
 	[RTC_TEST_CALENDAR_ROLLOVER] = "calendar_rollover",
+	[RTC_TEST_INVALID_SET_ARGS_EXT] = "invalid_set_args_ext",
+	[RTC_TEST_LEAP_YEAR_DATES] = "leap_year_dates",
+	[RTC_TEST_ALARM_SUPPORTED_FIELDS] = "alarm_supported_fields",
+	[RTC_TEST_UPDATE_CALLBACK_NOTSUP] = "update_callback_notsup",
+	[RTC_TEST_DRIFT_MEASURE] = "drift_measure",
 };
 
 /* ---- token 宏（全部 printk，TGT 角色） ---- */

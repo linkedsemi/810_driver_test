@@ -13,6 +13,8 @@ agent 只负责启动；单 case FAIL 不阻断后续 case；预检 FAIL 才中�
 import argparse
 import datetime
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,6 +38,22 @@ TGT_UART  = os.environ.get("PRE_TGT_UART")  or None
 DEBUGSERVER_EXE = Path(r"C:\uaer_app\debug_server\bin\DebugServerConsole.exe")
 DEBUGSERVER_LOG = Path(tempfile.gettempdir()) / "debug_server.log"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
+
+
+def _line_buffered_stdout():
+    """stdout 逐行刷新（无人值守心跳的可见性，2026-09-20）。
+
+    重定向到文件/管道时 Python 默认**块缓冲**：进度行要等缓冲满（或进程退出）
+    才落盘 ⇒ 外部只能看到"卡住"，看不到进度（B2-fix 实测）。这里改成逐行刷新；
+    取不到 reconfigure（老 Python / 已包装流）时退回给关键进度 print 加
+    flush=True —— 两条路都保证进度可见。
+    """
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError, OSError):
+        pass
+
+
 GDB = "riscv64-unknown-elf-gdb"
 
 # 工程 → run 脚本（tests/scripts/ 下，调用前逐一存在性校验）
@@ -56,7 +74,198 @@ PROJECT_SCRIPT = {
     "wdt_test": "run_test.py",
     "iopmp_test": "run_test.py",
 }
-DUAL_CORE = {"i2c_pure_test", "i3c_i2c_switch_test", "i3c_dualcore_test", "mbox_test"}
+DUAL_CORE = {"i2c_pure_test", "i3c_i2c_switch_test", "i3c_dualcore_test", "mbox_test",
+             "app_iwdg_cpu2_test"}
+
+
+def _resolve_script(proj):
+    """工程名 → tests/ 下的 run 脚本名。
+
+    优先用 PROJECT_SCRIPT 显式映射（向后兼容、可覆盖默认）；未列名时按**目录约定**
+    发现 `<ROOT>/projects/<proj>/tests/run_test.py` —— 新工程只改 cases.yaml 即可接入，
+    不再因漏登记 PROJECT_SCRIPT 而**静默 SKIP**（SPEC_REFERENCE §6.4.5 同步清单第 5 步）。
+    两者都不命中返回 None（保持原 SKIP 记账行为）。
+    """
+    if proj in PROJECT_SCRIPT:
+        return PROJECT_SCRIPT[proj]
+    if (ROOT / "projects" / proj / "tests" / "run_test.py").exists():
+        return "run_test.py"
+    return None
+
+
+def _elf_has_sentinel(elf: Path) -> bool:
+    """ELF 是否含有效性哨兵符号 `test_results_valid`（F3，2026-09-18）。
+
+    缺它 = 该镜像在哨兵加入（2026-09-18）**之前**编译 ⇒ 内存兜底会 fail-closed
+    （dump_results.py 报 `no_sentinel_symbol`）。这种镜像**不得被 --skip-build 复用**，
+    否则整个 case 会翻成"看起来像内核挂死"的无效 FAIL（batch 级误报）。
+    """
+    if not elf.exists():
+        return False
+    nm = shutil.which("riscv64-unknown-elf-nm") or "riscv64-unknown-elf-nm"
+    try:
+        out = subprocess.run([nm, str(elf)], capture_output=True, text=True,
+                             timeout=60).stdout
+    except Exception:                                  # noqa: BLE001
+        return False
+    return any(len(ln.split()) >= 3 and ln.split()[-1] == "test_results_valid"
+               for ln in out.splitlines())
+
+
+def _case_elves(case_dir: Path):
+    """该 case 可能存在的 ELF 路径（单核 target / 双核 target+controller）。"""
+    build = case_dir / "build"
+    return [build / "target" / "zephyr" / "zephyr.elf",
+            build / "controller" / "zephyr" / "zephyr.elf"]
+
+
+# F5（2026-09-20）：构建输入后缀。判"产物是否新鲜"只看**会进构建**的输入；
+# `.py`（run_test.py / dbg_run.py 等 harness）**不计入** —— 它们不改变 ELF 内容，
+# 计入只会让每次 harness 改动都误触发全量重建，把 --skip-build 快路径彻底废掉。
+_BUILD_INPUT_EXTS = {
+    ".c", ".h", ".cpp", ".hpp", ".cc", ".S", ".s", ".asm",
+    ".ld", ".lds", ".overlay", ".conf", ".dtsi", ".dts", ".inc",
+    ".cmake", ".sh", ".txt",
+}
+
+
+# 构建定义里出现的**文件名**（与 shell 侧 test_common.sh::_common_build_inputs 同款
+# 判据）：用来判断 common/ 的某份文件是否真的链进本工程。
+_CM_REF_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.(?:c|h|S|s|ld|lds|inc)")
+
+
+def _common_build_inputs(proj_root: Path):
+    """本工程**真正链入**的 `common/` 构建输入（F5 修正 2，2026-09-20）。
+
+    common/ 是公共目录，但**并非每份都进每个工程**：`rlog.c` 只在
+    i3c_i2c_switch_test 的 CMakeLists 里显式 `target_sources` 编入。原先把整个
+    `common/**` 当输入 ⇒ `common/` 每新增一个文件（如 rlog.c/h）就把**所有**工程的
+    产物判成"陈旧"，全线误报 WARN —— 误报会让这条告警失去信号价值。
+    **宁可漏报也不误报。**
+
+    判据（与 `scripts/test_common.sh::_common_build_inputs` 逐字同构）：
+      * 引用集 = 本工程各 `*/CMakeLists.txt` ＋ `common/common_sources.cmake` 中
+        出现的 `.c/.h/.S/.s/.ld/.lds/.inc` 文件名（后者是所有工程的公共入口 ⇒
+        test_results / ztest_glue / gpio_toggle 恒被计入）；
+      * `common/<f>` 入选 ⇔ `f` 在引用集里，或同干 `.c` 在引用集里
+        （`test_results.h` ⇐ `test_results.c`）。
+    引用集为空 ⇒ 输出空（漏报可接受，误报不可）。
+    """
+    refs = set()
+    sources = sorted(proj_root.glob("*/CMakeLists.txt"))
+    cm = ROOT / "common" / "common_sources.cmake"
+    if cm.exists():
+        sources.append(cm)
+    for f in sources:
+        try:
+            txt = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        refs.update(m.group(0) for m in _CM_REF_RE.finditer(txt))
+    if not refs:
+        return
+    cdir = ROOT / "common"
+    if not cdir.is_dir():
+        return
+    for p in sorted(cdir.iterdir()):
+        if not p.is_file():
+            continue
+        if p.suffix not in _BUILD_INPUT_EXTS \
+                and p.suffix.lower() not in _BUILD_INPUT_EXTS:
+            continue
+        if p.name in refs or f"{p.stem}.c" in refs:
+            yield p
+
+
+def _iter_build_inputs(case_dir: Path):
+    """枚举该 case 的全部构建输入源码（保守取并集）。
+
+    范围：
+      - 工程全树 `projects/<proj>/**`（覆盖固件目录、`tests/include` 协议头、
+        以及本 case 的 `test.sh` 构建配方）
+      - **本工程真正链入的** `common/**`（见 `_common_build_inputs`；不是整个
+        `common/` —— 那会让公共目录的新增文件对全部工程误报陈旧）
+    排除 `build*/`、`tmp/`、`__pycache__`（生成物 / 临时目录 / 缓存）。
+
+    ★ 刻意**不含** `scripts/test_common.sh`：它是跨工程共享的构建配方，`west build
+    -p auto` 的 ninja 不跟踪它，把它算进输入会让"配方一改 ⇒ 全体产物永久判陈旧"
+    （ELF mtime 不会因此更新）—— 属于过度误伤。配方变更的正确处理是全量重建，
+    那是显式动作，不靠本门兜。
+    """
+    proj_root = case_dir.parents[1].resolve()
+    for dirpath, dirnames, filenames in os.walk(proj_root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in ("__pycache__", "tmp")
+                       and not d.startswith("build")]
+        for fn in filenames:
+            p = Path(dirpath) / fn
+            if p.suffix in _BUILD_INPUT_EXTS \
+                    or p.suffix.lower() in _BUILD_INPUT_EXTS:
+                yield p
+    yield from _common_build_inputs(proj_root)
+
+
+def _stale_build_inputs(case_dir: Path, elves):
+    """返回晚于该 case **最旧** ELF 的构建输入 `[(path, mtime), ...]`（新→旧）。
+
+    空列表 = 产物新鲜，可安全复用；非空 = 陈旧，**必须重建**。
+    `None` = 该 case 没有任何 ELF（调用方按"缺产物"处理）。
+    取"最旧 ELF"是刻意的保守：双核 target/controller 只要有一个落后于源码，
+    整个 case 就已不一致。
+    容差 1s：吸收文件系统时间戳粒度与同批写出的抖动，避免无意义的重建。
+    """
+    mt = [e.stat().st_mtime for e in elves if e.exists()]
+    if not mt:
+        return None
+    elf_m = min(mt)
+    out = []
+    for p in _iter_build_inputs(case_dir):
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > elf_m + 1.0:
+            out.append((p, m))
+    out.sort(key=lambda x: -x[1])
+    return out
+
+
+def can_skip_build(case_dir: Path):
+    """该 case 是否允许 `--skip-build`（复用现成 ELF）。
+
+    返回 `(ok, reason, detail)`：
+      - `(False, "no-sentinel", None)` ⇒ 缺哨兵符号（F3）——内存兜底会 fail-closed
+      - `(False, "stale", [(path, mtime), ...])` ⇒ 产物陈旧（F5）
+      - `(True,  "", None)`            ⇒ 哨兵齐全**且**产物不陈旧
+    两条判据都必须通过；任一不过即强制重建（保守：宁可多重建）。
+    """
+    elves = _case_elves(case_dir)
+    if not all(_elf_has_sentinel(e) for e in elves):
+        return False, "no-sentinel", None
+    stale = _stale_build_inputs(case_dir, elves)   # 此处 ELF 必存在 ⇒ 非 None
+    if stale:
+        return False, "stale", stale
+    return True, "", None
+
+
+def audit_stale_elves(cases):
+    """F3 预检：列出"已存在但缺哨兵符号"的旧镜像（它们会被重建，不是失败）。
+
+    目的 = **不让旧 ELF 静默变成 FAIL**：把这些 case 显式打出来，读者才知道
+    接下来那次构建是"必要的重建"而不是"环境抖动"。
+    """
+    stale = []
+    for c in cases:
+        for elf in _case_elves(c):
+            if elf.exists() and not _elf_has_sentinel(elf):
+                stale.append((c.parents[1].name, c.name, elf))
+    if stale:
+        print(f"[run_all] WARN 检出 {len(stale)} 个缺哨兵符号的旧镜像（将强制重建）：")
+        for proj, case, elf in stale:
+            print(f"[run_all]   {proj} {case}: {elf}")
+        print("[run_all]   原因：哨兵符号 test_results_valid 不存在 = 哨兵加入前"
+              "编译的旧构建；若被 --skip-build 复用，内存兜底会 fail-closed。")
+    return stale
 
 
 # ---- DebugServer 环境管理（run_precheck.py 既有实现照搬，§10.17 四步）----
@@ -187,10 +396,15 @@ def restart_debugserver() -> None:
 
 # ---- cases.yaml 读取与擦除编排 ----
 
-def read_cases():
-    """cases.yaml：YAML list，# 开头或空行忽略（# 屏蔽 = 跳过该 case）。"""
+def read_cases(cases_file: Path = None):
+    """cases.yaml：YAML list，# 开头或空行忽略（# 屏蔽 = 跳过该 case）。
+
+    `cases_file` 缺省 = 仓库里的 `regression/cases.yaml`；`--cases-file` 可指向
+    另一份同格式清单（子集验证 / 不同板况用），**格式与语义完全相同** —— 走的
+    仍然是 run_all 的完整路径（预检 → 擦除 → 逐 case 起 run_test.py → 汇总）。"""
+    cases_file = Path(cases_file) if cases_file else CASES_FILE
     out = []
-    text = CASES_FILE.read_text(encoding="utf-8")
+    text = cases_file.read_text(encoding="utf-8")
     # 简单 YAML list 解析：兼容无 PyYAML 环境
     # 支持：
     #   cases:
@@ -348,14 +562,18 @@ def cleanup_cklink():
 
 
 def main():
+    _line_buffered_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-precheck", action="store_true")
     ap.add_argument("--no-erase", action="store_true",
                     help="跳过 flash 全片擦除（默认全量前擦一次，用户 #6）")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--cases-file", default=None,
+                    help="改用另一份同格式 case 清单（默认 regression/cases.yaml）；"
+                         "用于子集验证——走的仍是完整 run_all 路径")
     args = ap.parse_args()
 
-    cases = read_cases()
+    cases = read_cases(args.cases_file)
     if not cases:
         print("[run_all] ERROR: cases.yaml 无启用 case")
         return 1
@@ -363,7 +581,7 @@ def main():
         print("[run_all] DRY-RUN，启用 case 与映射：")
         for c in cases:
             proj = c.parents[1].name
-            print(f"  {proj:<22} {c.name:<26} -> {PROJECT_SCRIPT.get(proj, '??')}")
+            print(f"  {proj:<22} {c.name:<26} -> {_resolve_script(proj) or '??'}")
         return 0
 
     # ★ try/finally：任何退出路径都释放 CKLink（§15 互斥）
@@ -388,9 +606,10 @@ def _run_all(args, cases):
         clean_gdb_residue()
 
     sys.path.insert(0, str(ROOT / "common"))
-    from report_dir import allocate_session_dir, update_summary
+    from report_dir import allocate_session_dir, read_summary, update_summary
+    import acquire as _acquire   # E-2：每 case 前复用同一份 DS 存活检查（不另写一套）
     session = allocate_session_dir(REPORTS_ROOT, datetime.date.today().isoformat())
-    print(f"[run_all] session: {session}")
+    print(f"[run_all] session: {session}", flush=True)
 
     if not args.no_precheck:
         print("[run_all] === 环境预检 ===")
@@ -427,16 +646,50 @@ def _run_all(args, cases):
 
     logs = session / "logs"
     logs.mkdir(exist_ok=True)
+    # F3 预检（2026-09-18）：先把"已存在但缺哨兵符号"的旧镜像显式打出来，
+    # 免得它们被误读成"环境抖动/内核挂死"（见 audit_stale_elves 注释）。
+    audit_stale_elves(cases)
     results = []
     built_projects = set()
     for c in cases:
         proj = c.parents[1].name
-        script = PROJECT_SCRIPT.get(proj)
+        script = _resolve_script(proj)
         script_path = c.parent / script if script else None
         if not script_path or not script_path.exists():
             print(f"[run_all] SKIP {c}: 无 run 脚本映射（{script}）")
             results.append((proj, c.name, "SKIP"))
             continue
+
+        # ★ E-2（2026-09-21）每 case 前置：DebugServer 存活检查。
+        #   此前只在**整批开始前**清一次残留（A4-①②），循环内不补刀 ⇒ 一次 CKLink
+        #   探针瞬时故障把 PC 侧 DebugServer 打挂（1025 无 LISTENING）之后，**每个**
+        #   后续 case 的 gdb 都只能报 `could not connect (error 138)`，被记成假 FAIL
+        #   —— 一次掉线放大成 N 个假 FAIL（实测 1 → 4）。
+        #   这里逐 case 补刀：不活 ⇒ 复用 acquire 的既有自愈链拉起；**起不来 ⇒
+        #   fail-closed 中止该 case**（不烧录、明确报错、结果记 ENV），绝不放它去
+        #   退化成 error 138 的假 FAIL。
+        ds_ok, ds_msg = _acquire.ensure_debugserver_alive(style="d3")
+        if not ds_ok:
+            print(f"[run_all] ERROR {proj} {c.name}: DebugServer 不可用 —— {ds_msg}"
+                  " ⇒ 中止该 case（fail-closed，不产出 error 138 假 FAIL）",
+                  file=sys.stderr, flush=True)
+            logf = logs / f"{proj}_{c.name}.log"
+            # 用 write_bytes + 显式 \n：与同目录其它日志（`open(logf,"wb")` 重定向
+            # 子进程输出）同为 LF；`write_text` 在 Windows 会把 LF 整份翻成 CRLF。
+            logf.write_bytes(
+                ("[run_all] E-2 fail-closed：DebugServer 每 case 前置检查失败\n"
+                 f"原因：{ds_msg}\n"
+                 "该 case 未被拉起（未烧录、未采集）⇒ 不计入 PASS/FAIL。\n"
+                 ).encode("utf-8"))
+            results.append((proj, c.name, "ENV"))
+            update_summary(session, f"{proj}_{c.name}", "ENV-ABORT", None, None,
+                           f"logs/{proj}_{c.name}.log")
+            continue
+
+        if ds_msg != _acquire.DS_HEALTHY_MSG:
+            # 只有**发生过自愈**才打日志：健康路径保持安静（否则 30 个 case 刷 30 行噪音）
+            print(f"[run_all] DS 前置检查 {proj} {c.name}: {ds_msg}", flush=True)
+
         cmd = [sys.executable, str(script_path), "--case", c.name,
                "--session-dir", str(session)]
         if proj in DUAL_CORE:
@@ -444,29 +697,68 @@ def _run_all(args, cases):
         else:
             cmd += ["--tgt-uart", TGT_UART]  # 单核工程也传 TGT 串口
         if proj == "i3c_dualcore_test" and proj in built_projects:
-            cmd.append("--skip-build")   # 同会话首个 i3c case 已全量构建，无混旧镜像
+            # F3（2026-09-18）修正：原注释"同会话首个 i3c case 已全量构建，无混旧
+            # 镜像"**说反了** —— 每个 case 有**自己**的 build/ 目录，首个 case 的
+            # 构建并不覆盖后续 case 的目录。所以这里必须按本 case 自己的 ELF 判断。
+            #
+            # 两道门（都要过才允许 --skip-build），判定见 can_skip_build()：
+            #   ① 缺哨兵符号 ⇒ 强制重建（内存兜底会 fail-closed）。
+            #   F5（2026-09-20）② **产物陈旧** ⇒ 强制重建。哨兵门只挡得住"哨兵加入
+            #   （2026-09-18）之前的老 ELF"，挡不住"**有哨兵但陈旧**"的 ELF：源码
+            #   改了、产物没重建时，烧进去的是**旧断言**，于是产生假 FAIL（旧期望
+            #   值）或假 PASS（旧弱断言）—— 两者都是静默的结果污染。
+            ok, reason, detail = can_skip_build(c)
+            if ok:
+                cmd.append("--skip-build")
+            elif reason == "no-sentinel":
+                print(f"[run_all] WARN {c.name}: ELF 缺哨兵符号或不存在 → 强制重建"
+                      "（F3：复用旧镜像会让内存兜底 fail-closed，集体误报 FAIL）",
+                      file=sys.stderr)
+            else:  # stale
+                def _ts(t):
+                    return datetime.datetime.fromtimestamp(t).strftime("%m-%d %H:%M:%S")
+                print(f"[run_all] WARN {c.name}: 构建产物陈旧（{len(detail)} 个输入"
+                      f"晚于 ELF）→ 强制重建（F5）")
+                for p, m in detail[:5]:
+                    print(f"[run_all]     - 输入更新于 {_ts(m)}: {p}")
+                if len(detail) > 5:
+                    print(f"[run_all]     ... 另有 {len(detail) - 5} 个更新的输入")
         built_projects.add(proj)
         logf = logs / f"{proj}_{c.name}.log"
-        print(f"[run_all] === {proj} {c.name} START（log: {logf.name}）===")
+        print(f"[run_all] === {proj} {c.name} START（log: {logf.name}）===", flush=True)
         with open(logf, "wb") as fh:
             rc = subprocess.call(cmd, stdout=fh, stderr=subprocess.STDOUT)
         status = "PASS" if rc == 0 else "FAIL"
         results.append((proj, c.name, status))
-        print(f"[run_all] === {proj} {c.name} DONE rc={rc} ===")
-        # ★ 失败 case 的 run_test.py 在归档前就 return 1，不会调 update_summary；
-        #   由 run_all 兜底写入 summary.md（report 指向日志，因为无报告目录）。
+        print(f"[run_all] === {proj} {c.name} DONE rc={rc} ===", flush=True)
+        # ★ 失败 case 的兜底写入（O-12 修正）：现代 run_test.py 在**归档之后**
+        #   才 `return 1` —— 即已写完整 report + 带真实 passed/total 的 summary 行
+        #   （其计数来自报告，非 0/0）。此时**绝不能**再用 0/0 覆盖（曾把
+        #   i3c_dualcore_test_case_mixed_400k_1m 的 34/35 覆盖成 0/0，误导判定）。
+        #   仅当该 case 未留下 summary 行（如 build 失败提前 return）才兜底写 0/0
+        #   并把链接指向日志。
         if status == "FAIL":
-            update_summary(session, f"{proj}_{c.name}", "FAIL", 0, 0,
-                           f"logs/{proj}_{c.name}.log")
+            key = f"{proj}_{c.name}"
+            if key in read_summary(session):
+                print(f"[run_all] {proj} {c.name}: summary 已由 run 脚本写入，保留不覆盖")
+            else:
+                # O-12 修正（2026-09-20）：拿不到计数时写**"未知"**，不得用 `0/0`
+                # 冒充 —— `0/0` 读起来像"测得 0 项、通过 0 项"，真相是"该 case
+                # 没留下可信计数"（run 脚本连报告都没写，如 build 失败提前 return）。
+                # 链接指向日志供排查；计数由 report_dir.update_summary 渲染成"未知"。
+                update_summary(session, key, "FAIL", None, None,
+                               f"logs/{proj}_{c.name}.log")
 
     print("\n[run_all] 汇总：")
-    n_fail = 0
+    n_fail = n_env = 0
     for proj, case, st in results:
         print(f"  {st:<5} {proj:<22} {case}")
         n_fail += (st == "FAIL")
-    n_pass = len(results) - n_fail
-    print(f"\n[run_all] 共 {len(results)} 个测试，通过 {n_pass} 个，失败 {n_fail} 个")
-    return 1 if n_fail else 0
+        n_env += (st == "ENV")     # E-2：环境中止单列，不与"测试失败"混算
+    n_pass = len(results) - n_fail - n_env
+    print(f"\n[run_all] 共 {len(results)} 个测试，通过 {n_pass} 个，失败 {n_fail} 个"
+          + (f"，环境中止 {n_env} 个" if n_env else ""))
+    return 1 if (n_fail or n_env) else 0
 
 
 if __name__ == "__main__":

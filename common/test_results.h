@@ -16,6 +16,9 @@
  *          -ex "x/<count>db &test_results" \
  *          -ex "x/s &test_reasons[<i>]" -ex "detach" -ex "quit"
  *      或直接跑 tests/scripts/dump_results.py（自动解析双核并打印对照表）。
+ *   ★ 兜底路径必须先读 test_results_valid 哨兵：未置位（或旧 ELF 无此符号）
+ *     = 固件没跑到 tr_init → 槽位是 .bss 零值（零值语义是 TR_PASS）→
+ *     必须报"结果无效"，禁止输出全 PASS。
  *
  * 为什么定长数组（TR_MAX_COUNT=64）而不是按枚举定长：
  *   定长让公共 .c 文件与具体工程零耦合——新工程只需 include 本头文件 +
@@ -46,6 +49,17 @@
 #define TR_NOT_RUN (-1)
 #define TR_PASS     0
 #define TR_FAIL     1
+
+/* 有效性哨兵（2026-09-18 加，堵"内存兜底假 PASS"）：
+ * test_results[] 在 .bss，C 运行时会把它清零 —— 而零值是 TR_PASS。
+ * 若固件**没跑到 tr_init()**（挂在内核初始化 / POST_KERNEL / 早期崩溃），
+ * 槽位就停在零值，dump_results.py 只按 <0/=0/>0 判读就会把"固件根本没跑"
+ * 读成"全 PASS" —— 恰好在最需要看到真相（固件静默）时报告最像好消息。
+ * 故：tr_init() 在**填完槽位之后**把 test_results_valid 置 TR_VALID_MAGIC，
+ * dump 脚本先查哨兵 —— 符号不存在或值不等 ⇒ 明确报"结果无效"。
+ * 用魔数（非 0 非 1）而非布尔量，避免与 .bss 零值和相邻槽位混淆。 */
+#define TR_VALID_MAGIC 0x5A   /* 哨兵期望值；tr_init() 未跑到则保持 .bss 的 0 */
+extern int8_t test_results_valid;
 
 /* 全局符号（.bss，链接地址=加载地址，GDB 直接读）——双核各自链接，
  * 各自 elf 里都叫这个名字，dump_results.py 按 elf 区分核。 */

@@ -55,6 +55,13 @@ mutex 死锁、信号量泄漏、中断安全违规、错误路径资源遗漏�
 **典型缺陷**：错误路径跳过 `xfer_reset`/`fifo_flush`，残留 FIFO 数据污染下一笔
 传输（代码示例见 [ref-defect-patterns.md](ref-defect-patterns.md) §2）。
 
+**已知真实案例**：`zephyr/drivers/spi/spi_ls.c` `spi_ls_configure()` 的三个错误返回
+（半双工 `:72-75`、TI 模式 `:77-80`、超频 `:118-121`）都在 `ctx->config = config`（`:140`）
+**之前**返回；`spi_ls_transceive()` 走 `goto done` → `spi_context_release(ctx, err)`，
+在 `CONFIG_SPI_ASYNC=n` 下解引用 `ctx->config->operation`，而**首次调用**时 `ctx->config == NULL`
+⇒ load access fault（固件进异常入口、整轮套件中断）。形态 = **"错误路径上的状态比正常路径少"**
+（错误早退 ↔ cleanup 却假设了正常路径已建立的状态）。登记：KNOWN_ISSUES #80。
+
 **检查方法**：
 ```
 对每个含硬件操作（寄存器写、DMA 配置、FIFO 操作）的函数：
@@ -140,6 +147,13 @@ err = hw_write(addr2, data2, len);
 if (err != 0) goto exit;
 ```
 
+**已知真实案例**：`zephyr/drivers/mdio/mdio_dwmac.c` 的 `mdio_dwmac_init()`（L274-276）里
+`mdio_dwmac_ethphy_reset(dev);` 的返回值被**直接丢弃** —— 属本表「硬件控制」类，判 **P0**。
+后果不止"漏一次检查"：PHY 复位失败被静默忽略后，后续 MDIO 读回垃圾值，测试把根因报成
+**"PHY ID 不符"** 这种**误导性归因**，而非"复位失败"——缺陷因此更难定位。
+教训：硬件控制类函数丢弃返回值，代价是**归因错误**。
+（登记：KNOWN_ISSUES #73 / OPEN_ITEMS O-16。）
+
 ### 1.6 错误码一致性（P2 建议查）
 
 **规则**：
@@ -166,6 +180,72 @@ grep 函数中所有 return 语句，检查错误码是否为负 errno
 3. 特别关注 configure 和 transfer 可能并发的场景
 ```
 
+### 1.8 过期/失效索引作写地址（P0 必查）
+
+**规则**：用索引变量计算写地址（`base + idx * stride`）或数组下标前，必须确认该索引在
+**写入点**仍是有效值。典型缺陷：搜索/分配函数在"未命中/失败"分支把索引置为**负 errno**
+（如 `-ENOSR`），随后**未提前 return** 仍用该索引算写地址 → 写到**表外/越界寄存器**
+（负偏移落在基址之前）。此类分支常被"传一个默认值"的自然调用命中。
+
+**检查方法**：
+```
+对每个 base + idx * stride（或数组下标）形式的写地址/写操作：
+  1. 回溯 idx 的来源与所有赋值点
+  2. 是否存在"未命中/失败"分支把 idx 置为负值或错误码
+  3. 该分支之后是否仍有使用 idx 的写操作（缺提前 return）→ P0
+```
+
+**已知真实案例**：`modules/lib/pfr_tpm` 的 `spif_add_cmd()`——"命令已在固定表"分支把 `idx`
+置为 `-ENOSR` 后仍用其算 `table_base + idx * 4`，写到**表外寄存器**（`spi_filter.c:884`；
+`spif_add_cmd_with_dummy` 同型 `:938`）。
+**数值（2026-09-18 复核更正）**：`-ENOSR = **-63**`（本项目 picolibc；**`-28` 是 `ENOSPC`**）
+⇒ 偏移 **-252 字节（-0xFC）**，spif1 落点 **`0x4006FF30`**（RTC 块 `0x4006FC00..0x4006FFFF`）。
+**该缺陷已于 2026-09-18 修复**（两处写址改用固定表循环变量 `off`，即 `table_base + off * 4`，
+`off ∈ [0,30)`）。登记：KNOWN_ISSUES #78。
+
+### 1.9 同步路径重复完成 → 信号量/令牌残留（P0 必查）
+
+**规则**：同一笔传输的完成动作（`*_complete()` / `k_sem_give` / 回调触发）在同一路径上
+**只能发生一次**。"先等完成、再无条件 complete" 会让每笔传输**残留一个令牌**，
+下一笔在错误时刻被唤醒（症状与"传输没开始/没结束"极像）。
+
+**检查方法**：
+```
+1. 找 wait_for_completion / k_sem_take 之后紧跟的 complete / k_sem_give 调用
+2. 确认二者不会同时出现在同一路径（同步模式下 complete 应由 ISR 独占）
+3. 与同类驱动对照（如 STM32-like SPI 的 spi_gd32.c）
+```
+
+**已知真实案例**：`spi_ls.c:359-360` —— `spi_ls_transceive()` 先
+`spi_context_wait_for_completion()`，紧接着又调 `spi_ls_complete()`（`:274` 无条件
+`k_sem_give(&ctx->sync)`，`spi_context.h:209-212`）⇒ 每完成一次传输残留 1 个令牌。
+主设备侧因 ISR 把线程饿死到传输结束而**表象正常**，只有**从设备**侧暴露
+（返回后 `SPE=0`，等不到主机时钟）。对照 `spi_gd32.c:400-406`：同步模式**不再** complete。
+登记：KNOWN_ISSUES #80。
+
+### 1.10 状态撤销写错位（"撤销位" ≠ "使能位"）→ 撤销静默失败（P1 必查）
+
+**规则**：凡"使能 → 撤销"成对存在的寄存器字段（输出使能、通道启动、时钟门、中断屏蔽、
+FIFO 刷新、DMA 复位），**撤销路径必须清与使能路径同一个位/半区**。写错位（尤其写到**只读
+回读位**）时撤销**静默无效**：调用返回成功、无日志、寄存器回读仍显示"已使能"，此后所有观测
+都被这个残留状态污染 —— 表现为"配置看起来全对，但状态不还原"。
+
+**检查方法**：
+```
+对每一对 enable/disable（或同一函数里的置位/清位分支）：
+  1. 取使能写入的表达式与撤销写入的表达式（grep 该寄存器名 / EN / OE / CTRL）
+  2. 逐位比较：掩码相同吗？半区（低位数据区 vs 高位控制区）相同吗？
+  3. 撤销位若落在"回读/状态"半区 ⇒ 写它无效，判 P1
+  4. 有"改状态 + 验证"接口时，检查调用方是否**读回验证**（无验证的还原 = 假设成功）
+```
+
+**已知真实案例**：`modules/hal/linkedsemi/soc/rv32/qsh/ls_soc_gpio.c` —— `io_cfg_output()` 置
+`1<<pin<<16`（高半区）、`io_cfg_disable_output()` 清 `1<<pin<<16`（高半区，正确），而
+`io_cfg_input()` 清的是 `1<<pin`（**低半区 = DIN 回读位**）⇒ `GPIO_OUTPUT → GPIO_INPUT` 从不
+撤销输出使能，pad 保持上次驱动的值；驱动回读 `gpio_lsqsh.c::gpio_ls_port_get_raw()` =
+`OE_DIN & 0xffff` 读的正是该 pad 值 ⇒ 一根脚一旦被驱动过就永远读到旧值，且无任何报错。
+只有走 `io_cfg_disable()`（→ `io_cfg_disable_output()`）才真撤销。登记：KNOWN_ISSUES #93。
+
 ## 2. 审核执行流程
 
 ### Step 1: 确定审核范围
@@ -187,6 +267,8 @@ grep 函数中所有 return 语句，检查错误码是否为负 errno
   7. 用 Grep 找到所有高风险函数调用（按 §1.5 类别特征匹配，非硬编码函数名）
   8. 检查每个调用的返回值是否被赋值并检查
   9. 特别关注 err |= 模式中前面调用返回值被静默丢弃的情况
+ 10. 对每对 enable/disable（或置位/清位分支），按 §1.10 逐位比对"撤销位 vs 使能位"
+     （掩码/半区是否一致；撤销是否落到只读回读位）
 ```
 
 ### Step 3: 生成审核报告

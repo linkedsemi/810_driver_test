@@ -22,3 +22,9 @@ target_include_directories(app PRIVATE
 
 # 包含公共源文件和配置（test_results.c, ztest_glue.c, gpio_toggle.c）
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
+
+# RLOG 单出口（SPEC_REFERENCE §6.9.3）：本核是**主核**（唯一串口出口），收下
+# 从核经 mbox 送来的 token 行并原样转发。只在本工程编入 —— 其余工程没有
+# `rlog_channel` 设备树节点，编进去会因 DT_NODELABEL 取不到而构建失败。
+target_sources(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/rlog.c)

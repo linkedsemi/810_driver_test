@@ -1,0 +1,51 @@
+# OPEN_ITEMS — 未决项台账
+
+> **用途**：把"需要用户拍板 / 待验证 / 已知残留"集中在一处，避免它们被后续任务的长报告淹没。
+>
+> **与 `gotchas/INBOX.md` 的分工**：INBOX = 坑沉淀（keeper 自动处理）；**本文件 = 决策与待验证项，只有用户能关闭**。
+
+## 纪律
+
+1. **一提出就登记**——不得只写在回复里。
+2. **每轮回复末尾附"未决清单"**（来源=本文件未决区），无论当轮在做什么。
+3. 解决后**移入"已结"并留痕，不删除**；ID 不复用。
+4. 已结项若"已修但未提交"，在备注里写明（提交动作归用户）。
+
+---
+
+## 未决（需要你）
+
+| ID | 提出 | 类型 | 事项 | 卡住谁 |
+|----|------|------|------|--------|
+| O-14 | 09-17 | 待拍板 | `scripts/test_common.sh` 的 `build_test`/`build_single_test` **无任意 CMake 变量透传口**（第 4 参只追加 `.conf`），需要 `-DXXX=y` 的 case 只能绕过直接 `west build`；且 `_detect_board` 按目录名关键词判板，`cpu1_<driver>_test` 之类不含关键词即 `ERROR: cannot detect board` | **2026-09-18 部分消解**：`qsh-test-gen` §1.5 已补 `EXTRA_CMAKE_ARGS`/`BOARD_OVERRIDE`/`CONF_MODE` 三开关的用法说明（据 G-P3-4）。**脚本本体是否改仍未定** |
+| **O-23** | 09-19 | **前半已定论 / 后半待定位** | 🟠 `i3c_i2c_switch_test` 的 `broadcast_nack_recovery` 记账矛盾：CTRL `TR_FAIL` + TGT `TR_NOT_RUN`；CTRL 串口同时出现 `FAILED` 与 `SUCCESSFUL`；RAM `ctrl_failed=1` 但 `ctrl_fail_reason=""`。<br>**前半（双标记）已定论（2026-09-19）**：app 自打 printk + ztest 强 `main()` 的 `end_report()`（固件不调 `ztest_run_all` ⇒ 那条恒 SUCCESSFUL 空跑），两段并列输出 ⇒ 判定不得只取最后一条（**R6 已 fail-closed 收掉**）。<br>**后半（reason 被抹）**：确定性痕迹（`test_reasons[10]` 原始字节 = `00×8` + `hole_should_nack`，写过又被清零）+ 静态矛盾（`ctrl_set_fail()` 必写 reason）；**卡点 = 当前 gdb 会话控 cpu1、无法对 cpu2 下断**（`BP@0x10000b2a` 75s 未命中）⇒ 需 cpu2 断点 / RAM 写监视手段。详见 `KNOWN_ISSUES #98` | 缺 cpu2 断点手段 |
+
+## 已结（留痕，不删）
+
+| ID | 提出 | 结论 | 备注 |
+|----|------|------|------|
+| **O-18** | 09-18 | ✅ **已结（2026-09-20）：根因已定证；且该工具为一次性诊断，后续不再需要** | `io_probe_test` 的 `pin_controllable` FAIL 根因**已用 `CONFIG_PSRAM=n` 对照实验定证**：`PSRAM=n` 时 `not_controlled=0 / baseline_low=0 / pin_controllable=**PASS**`；`PSRAM=y` 时 `not_controlled=2 / baseline_low=1 / FAIL`。寄存器交叉验证：三脚的 `IO_FUNC` Func3 位由 `0x10030000`/`0x10000080` 归零到 `0x00000000`。<br>**真因**：`PH12`/`PG07`/`PF12` 是 **PSRAM 的三根脚**（`psram.c:31,34-35` = `PSRAM_CLK`/`DAT3`/`CSN0`），`lsqsh_evb_cpu1_1os_defconfig:11` 设 `CONFIG_PSRAM=y`，`soc.c:639` 启动时 `psram_pin_init()` 把三脚配成 Func3 ⇒ GPIO 接管不了。（旁证：`zephyr.dts` 里看不到，因为那是**运行期** `pinmux_cfg_pin_func_alt`）<br>⚠️ 中途**父会话的判断"很可能与 O-17 同源"被实测证伪**（O-17 修完后三脚仍 not-controlled）。<br>**用户裁定（09-20）**：`io_probe_test` **只是一次性诊断工具**（当时不知道哪些 IO 接了），**后续不需要** ⇒ **三脚无需移出候选集、该工程不入 `cases.yaml`**。工具与其结论保留备查。`KNOWN_ISSUES #94` | HAL `io_cfg_input()` 已改清 **OE 高半区**（`ls_soc_gpio.c:333`，`OE_DIN &= ~(1<<pin<<16)`；原为 `&= ~(1<<pin)` = DIN 回读位，空动作）。**语义依据（非对称性推测）**：寄存器头 `reg_app_pmu_rg.h` 的 `IOE_DIN_OE` 字段 `DIN=0xffff@0 / OE=0xffff0000@16`；同库 leo 版 `io_cfg_input()` 只清 OE、从不写 DIN；硬件实验另证写 DIN 低位（置/清）**无任何效果**。**实机**（最小独立工程，仅改这一行）：修复前 `OUT_LOW→INPUT\|PULL_UP` 后 `OE_DIN=0x00100000`（OE=1、回读 0）；修复后 `0x00000010`（OE=0、DIN=1、`port_get_raw=1`）。`io_probe_test` 复跑 `links=22 / asym=0 / not_restored=0`；`trng_test` 15/15 PASS；`spi_test` 18 PASS + 1 FAIL(`link_probe`，既有) + 7 SKIP = 与基线一致。**代码未提交**（提交动作归用户） | O-18 的"很可能与 O-17 同源"**已证伪**：修复后 `PH12`/`PG07` 仍 not-controlled；疑真因 = `CONFIG_PSRAM=y` 的 `psram_pin_init()` 把三脚设成 Func3（`PH12`=DAT3、`PG07`=CSN0、`PF12`=CLK），待单独定论 |
+| **O-1** | 09-17 | ✅ **已裁定（2026-09-20）：只备注，先不管** | HAL `DMAC_BLOCK_TS_MASK` 声明 12 位、**实测 bit11 无效（11 位）**。**用户裁定：只在文档里备注，不修、不追。** 当前做法保持：DMA 掩码取值按**实测 11 位**（宁可拒绝也不静默丢数据）。<br>⚠️ 这是"**决定不追**"，**不是**"验证过没问题" —— 真正的位宽语义仍未经权威确认（`KNOWN_ISSUES` 已记） |
+| **O-19** | 09-18 | ✅ **已证伪（2026-09-19）** | ~~`emmc_test` 12 项里 10 项 SKIP、默认回归下 eMMC 通路实际上没被测~~ ⇒ **该陈述从未被观测到，已证伪**。实测反证三条：① 历史归档 `reports/2026-09-17-4\|5`、`2026-09-18-1` 均为 **`FAIL (8/10)`，10 项全部有结果、零 SKIP**（两项 FAIL = 修复前的 mutex 泄漏 + 那个**预期就该 FAIL** 的未修缺陷）；② 重建后 **SKIP 计数 = 0**；③ **`APP_CPU_SRST` 写 2 后回读 = `0x0`** ⇒ `is_app_cpu_running()` **恒假**、守卫本就不生效。<br>**⇒ `is_app_cpu_running()` 无需改、`emmc_test` 无需改。** 该错误是"读守卫源码推断 ⇒ 当成观测"（传播链：B 组审计 → F1 → 父会话 → 用户，**四跳无人核过历史报告**），已在 `KNOWN_ISSUES #75`、`emmc_test/tests/COVERAGE.md`、`tmp/fixF1/emmc_skip_investigation.md` 三处更正 |
+| O-11 | 09-17 | 已修（**用户裁定：三项全修**） | `iopmp_test` 三处：① **TC-5** 改**保存/恢复**：先读 `ADDR0`/`CFG0` 原值，写完回读后**整体写回**并断言恢复（并发现 `CFG0` 是**打包寄存器**，原"清理"写 0 会把条目 0~3 全清零）；② **TC-2** 末尾裸调用 → 改为**断言 no-op**（`config_enable(false)` 后仍使能）；③ **TC-4** 由空测试 → 补 3 条真断言（`addr2napot` 纯位运算契约 + `iopmp_config_region_napot` 非 2 幂/未对齐 → `-EINVAL` 且不写寄存器）。**结论纠正**：`config_enable(false)` 关不掉是 **HAL 软件限制**（`iopmp.h:89` 忽略参数），**不是**硬件限制 —— 实测 `MD_CFG` 可读写、直写 `0` 即可关（原 T1 注释"硬件使能后只能复位关闭"已修正）。**GDB 直读证据**：注入模拟保护后，修复前跑完 `CFG0/ADDR0`→0（被删），修复后跑完与 TC-5 前逐位一致。新增 `tests/COVERAGE.md`。**代码未提交**；`case_default` 5/5 PASS，串口直采 ≡ `dump_results.py --json`（逐项同名同序）。会话 `reports/2026-09-17-1` |
+| **O-20** | 09-19 | **已修（09-19，收尾波）** | `projects/eth_test/tests/run_test.py` 的 `print_report()` 改走 `common/judge.py::mem_state_line()` ⇒ **eth 控制台现在能看到 `mem_note`**，与其余 12–14 个工程同源。**离线 diff 证明**：新旧模块**只差那一处**，输入 `ok+note` / `ok 无 note` / `invalid` 三种，`.md` 与 `.json` 输出**逐字节不变** |
+| **O-21** | 09-19 | **已修（09-19，收尾波）** | `projects/emmc_test/cpu1_emmc_block_test/src/emmc_block_test.c` 三处注释改为与 O-19 证伪结论同口径（写 2 回读 `0x0` ⇒ 守卫不生效、通路可用）。**diff 证明**：改动**全部落在 `/* */` 注释块内**；去注释后代码行逐行相同（396 行），`zassert*` 42/42、`ZT_INFO` 12/12、`EMMC_SKIP_IF_GUARDED` 11/11 **零改动** |
+| **O-22** | 09-19 | **已修（09-19，全仓推广完成）** | 根因 = `dbg_run.py` capture 轮 **gdb stdout 管道未排空**（Windows 管道死锁 ⇒ 采集停摆 ⇒ 目标被 halt ⇒ 证据全丢，**RAM 里判定其实正确**）。<br>**已修 18 个工程**（diff 恒 18 行）+ **5 个判"不需改"并逐个给结构原因**（`readline` 全程排空 / `communicate` 自带 reader）。<br>**A/B 实机确证**：未修 = **0 个 token 行**；已修 = **4 个 token 行**；跑完按 sha 字节还原。<br>**更正撤回**：原"`i2c_wave` 远慢于 `~10.1s`"**撤回** —— 实测 **10.276 s**、源码注释正确（窗口从 gdb 启动起算的假象）。<br>`run_test.py` 的"不受影响"已从静态判断**升级为已验证-静态**（12 个工程均有 `_reader` 线程）。`KNOWN_ISSUES #97`/`#99` |
+| **O-12** | 09-17 | **已修（R7 波次，2026-09-20 用户裁定触发）** | `regression/run_all.py:546` 兜底行不再写 `0/0`，改传 `passed=None, total=None` ⇒ `common/report_dir.py::update_summary`（`:83`）渲染「**未知**」；`SUMMARY_RE` 同步支持未知（`(?:(\d+)/(\d+)|未知)`），`read_summary` 回读未知为 `None`、**旧数字行向后兼容**（读回 int）。触发来源 = R7 波次（2026-09-20，用户裁定） |
+| **O-13** | 09-17 | **已修（R7 波次，2026-09-20 用户裁定触发）** | `projects/i3c_i2c_switch_test/tests/include/i3c_i2c_switch_test_protocol.h` 的 token 宏从 `do {} while (0)` **恢复成真 `printk`**；`common/ztest_report.py::parse_ztest` 认领原生形态 `I3C_I2C_TEST:<CTRL\|TGT>:(PASS\|FAIL\|SKIP):<name>[:reason]`（该前缀全库唯一产出、对他族零匹配面）。修后该 case 走 token、不再命中批量判定 G9/D6。触发来源 = R7 波次（2026-09-20，用户裁定）。⚠️ **未实机验证** —— 仅宿主 gcc 宏展开 + `-fsyntax-only` 真实工具链通过 + 合成端到端回放 |
+| O-8 | 09-17 | 已结（用户裁定：忽略） | DW DMA ERR 路径无法在平台内注入。**用户裁定忽略** —— 理由："实际使用中调试时地址都有确认值，不会遇到测试的场景"。⚠️ 注意：**这是"判断该场景不会发生"，不是"验证了该路径没问题"** —— err 分支的 `state`/`CH_EN` 加固仍**只有代理实测 + 不变量论证**，无直接实测 |
+| O-10 | 09-17 | 已结（用户裁定） | ① **HAL 侧不修**：`iopmp_config_enable` 忽略 `enable` 参数（`iopmp.h:89`），用户裁定"应该没人用，先不关注"。② **Zephyr 侧已核：不受影响** —— `zephyr/soc/linkedsemi/lsqsh/iopmp.c` 的 `iopmp_init()` **全程只调用 `iopmp_config_enable(base, true)`**，从无 `false` 路径 ⇒ 该 HAL 缺陷波及不到 Zephyr。③ 附带死样例 `samples/iopmp/src/main.c` 调用全仓不存在的 `iopmp_config_region_napot4()`，未处理 |
+| O-2 | 09-17 | 已结（用户裁定） | `mbox_test/case_mbox_basic` 首轮 CTRL 侧零输出、根因未定位、两轮不复现。**用户裁定"就当通过"** —— 注意这是**决定不追**，不是"已证明没问题" |
+| O-4 | 09-17 | 已结（用户裁定） | 共享 DMA 改动的**套件外爆炸半径**。**用户裁定外设通路暂不测** —— 记为**已知盲区**（决定不验 ≠ 验过没问题）。部分经验证据：mbedtls 4 个 `CONFIG_DMA=y` 的 case 在两个驱动改动**之后**构建运行，26/25/36/38 全 PASS |
+| O-3 | 09-17 | 已修 | `mbedtls_sm4_ecb_encrypt/decrypt` 加**本层**入参校验（NULL ctx/in/out、`ilen==0`、非 16 整块 → `-EINVAL`，原来只有 release 下被编译掉的 `__ASSERT`）+ 扩既有 `sm4_bad_params` 覆盖（含合法入参仍返回 0 的正向断言）。ecb 硬件操作是**内联**的（不经 HAL），故未照抄 ctr 改法 | **代码未提交**；4 个含 SM4 HW 的 mbedtls case 全 PASS（26/26、25/25、36/36、38/38），sm4_ecb/cbc/ctr + sm4_bad_params 逐项 PASS。会话 `reports/2026-09-17-sm4A` |
+| O-5 | 09-17 | 已修 | `dw_dma_config()` 逐 block **显式**拒绝 `source_address == dest_address` → `-EINVAL`（不用 `-EBUSY`：那是状态错）。比较原始地址（在 `dw_dma_mask_address()` 之前），逐 block 覆盖描述符链，不限 M2M。用例同步：`channel_config_stop` 拆两个缓冲区保住生命周期主体；`self_copy` → `self_copy_rejected` 断言被拒；`block_too_large` 拆缓冲区以免被同址校验提前拦下 | **代码未提交**；`case_default` 4/4、`case_destructive` 6/6 PASS，mem 兜底与串口直采逐项一致。会话 `reports/2026-09-17-dmaC` |
+| O-9 | 09-17 | 已验证 | 代理实验**实测**：正常 TFR 完成后读 `DW_DMA_CHAN_EN`（`0x400413A0`）= **0x0** ⇒ 硬件在传输结束时自清 ChEn。ERR 路径仍**不可注入**（承 O-8）⇒ 其行为为**推论**。据此在 err 分支补显式 `dw_write(DW_DMA_CHAN_EN, DW_CHAN_MASK(channel))`，使硬件与软件状态机强制一致 | **依据 = 代理实测 + 不变量论证，非 ERR 路径直接实测**；对已禁用通道重复写是幂等的。**代码未提交** |
+| O-6 | 09-17 | 已修 | DW DMA 错误分支 `state` 不复位 → `dw_dma_isr()` err 循环内补 `state = DW_DMA_IDLE`（**代码未提交**） |
+| O-7 | 09-17 | 已完成 | `case_destructive` 入 `regression/cases.yaml`（29→30）+ 新建 `projects/dma_test/tests/COVERAGE.md`（**未提交**） |
+| O-a | 09-16 | 已修 | `flash_test` `ZTEST_SUITE` 槽位落错（teardown 落进 `after` 槽）→ 7/7 PASS |
+| O-b | 09-16 | 已修 | 6 工程入口地址硬编码 + 5 工程 `TEST_NAMES`/`TGT_BANNERS` 残留（假结果） |
+| O-c | 09-16 | 已修 | DW DMA 块长掩码漏划变体 + TFR 未解除屏蔽致状态机不复位（**代码未提交**，见 `projects/dma_test/tests/notes/`） |
+| O-d | 09-17 | 已修 | mbedtls SM4 包装层吞掉 HAL 错误码（**用户已提交** `9f511f8a0`） |
+| O-e | 09-17 | 已清 | `tmp/` 日志与一次性脚本；`regression/cases*.yaml.*` 与 `logs/*.done` 续跑残留 |
+| **O-15** | 09-17 | **已修（2026-09-18）** | 驱动换算缺陷**已修**：`wdt_iwdg_ls.c:48` 改为 `uint64_t ticks = (uint64_t)timeout_ms * frequency / 1000;`（饱和分支由**死代码变可达**）。`wdt_boundary_test.c` 3 项**已同步改判** `4294934/0/4294934 → 4294967263/0xFFFFFFFF/0xFFFFFFFF`，每处注释带"2026-09-18 驱动改为 64 位乘法后改判"留痕。`app_iwdg_cpu2_test` 已核实**无需改判**（只覆盖未回绕区）。<br>⚠️ **父会话更正档案一处错误**：饱和阈值是 **131072000 ms（≈36.4 h）**，**不是** 131072 ms（那是**回绕起点**，两者差 1000 倍）。已在 `DEFECT_ANALYSIS_2026-09-17.md §1.6` 就地更正。`KNOWN_ISSUES #74` 已同步为"已修"。**代码未提交** |
+| **O-16** | 09-17 | **已修（2026-09-18）** | `mdio_dwmac.c:276-281` 已接收返回值：`ret = mdio_dwmac_ethphy_reset(dev); if (ret) { DEV_ERR(dev, "PHY reset failed: %d", ret); goto done; }`（复用既有 `done:` 出口）。`eth_test/tests/COVERAGE.md` 已标 P0 已修；`eth_mdio_test.c:83` 的陈旧注释已同步。**未做失败注入实测**（无可用手段）⇒ "复位失败会传播"为**源码推导**，非实测。**代码未提交**；**是否上报上游仍未定** |

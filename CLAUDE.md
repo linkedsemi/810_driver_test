@@ -71,7 +71,9 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | 规则 | 说明 |
 |------|------|
 | **结果判定** | 单核=全项 PASS + SUCCESSFUL；双核=同名项双核 PASS |
-| **串口无输出兜底** | `python scripts/dump_results.py --json` GDB 读内存 |
+| **判定细节** | ⚠️ 各族口径**不完全相同**（24 份 `run_test.py` 分 **7 个**判定家族）。**改判定前先看 [SPEC_REFERENCE §6.2.4 判定规则总表（冻结）](SPEC_REFERENCE.md#624-判定规则总表冻结2026-09-18)** —— 那是唯一真源，含各族规则 + 「明确不做」清单 |
+| **改哪一层要验什么** | 框架已分层（L3 编排 / L1 采集 / L0 契约 / L2 处理）。**改前先看 [FRAMEWORK_MAP.md](FRAMEWORK_MAP.md)** —— 它给出"改哪层只需离线重放、改哪层必须上板"的判据 |
+| **串口无输出兜底** | `python scripts/dump_results.py --json` GDB 读内存。⚠️ 兜底有**独立性门**：`mem_state==ok` **且** 串口见 `ZT_BOOT`，缺一则 mem 项被剔除（防读到上一轮 RAM 残留） |
 | **log 门禁** | load 后几秒内无输出直接判失败 |
 
 ## 5. 常见现象速查
@@ -80,7 +82,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 |------|-----------|------|
 | DebugServer 起不来 | FlashProgrammer 占用 | `taskkill` → 重启 DS |
 | 串口只有 `\x00` | DS 连接残留 | gdb detach 一次 |
-| **load 后串口 0 行** | 崩溃 / `$pc` 设错（单核脚本硬编码 2os 入口）/ cpu2 未 hold / overlay 缺 chosen | **先抓 CPU 再查配置**（KNOWN_ISSUES #38/#39/#40/#56/#57） |
+| **load 后串口 0 行** | 崩溃 / `$pc` 设错（单核脚本硬编码 2os 入口）/ cpu2 未 hold / overlay 缺 chosen；**带 eth1 工程**另疑 PHY 复位自旋挂死 | **先抓 CPU 再查配置**（KNOWN_ISSUES #38/#39/#40/#56/#57/#71） |
 | load 极慢（~190s） | 写包参数未调大 | `set remote memory-write-packet-size 16384` |
 | PASS/FAIL 相反 | ANSI 重绘前缀 | `re.search()` 不锚点 |
 | 逐项 MISSING | verbose 输出关了 | `CONFIG_ZTEST_VERBOSE_OUTPUT=y` |

@@ -279,8 +279,16 @@ static int platform_sanity_check(void)
         failures++;
     }
 
+    /* snprintf 参考向量（run_test_snprintf 内含 6 组确定性用例）不匹配即计入
+     * failures。旧版只打 `[warn]`、不累加 ⇒ 该子检查**永不可 FAIL**
+     * （测试有效性审计 A 组 P1-1）。
+     * 选"恢复 failures++"而非"删除向量"的理由：本工程未定义
+     * MBEDTLS_PLATFORM_SNPRINTF_ALT（prj.conf 无对应 Kconfig），mbedtls_snprintf
+     * 即 libc（picolibc）的 snprintf；对常量入参，C99 语义下的返回/截断/NUL 保留
+     * 是确定的，参考向量在合规平台必然通过 ⇒ 不匹配属**真实平台缺陷**，应当 FAIL。 */
     if (run_test_snprintf() != 0) {
-        mbedtls_printf("  [warn] snprintf implementation is not configured (MBEDTLS_PLATFORM_SNPRINTF_ALT not set)\n");
+        mbedtls_printf("  SNPRINTF: failed (run_test_snprintf reference vector mismatch)\n");
+        failures++;
     }
 
     return failures;
@@ -525,6 +533,12 @@ ZTEST(st, st_mpi)
 #endif
 
 #if defined(MBEDTLS_RSA_C)
+/* st_rsa 用的是共享树 rsa.c 内硬编码的 RSA-1024（KEY_LEN 128）⇒ ctx->len==128，
+ * 而 OTBN hook 门限是 256/384/512 字节（rsa_alt.c:157-159），hook 直接
+ * return -ENOTSUP 后**静默回落软件** ⇒ 本项是**纯软件 RSA 基线**，对 OTBN
+ * 零覆盖（结果与关掉 CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT 逐字节相同）。
+ * 覆盖声明已相应降级，见 tests/COVERAGE.md「修订」节；OTBN RSA 通路的判别力
+ * 由 projects/mbedtls_test 的 rsa2048_otbn_hit 提供。 */
 ZTEST(st, st_rsa)
 {
     int ret = mbedtls_rsa_self_test(1);

@@ -71,3 +71,14 @@
 
 /* GPIO toggle 仅 cpu1 使用：本核(cpu2)不编入
  * gpio_toggle.c，故不使能 gpioa（板级 dts 已 okay）。 */
+
+/* RLOG 单出口通道（SPEC_REFERENCE §6.9.3）：本核（controller）收下 target 的
+ * token 行并**原样**打印，两核 token 汇成一路串口流。`channel` 单元格 = 本节点
+ * 在 `&mbox` 子节点中的序号（板级 0..3，本项目追加 ⇒ 4），必须与 target 侧一致。 */
+&mbox {
+	rlog_channel: rlog_channel {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 4 64 8 64 8>;
+		mbox-names = "mbox";
+	};
+};

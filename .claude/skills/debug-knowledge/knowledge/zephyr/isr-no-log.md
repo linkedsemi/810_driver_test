@@ -18,5 +18,5 @@ Zephyr log 后端可能阻塞：同步/UART shell 后端在 ISR 内打 `LOG_ERR`
 - 判定"ISR 内有日志"前，别忘检查被调函数（日志可能藏在 helper 里）。
 
 ## 关联
-- 810_driver_test CLAUDE.md §6.1.2（ISR 禁 LOG）/ §6.1.3（时序测量）
+- 810_driver_test `SPEC_REFERENCE.md` §6.1.2（ISR 禁 LOG）/ §6.1.3（时序测量）
 - embedded-debug（方法学）；实例工程：i3c_dualcore_test

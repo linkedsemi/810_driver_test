@@ -8,6 +8,7 @@
 #include "i3c_dualcore_test_protocol.h"
 #include "test_results.h"
 #include "ztest_glue.h"
+#include "rlog.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -188,8 +189,11 @@ static void ctrl_test_end(void)
 	CTRL_EXPECT(ret == 0, "CMD_TEST_END failed: %d", ret);
 
 	/* Give target time to run its ztest (target 在 'E' 到达时按 test_id
-	 * 跑对应套件并输出逐项 PASS/FAIL 行）。 */
+	 * 跑对应套件并输出逐项 PASS/FAIL 行）。单出口（§6.9.3）后这些行经
+	 * RLOG 送到本核 ⇒ 这里顺手 drain：既不攒到环满（环 24 行，每项 ~5 行），
+	 * 又给从核的 mbox FIFO 腾空间（从核发不进去会阻塞它的打印路径）。 */
 	k_sleep(K_MSEC(10));
+	(void)rlog_relay_drain();
 
 	/* 记账由 ztest_glue 在 zt_run_all 时按链接序批量完成（test_results.h
 	 * 公共模块，GDB 兜底数据源）；此处 zassert 失败会中止当前测试线程，
@@ -349,6 +353,13 @@ ZTEST(i3c_controller, read_32_direct)
 		ctrl_test_end();
 		return;
 	}
+
+	/* 显式下发读长度 32：此前本项不发 CMD_SET_READ_LEN，target 侧
+	 * last_read_len 停在 reset_test_state 的默认值 32，断言恒真（无判别力）。
+	 * 显式下发后 target 侧断言变为"命令字节送达并被解析"的真实协议点。 */
+	int slen = ctrl_set_read_len(32);
+
+	CTRL_EXPECT(slen == 0, "set read len 32 failed: %d", slen);
 
 	size_t actual = 0;
 	int ret = -EIO;
@@ -561,10 +572,14 @@ ZTEST(i3c_controller, write_indexed_read_16)
 /* WDR16 临界档跨 ZTEST 传递：write_delay_read_len 用它判定"续发不缩小窗口"
  * （ztest 按 enum 顺序注册，WDR16 先于 WDR_LEN 执行，本变量必然已赋值） */
 static int g_wdr16_critical_step = -1;
-/* 'Z' 协议自身基准：len=17 的临界档（同 4 字节写段 + 1 字节续发 ≈ 纯 prefill
- * 窗口；32/64 与之比较消除"写段字节数/读长度"的 master 侧固有偏移） */
+/* 'Z' 协议逐 len 临界档：仅作特征数据经 ZT_INFO 上报（非判定）。
+ * 原先两处注释声称存在"判定②：len64↔len32 互比（8 档容差）"，但这两个
+ * 变量在代码里**只赋值从不读取**（死变量）⇒ 该判定并不存在（COVERAGE 已
+ * 同步降级为 INFO 描述）。本轮不补判定：续发路径的临界档在无实测基线的
+ * 情况下无法定标阈值（len17 仅 1 字节续发，实测波动 120-146 档），凭猜
+ * 写死容差会造出假 FAIL。 */
 static int g_wdrlen17_critical_step = -1;
-static int g_wdrlen32_critical_step = -1;	/* 判定②基准（len64 与其比） */
+static int g_wdrlen32_critical_step = -1;
 
 ZTEST(i3c_controller, write_delay_read_16)
 {
@@ -832,6 +847,12 @@ ZTEST(i3c_controller, write_delay_read_len)
 			g_wdrlen32_critical_step = critical;
 		}
 	}
+
+	/* 跨 len 临界档特征数据上报（INFO，非判定；此前这两个变量是死变量）。
+	 * 报告"实际"列取用，判定以每 len 的"临界档存在 + pattern 前缀完整"为准。 */
+	ZT_INFO("write_delay_read_len", "critical17_step=%d,critical32_step=%d",
+		g_wdrlen17_critical_step, g_wdrlen32_critical_step);
+
 	ctrl_test_end();
 }
 #endif /* I3C_TEST_EN_WRITE_DELAY_READ_LEN */
@@ -1251,6 +1272,12 @@ ZTEST(i3c_controller, read_master_abort)
 		return;
 	}
 
+	/* 显式下发读长度 32：此前裸依赖 target 侧 reset_test_state 默认值，
+	 * target 断言恒真。下发后为真实协议点（命令字节送达并被解析）。 */
+	int slen = ctrl_set_read_len(32);
+
+	CTRL_EXPECT(slen == 0, "set read len 32 failed: %d", slen);
+
 	/* 主机主动截断读：target 预填 32 字节（reset_test_state 默认），
 	 * 主机只取 8 字节就结束帧（DCNT=8，硬件 T-bit 提前终止）。
 	 * 考察 target 侧 TERM 路径与 FIFO 残留恢复。 */
@@ -1367,6 +1394,12 @@ ZTEST(i3c_controller, multi_msg_4)
 		ctrl_test_end();
 		return;
 	}
+
+	/* 显式下发读长度 32：此前裸依赖 target 侧 reset_test_state 默认值，
+	 * target 断言恒真。下发后为真实协议点（命令字节送达并被解析）。 */
+	int slen = ctrl_set_read_len(32);
+
+	CTRL_EXPECT(slen == 0, "set read len 32 failed: %d", slen);
 
 	/* 四段复合帧：W + R8 + W + R8（中间无 STOP，全 RESTART 链）。
 	 * 考察 ctrl_msg_idx/status_msg_idx/xfer_msg_idx 三索引推进。
@@ -1826,6 +1859,13 @@ void test_main(void)
 {
 	zt_init("CTRL");
 
+	/* 单出口（SPEC_REFERENCE §6.9.3/§6.11.5）：本核是**主核**（唯一串口
+	 * 出口），收下从核经 RLOG 送来的 token 行，加**核信封**原样转发；采集
+	 * 侧按 `<前缀>:TGT:` 把它们分拣回 serial_TGT.log（§6.9.4）。信封加在
+	 * 中继侧 ⇒ 不占从核帧长（见 common/rlog.h）。 */
+	rlog_primary_init();
+	rlog_set_relay_envelope(I3C_TEST_PREFIX, "TGT");
+
 	zt_run_all();
 
 	/* 跨核收尾（恰一次、全项之后）：'P' 让 target 打印汇总表——target
@@ -1833,13 +1873,40 @@ void test_main(void)
 	 * 信号，只能由 controller 收尾时经总线通知。
 	 *
 	 * 时序论证（Task 8 Critical 1）：必须放在 zt_run_all() 返回之后——
-	 * 此时 32 项 ZTEST 已全部断言完（ztest KERNEL main 在 test_main()
+	 * 此时 35 项 ZTEST 已全部断言完（ztest KERNEL main 在 test_main()
 	 * 返回后才打印 PROJECT EXECUTION，故本命令严格晚于全部测试项）；
 	 * 绝不能放 ZTEST_SUITE after 钩子（本树 after 是 per-test 钩子，
 	 * ztest.c:708-710，会提前/多发 → target 端伪失败）。
 	 * PROJECT EXECUTION = 双核完成判定标记（boot_seen 门控，§10.30）。 */
 	(void)ctrl_send_cmd((const uint8_t[]){ CMD_PRINT_SUMMARY }, 1);
 	k_sleep(K_MSEC(20));
+
+	/* 单出口收尾（§6.9.3）：从核最后一项的 token 可能还在路上 ⇒ 等它**安静**
+	 * 下来再打本核收尾（固定 sleep 会在慢路径上截断末项）。判据 = 连续
+	 * RLOG_QUIET_MS 没有新行；总上限 RLOG_TX_TIMEOUT_MS。
+	 * fail-closed：一个从核帧都没收到 = 中继根本没工作 —— 显式打出，从核逐项
+	 * 随后全缺证据 ⇒ 判定侧 FAIL（绝不把"没收到"当"通过"）。 */
+	int64_t deadline = k_uptime_get() + RLOG_TX_TIMEOUT_MS;
+	int64_t last_seen = k_uptime_get();
+
+	(void)rlog_relay_drain();
+	while (k_uptime_get() < deadline) {
+		if (rlog_relay_drain() > 0) {
+			last_seen = k_uptime_get();
+		} else if (k_uptime_get() - last_seen >= RLOG_QUIET_MS) {
+			break;
+		}
+		k_sleep(K_MSEC(5));
+	}
+	(void)rlog_relay_drain();
+
+	if (rlog_secondary_silent()) {
+		printk("[CTRL] secondary relay SILENT: 未收到任何从核帧 "
+		       "⇒ 从核逐项将全部缺证据（判定 FAIL）\n");
+	} else if (rlog_lost() != 0U) {
+		printk("[CTRL] secondary relay incomplete: lost=%u\n",
+		       (unsigned)rlog_lost());
+	}
 
 	ctrl_print_summary();
 }

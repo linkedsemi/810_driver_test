@@ -46,7 +46,7 @@ debug-knowledge/
 
 **触发时机**：定位闭环，且同时满足——
 ① **非一次性**（换板/换项目/换驱动还会踩）；② **非纯环境/工具链坑**（那些进
-`embedded-debug` §6 或工程 CLAUDE.md §10）；③ 属某域且该域还没有等价条目。
+`embedded-debug` §6 或工程 `KNOWN_ISSUES.md`）；③ 属某域且该域还没有等价条目。
 
 **流程**：
 1. 选域目录（不确定归哪 → `common/`，宁宽勿散）
@@ -71,7 +71,7 @@ debug-knowledge/
 | `embedded-debug` | 方法学（怎么想）+ 通用环境/工具链坑速查 |
 | `debug-knowledge`（本 skill） | 各领域可复用调试招式（按域自动填充） |
 | `skill-registry` | 外部插件/MCP 能力目录 |
-| qsh-* / 工程 CLAUDE.md §10 | QSH/810 工程级坑 |
+| qsh-* 速查 / 工程 `KNOWN_ISSUES.md` | QSH/810 工程级坑 |
 | ~~顶层 `DEBUG_ISSUES_QUICKREF.md`~~（2026-09-02 已删） | 内容并入 `knowledge/common/` 笔记（电气/总线等），方法学 M1 在 embedded-debug §3.3；跨工程速查由本库按域装载承接 |
 
 ## → 下一步（闭环链）

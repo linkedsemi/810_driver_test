@@ -65,6 +65,17 @@ SINGLE_ROM_START="${SINGLE_ROM_START:-0x10000000}"
 # XIP flash 固化（CLAUDE.md §15）：地址信息集中在此掌握，test.sh 直接引用
 CPU1_XIP_ADDR="${CPU1_XIP_ADDR:-0x08000000}"
 CPU2_XIP_ADDR="${CPU2_XIP_ADDR:-0x08100000}"
+# ★ 公共构建注入点（默认全空 ⇒ 既有调用方走**逐字节相同**的代码路径；KNOWN_ISSUES #70/#76）：
+#   EXTRA_CMAKE_ARGS  追加到 `west build` 的任意 -D<var>=<val>（空格分隔，可多个）；
+#                     也可由 build_* 的第 6 个位置参数按次传入（两者叠加）。
+#   BOARD_OVERRIDE    强制 build 的 board，跳过 _detect_board 的目录名关键词判板
+#                     （如 src 目录名不含 controller/target 关键词的 cpu1_<driver>_test，#70）。
+#   CONF_MODE         append（默认）= <src>/prj.conf 前拼第 4 参 conf（原行为）；
+#                     replace = **只用**第 4 参 conf，不拼上游 prj.conf（复用上游
+#                     test/sample 需整体替换其 prj.conf 时用，#76）。
+EXTRA_CMAKE_ARGS="${EXTRA_CMAKE_ARGS:-}"
+BOARD_OVERRIDE="${BOARD_OVERRIDE:-}"
+CONF_MODE="${CONF_MODE:-append}"
 # FP_EXE/FP_ALGO 默认值依赖 win_path()（第 77 行），定义在其后（见下）
 
 DEFAULT_CONTROLLER_SRC="${I3C_TEST_ROOT}/cpu0_i3c_controller"
@@ -165,9 +176,14 @@ build_test() {
     local overlay="$3"
     local conf="$4"
     local build_dir="$5"
+    local extra_cmake="${6:-}"          # 可选：额外 CMake 变量（空格分隔，追加到 west build）
 
     local board
-    board="$(_detect_board "${src_dir}")" || return 1
+    if [ -n "${BOARD_OVERRIDE}" ]; then
+        board="${BOARD_OVERRIDE}"       # 显式兜底，跳过目录名关键词判板（#70）
+    else
+        board="$(_detect_board "${src_dir}")" || return 1
+    fi
 
     local extra_args=()
     if [ -n "${overlay}" ]; then
@@ -175,7 +191,10 @@ build_test() {
     fi
     if [ -n "${conf}" ]; then
         local base_conf="${src_dir}/prj.conf"
-        if [ -f "${base_conf}" ]; then
+        if [ "${CONF_MODE}" = "replace" ]; then
+            # #76：整体替换（只用本参数 conf，不前拼 <src>/prj.conf）
+            extra_args+=("-DCONF_FILE=$(win_path "${conf}")")
+        elif [ -f "${base_conf}" ]; then
             base_conf="$(win_path "$(realpath "${base_conf}")")"
             conf="$(win_path "${conf}")"
             extra_args+=("-DCONF_FILE=${base_conf};${conf}")
@@ -183,6 +202,13 @@ build_test() {
             extra_args+=("-DCONF_FILE=${conf}")
         fi
     fi
+    # ★ 额外 CMake 变量透传（#70）：env EXTRA_CMAKE_ARGS + 第 6 参，空格分隔。
+    #   两者皆空时 for 列表为空 ⇒ **不追加任何元素**，既有调用路径逐字节不变。
+    local _tok
+    # shellcheck disable=SC2086
+    for _tok in ${EXTRA_CMAKE_ARGS} ${extra_cmake}; do
+        extra_args+=("${_tok}")
+    done
 
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
     west build -p always \
@@ -237,6 +263,75 @@ print_launch_json() {
 EOF
 }
 
+# F5（2026-09-20）产物新鲜度自检：把"参考产物"逐个与所有构建输入源码比 mtime；
+# 有源码更新 ⇒ 这份产物是旧源码编出来的，可能在跑旧断言（假 FAIL 或假 PASS）。
+# **只告警不阻断**：阻断交给 regression/run_all.py 的 --skip-build 门（那里能直接
+# 转成"强制重建"）。这里是给 `./test.sh -r` / dbg 这类绕过 run_all 的入口兜底，
+# 让"复用陈旧产物"不再静默。
+# 输入集 = 工程全树 + **本工程真正链入的** common/ 文件，但**排除**
+# scripts/test_common.sh：它是构建配方，`west build -p auto` 的 ninja 不跟踪它，
+# 一旦改了就永远清不掉这条告警（ELF mtime 不会因此更新）。配方变更由 run_all 的
+# 门负责强制重建。
+#
+# common/ 的收窄（2026-09-20 修正）：common/ 是**公共目录**，但并非每份都进每个
+# 工程 —— `rlog.c` 只在 i3c_i2c_switch_test 的 CMakeLists 里显式编入。原先把整个
+# common/ 当输入 ⇒ common/ 每新增一个文件就让**所有**工程的产物判"陈旧"，全部误报
+# WARN；告警被淹没后就不再有任何信号价值（**宁可漏报也不误报**）。
+# 判据见 _common_build_inputs()。
+# Usage: warn_if_build_stale <ref_path> [<ref_path> ...]
+_common_build_inputs() {
+    # 输出本工程会链入的 common/ 文件（每行一个绝对路径，无空格）。
+    # 判据：文件基名出现在 (本工程各 CMakeLists) 或 (common_sources.cmake 的源
+    # 列表) —— 后者是所有工程的公共入口，故 test_results/ztest_glue/gpio_toggle
+    # 恒被计入。头文件按**同干 .c** 被引用即算（test_results.h ⇐ test_results.c）。
+    # 取不到引用集时输出为空 = 不把任何 common/ 文件当输入（漏报可接受，误报不可）。
+    local refs f base stem
+    refs="$(grep -rhoE '[A-Za-z0-9_][A-Za-z0-9_.-]*\.(c|h|S|s|ld|lds|inc)' \
+        ${I3C_TEST_ROOT}/*/CMakeLists.txt \
+        "${WORKSPACE_ROOT}/common/common_sources.cmake" 2>/dev/null | sort -u)"
+    [ -z "${refs}" ] && return 0
+    for f in "${WORKSPACE_ROOT}/common"/*; do
+        [ -f "${f}" ] || continue
+        base="$(basename "${f}")"
+        stem="${base%.*}"
+        case "${base}" in
+            *.c|*.h|*.S|*.s|*.ld|*.lds|*.overlay|*.conf|*.dtsi|*.dts|*.inc|*.cmake|*.sh|CMakeLists.txt) ;;
+            *) continue ;;
+        esac
+        if printf '%s\n' "${refs}" | grep -qxF "${base}" \
+           || printf '%s\n' "${refs}" | grep -qxF "${stem}.c" \
+           || printf '%s\n' "${refs}" | grep -qxF "${stem}.cmake"; then
+            printf '%s\n' "${f}"
+        fi
+    done
+}
+
+warn_if_build_stale() {
+    local ref newer common_inputs
+    common_inputs="$(_common_build_inputs)"
+    for ref in "$@"; do
+        [ -f "${ref}" ] || continue
+        newer="$( { find "${I3C_TEST_ROOT}" -type f \
+            \( -name '*.c' -o -name '*.h' -o -name '*.cc' -o -name '*.hpp' \
+               -o -name '*.S' -o -name '*.s' -o -name '*.ld' -o -name '*.lds' \
+               -o -name '*.overlay' -o -name '*.conf' -o -name '*.dtsi' \
+               -o -name '*.dts' -o -name '*.inc' -o -name '*.cmake' \
+               -o -name 'CMakeLists.txt' -o -name '*.sh' \) \
+            -newer "${ref}" -not -path '*/build/*' -not -path '*/tmp/*' \
+            2>/dev/null
+          if [ -n "${common_inputs}" ]; then
+            find ${common_inputs} -newer "${ref}" 2>/dev/null
+          fi ; } | head -5)"
+        if [ -n "${newer}" ]; then
+            echo -e "${COLOR_YELLOW}[WARN] 产物 $(basename "${ref}") 早于下列输入源码，" \
+                "可能在烧旧断言（假 FAIL / 假 PASS）：${COLOR_RESET}" >&2
+            echo "${newer}" >&2
+            echo -e "${COLOR_YELLOW}[WARN] 请先 ./test.sh 重建再跑；" \
+                "并核对是否走了 --skip-build 快路径。${COLOR_RESET}" >&2
+        fi
+    done
+}
+
 # Load both images into RAM and continue execution.
 # Usage: load_and_run <test_name> <target_elf> <controller_bin>
 load_and_run() {
@@ -252,6 +347,8 @@ load_and_run() {
         echo "ERROR: controller bin not found: ${controller_bin}"
         return 1
     fi
+
+    warn_if_build_stale "${target_elf}" "${controller_bin}"
 
     echo "[${test_name}] Loading images into RAM via GDB..."
     echo "    target ELF:   ${target_elf}"
@@ -347,6 +444,12 @@ build_single_test() {
     local overlay="$3"
     local conf="$4"
     local build_dir="$5"
+    local extra_cmake="${6:-}"          # 可选：额外 CMake 变量（空格分隔，追加到 west build）
+
+    local board="${SINGLE_BOARD}"
+    if [ -n "${BOARD_OVERRIDE}" ]; then
+        board="${BOARD_OVERRIDE}"       # 显式兜底（默认空 ⇒ 仍用 SINGLE_BOARD）
+    fi
 
     local extra_args=()
     if [ -n "${overlay}" ]; then
@@ -354,7 +457,10 @@ build_single_test() {
     fi
     if [ -n "${conf}" ]; then
         local base_conf="${src_dir}/prj.conf"
-        if [ -f "${base_conf}" ]; then
+        if [ "${CONF_MODE}" = "replace" ]; then
+            # #76：整体替换（只用本参数 conf，不前拼 <src>/prj.conf）
+            extra_args+=("-DCONF_FILE=$(win_path "${conf}")")
+        elif [ -f "${base_conf}" ]; then
             base_conf="$(win_path "$(realpath "${base_conf}")")"
             conf="$(win_path "${conf}")"
             extra_args+=("-DCONF_FILE=${base_conf};${conf}")
@@ -362,11 +468,18 @@ build_single_test() {
             extra_args+=("-DCONF_FILE=${conf}")
         fi
     fi
+    # ★ 额外 CMake 变量透传（#70）：env EXTRA_CMAKE_ARGS + 第 6 参，空格分隔。
+    #   两者皆空时 for 列表为空 ⇒ **不追加任何元素**，既有调用路径逐字节不变。
+    local _tok
+    # shellcheck disable=SC2086
+    for _tok in ${EXTRA_CMAKE_ARGS} ${extra_cmake}; do
+        extra_args+=("${_tok}")
+    done
 
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
     west build -p always \
         -d "${build_dir}" \
-        -b "${SINGLE_BOARD}" \
+        -b "${board}" \
         "${src_dir}" \
         "${extra_args[@]}"
 }
@@ -422,6 +535,8 @@ load_and_run_single() {
         echo "ERROR: elf not found: ${elf}"
         return 1
     fi
+
+    warn_if_build_stale "${elf}"
 
     echo "[${test_name}] Loading cpu1 image into RAM via GDB..."
     echo "    ELF: ${elf}"

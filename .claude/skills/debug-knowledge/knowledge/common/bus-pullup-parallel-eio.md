@@ -34,5 +34,5 @@
 
 ## 关联
 - 方法学 M1 / 处理工具 → embedded-debug §3.3
-- 工程级回放 → qsh-debug §7 速查 / 810 CLAUDE.md（涉及 pinctrl_lsqsh.c）
+- 工程级回放 → qsh-debug §7 速查 / 810 `KNOWN_ISSUES.md`（pinctrl_lsqsh.c 相关实例）
 - 类似"切换后不通先看电气"实例在此域（common/）持续挂载

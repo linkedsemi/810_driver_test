@@ -16,7 +16,16 @@ import re
 from pathlib import Path
 
 SESSION_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d+)$")
-SUMMARY_RE = re.compile(r"^\| \[([^\]]+)\]\(([^)]+)\) \| (\S.*?) \| (\d+)/(\d+) \|$")
+# O-12（2026-09-20）：通过/总数允许"未知"。run 脚本没留下 summary 行、也拿不到
+# 计数时（如 build 失败提前 return），run_all 的兜底行**不得**写 `0/0` —— `0/0`
+# 读起来像"测得 0 项、通过 0 项"，掩盖真相"这个 case 没有可信计数"。
+SUMMARY_RE = re.compile(
+    r"^\| \[([^\]]+)\]\(([^)]+)\) \| (\S.*?) \| (?:(\d+)/(\d+)|未知) \|$")
+
+
+def _num(s):
+    """summary 计数列：纯数字 -> int；"未知"（None）-> None（O-12）。"""
+    return int(s) if (s and s.isdigit()) else None
 
 
 def allocate_session_dir(reports_root, date_str):
@@ -42,7 +51,7 @@ def case_dir_for(session_dir, project, case):
 
 def read_summary(session_dir):
     """读 summary.md 已有表格行 → {key: {"report": str, "result": str,
-    "passed": int, "total": int}}。"""
+    "passed": int|None, "total": int|None}}（None = "未知"，见 SUMMARY_RE）。"""
     rows = {}
     f = Path(session_dir) / "summary.md"
     if not f.exists():
@@ -51,12 +60,19 @@ def read_summary(session_dir):
         m = SUMMARY_RE.match(ln.strip())
         if m:
             rows[m.group(1)] = {"report": m.group(2), "result": m.group(3),
-                                "passed": int(m.group(4)), "total": int(m.group(5))}
+                                "passed": _num(m.group(4)), "total": _num(m.group(5))}
     return rows
 
 
 def update_summary(session_dir, key, result, passed, total, report_rel):
-    """按 key（"<project>_<case>"）替换/插入一行并重写 summary.md。"""
+    """按 key（"<project>_<case>"）替换/插入一行并重写 summary.md。
+
+    `passed`/`total` 传 None 表示"未知"（O-12：拿不到计数时写"未知"，不写 0/0）。
+
+    尾行口径（F3）：与 `regression/run_all.py` 的控制台尾行对齐 —— 环境中止
+    （`ENV-ABORT`，E-2 fail-closed 的产物）**单列**，不与"测试失败"混算。
+    没有 ENV 行时尾行**逐字不变**（旧会话目录渲染结果与修改前完全相同）。
+    """
     f = Path(session_dir) / "summary.md"
     rows = read_summary(session_dir)
     rows[key] = {"report": report_rel, "result": result,
@@ -65,9 +81,16 @@ def update_summary(session_dir, key, result, passed, total, report_rel):
              "| 测试 | 结果 | 通过/总数 |", "|---|---|---|"]
     total_cases = len(rows)
     pass_cases = sum(1 for v in rows.values() if v["result"] == "PASS")
+    # 环境中止 = E-2 fail-closed 写下的 "ENV-ABORT"（前缀判定，容忍将来细分）
+    env_cases = sum(1 for v in rows.values() if str(v["result"]).startswith("ENV"))
+    # 其余非 PASS 一律计入"失败"（与旧口径一致，故未识别的状态仍按失败报，不静默吞）
+    fail_cases = total_cases - pass_cases - env_cases
     for k in sorted(rows):
         v = rows[k]
-        lines.append(f"| [{k}]({v['report']}) | {v['result']} | {v['passed']}/{v['total']} |")
+        cnt = (f"{v['passed']}/{v['total']}"
+               if v["passed"] is not None and v["total"] is not None else "未知")
+        lines.append(f"| [{k}]({v['report']}) | {v['result']} | {cnt} |")
     lines.append("")
-    lines.append(f"**共 {total_cases} 个测试，通过 {pass_cases} 个，失败 {total_cases - pass_cases} 个**")
+    lines.append(f"**共 {total_cases} 个测试，通过 {pass_cases} 个，失败 {fail_cases} 个"
+                 + (f"，环境中止 {env_cases} 个" if env_cases else "") + "**")
     f.write_text("\n".join(lines) + "\n", encoding="utf-8")

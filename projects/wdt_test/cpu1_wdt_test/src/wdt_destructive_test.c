@@ -6,8 +6,15 @@
  * 独立 main，不走 ztest（流程不是独立测试项而是状态机）。
  *
  * 流程：
- *   Phase 0 (第一次启动): 设置 500ms 超时，不喂狗，等复位
- *   Phase 1 (复位后启动): 检查 reset_reason == SYS_IWDT_FULL_RESET
+ *   Phase 0 (第一次启动): 设置 2000ms 超时，不喂狗，等复位
+ *   Phase 1 (复位后启动): 检查 reset_reason == SEC_IWDT_HART_RESET，
+ *                         打印 PASS/FAIL + PROJECT EXECUTION 裁决行
+ *   Phase 2 (上一轮遗留): 本次启动没装狗、没复位、没校验 ⇒ 不打裁决；
+ *                         清 noinit 状态后按 Phase 0 重跑一轮完整流程
+ *
+ * noinit 跨复位保留既是本状态机的基础，也意味着重复 load/run 会读到上一轮
+ * 的终态（GDB load 不写 NOLOAD 段）。故"测试通过"只能由本轮真跑出来的
+ * Phase 1 宣布。
  */
 
 #include <zephyr/kernel.h>
@@ -32,6 +39,16 @@ void wdt_destructive_main(void)
 	printk("\n*** WDT destructive reset test ***\n");
 	printk("Reset reason: %u\n", reset_reason_get());
 	printk("test_phase: %u, phase0_passed: %u\n", test_phase, phase0_passed);
+
+	/* Phase 2: noinit 里是上一轮留下的终态（或上电随机值）。本次启动尚未
+	 * 装狗、未复位、未校验 ⇒ 此处不产生任何裁决行；清状态后落到下面的
+	 * Phase 0 重新走完整流程，裁决由那一轮的 Phase 1 给出。 */
+	if (test_phase != 0 && test_phase != 1) {
+		printk("PHASE 2: stale noinit state (test_phase=%u), no test ran this "
+		       "boot; clearing and restarting from PHASE 0\n", test_phase);
+		test_phase = 0;
+		phase0_passed = 0;
+	}
 
 	if (test_phase == 0) {
 		/* Phase 0: 设置超时，不喂狗，等复位 */
@@ -77,8 +94,8 @@ void wdt_destructive_main(void)
 		printk("ERROR: wdt did not reset after timeout!\n");
 		printk("PROJECT EXECUTION: FAILED\n");
 		k_sleep(K_FOREVER);
-	} else if (test_phase == 1) {
-		/* Phase 1: 复位后检查 reset_reason */
+	} else {
+		/* Phase 1: 复位后检查 reset_reason（test_phase==1：Phase 0 已装狗等复位） */
 		printk("PHASE 1: after reset, checking reset_reason\n");
 
 		uint32_t reason = reset_reason_get();
@@ -96,14 +113,6 @@ void wdt_destructive_main(void)
 			test_phase = 2;
 			printk("PROJECT EXECUTION: FAILED\n");
 		}
-		k_sleep(K_FOREVER);
-	} else {
-		/* Phase 2: 已跑过，重置状态便于重跑 */
-		printk("PHASE 2: already tested, test_phase=%u\n", test_phase);
-		test_phase = 0;
-		phase0_passed = 0;
-		printk("Resetting state for next run...\n");
-		printk("PROJECT EXECUTION: SUCCESSFUL\n");
 		k_sleep(K_FOREVER);
 	}
 }

@@ -4,8 +4,17 @@
 # What is tested:
 #   LinkedSemi mbox driver: ch4/ch5 bidirectional, multi-channel isolation, MTU boundary.
 #
-# CPU1 (target, uart1): 等待接收消息，验证 pattern，回复确认。
-# CPU2 (controller, uart5): 主动发送消息，验证回复。
+# CPU1 (target, uart1): 等待接收消息，逐帧校验 pattern/序号/条数，回复确认。
+# CPU2 (controller, uart5): 主动发送消息，统计发送失败数。
+#
+# Normal behavior: 两核均打印 PROJECT EXECUTION SUCCESSFUL；
+#                  INFO basic_ch4_frames / basic_ch5_frames / basic_mtu_full 全为 PASS。
+# Abnormal behavior: 任一核打印 PROJECT EXECUTION FAILED —— 例如 send 全部失败
+#                  （controller 判负）或对端一条都收不到（target 计数 0 ≠ 契约值）。
+#                  ★ 修复前该 case 是空壳：两个入口都无条件打 SUCCESSFUL，
+#                  `mbox_test_verify()` 定义了却零调用 ⇒ 驱动全坏也判 PASS。
+#
+# Feedback: 串口逐项行 `MBOX_TEST:<core>:(PASS|FAIL):<name>[:<明细>]`（判据见 tests/COVERAGE.md §2/§7）。
 #
 # Hardware IO connections:
 #   无外部接线（mbox 走共享 SRAM，片内）。

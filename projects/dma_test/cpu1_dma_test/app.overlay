@@ -17,3 +17,13 @@
 &dmac1 {
 	status = "okay";
 };
+
+/* P1a 新增配置项（2026-09-17）：第二个 DW DMAC 实例 dmac2@40042000，
+ * 供 test_dma_dmac2_transfer 用（既有用例只跑 dmac1）。
+ * 该节点与 dmac1 同 compatible（linkedsemi,dma + snps,designware-dma-2.20a）、
+ * 同 dma-channels=8；soc dtsi 默认 disabled，此处显式使能。
+ * 注：dmac2 的 ch0/ch1 在 dts 里被 spi3/spi4 的 `dmas` 引用，但 spi3/spi4
+ * 本工程未使能（board dts 里为注释状态），故无抢占。 */
+&dmac2 {
+	status = "okay";
+};

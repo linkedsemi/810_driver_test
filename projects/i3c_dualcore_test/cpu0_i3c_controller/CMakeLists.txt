@@ -23,3 +23,14 @@ target_include_directories(app PRIVATE
 
 # 包含公共源文件和配置（test_results.c, ztest_glue.c, gpio_toggle.c）
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
+
+# RLOG 单出口（SPEC_REFERENCE §6.9.3）：主核收从核 token 行并加核信封转发。
+target_sources(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/rlog.c)
+
+# ztest 单出口的长行预算（common/rlog.h::RLOG_TEXT_MAX 说明）：逐项 D1 行
+# 可长到 ~56B（测试名 + " in X.XXX seconds"），默认 54B 会把结尾的
+# 'seconds' 截掉 ⇒ 逐项证据被静默吞掉。两核取同一值（帧是双方 ABI），
+# 且 overlay 的通道 width 必须 ≥ RLOG_TEXT_MAX+9（此处 118+9=127 ≤ 128）。
+target_compile_definitions(app PRIVATE RLOG_TEXT_MAX=118)
+

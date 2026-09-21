@@ -60,6 +60,13 @@ description: Skill 库闭环路由 manifest。定义所有 skill 之间的显式
 | 1 | qsh-test-run | ★ qsh-test-compare | 采集完成 |
 | 2 | qsh-test-compare | ★ 坑沉淀决策 | 分析完成 |
 
+**框架改动路由（2026-09-20 分层后，★ runner 选策略前先判）**：改动落在 **L1 采集段**
+（`common/acquire.py` 的命令序列 / 参数 / 时序 / 两遍烧录）**必须上板**（占板走串行）；落在
+**L2 处理**（`common/process.py` / `judge.py` / `ztest_report.py` / 各工程 `l2_spec` 钩子）
+**可离线证** —— 用 `regression/replay.py --l2-direct` 重放即可，**不必占板**；独立预期校验用
+`common/expect_check.py`（`--audit` / `--case`）。分层全景与判据见 `FRAMEWORK_MAP.md` §1-§3 +
+`SPEC_REFERENCE.md` §6.4.9 / §6.5.6。
+
 ### STRATEGY_ANALYZE（分析）
 
 | 步骤 | skill | 完成后转 | 条件 |

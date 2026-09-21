@@ -29,6 +29,8 @@
 #include <zephyr/ztest.h>
 
 #include "ztest_glue.h"
+#include "rlog.h"
+#include "test_results.h"
 
 LOG_MODULE_REGISTER(i2c_pure_master_test, LOG_LEVEL_INF);
 
@@ -101,8 +103,44 @@ ZTEST(i2c_pure_ctrl, i2c_wave)
 
 void test_main(void)
 {
+	zt_init("CTRL");
+
+	/* 单出口（SPEC_REFERENCE §6.9.3）：本核是**主核**（唯一串口出口），收下
+	 * 从核经 RLOG 送来的 token 行，加**核信封**原样转发。信封是分拣凭据
+	 * （§6.9.4）：采集侧按 `<前缀>:TGT:` 把它们搬回 serial_TGT.log，重放输入
+	 * 与"两核各自本地输出"同形（信封加在中继侧 ⇒ 不占从核帧长，见 rlog.h）。 */
+	rlog_primary_init();
+	rlog_set_relay_envelope(I2C_PURE_TEST_PREFIX, "TGT");
+
 	LOG_INF("[CPU2 I2C_PURE_CTRL] master test started");   /* 角色 banner（harness 依赖） */
 
-	zt_init("CTRL");
 	zt_run_all();
+
+	/* 等从核 DONE（期间反复 drain，给从核 FIFO 腾空间）。fail-closed（§6.9.3）：
+	 * 没等到 DONE、或接收侧跳号/坏帧/缓冲满 ⇒ 判失败 —— 绝不把"没收到从核
+	 * 结果"当成"通过"。 */
+	bool sec_ok = rlog_wait_secondary_done(RLOG_TX_TIMEOUT_MS);
+	bool any_fail = !sec_ok || (rlog_lost() != 0U);
+
+	if (!sec_ok) {
+		/* 非 token 形态的诊断行（不承载判定，只为报告可归因） */
+		printk("[CTRL] secondary check FAILED: %s lost=%u\n",
+		       rlog_secondary_silent() ? "SECONDARY_SILENT"
+					       : "SECONDARY_INCOMPLETE",
+		       (unsigned)rlog_lost());
+	}
+	/* 本核判据与 ztest 同源：zt_run_all 已按 stats 记入 test_results[] */
+	for (int i = 0; i < TR_MAX_COUNT; i++) {
+		if (test_results[i] == TR_FAIL) {
+			any_fail = true;
+			break;
+		}
+	}
+
+	printk("PROJECT EXECUTION %s\n", any_fail ? "FAILED" : "SUCCESSFUL");
+
+	/* test_main 不得返回（CLAUDE.md §4.1）——理由见 §6.9.3：返回会进 ztest 强
+	 * main() 的 `TC_END_REPORT`，在本核补打一条**晚于**从核 DONE 的收尾标记，
+	 * "完成标记是整条流最后一个"不再成立。 */
+	k_sleep(K_FOREVER);
 }

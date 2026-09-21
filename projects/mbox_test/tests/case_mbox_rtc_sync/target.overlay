@@ -1,0 +1,13 @@
+/*
+ * case_mbox_rtc_sync - cpu1 (target) overlay
+ *
+ * 复用工程既有 app.overlay（chosen console + ch4/ch5 consumer 节点，
+ * 保证与其它 case 使用同一套通道布局），仅追加使能 RTC
+ * （soc dtsi 里 rtc 默认 disabled）。
+ */
+
+#include "../../cpu1_target_mbox_test/app.overlay"
+
+&rtc {
+	status = "okay";
+};

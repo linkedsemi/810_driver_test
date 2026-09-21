@@ -23,6 +23,7 @@
 #include <mbedtls/ecdsa.h>
 #include <mbedtls/ecp.h>
 #include <mbedtls/rsa.h>
+#include <mbedtls/memory_buffer_alloc.h>   /* P1a：堆水位/泄漏监控（见 heap_stress_keygen） */
 
 extern const unsigned char rsa_msg[];
 extern int rsa_import_test_key(mbedtls_rsa_context *rsa);
@@ -399,23 +400,123 @@ ZTEST(robustness, pointops_point_add_bad)
 	zassert_not_equal(ret, 0, "point_add bad curve should fail");
 }
 
-/* scalar 全 0 / 全 0xFF：不崩溃，记录输出即可 */
-ZTEST(robustness, pointops_scalar_edge)
-{
-	uint8_t rx[32], ry[32];
-	uint8_t zero[32] = {0};
-	uint8_t ff[32];
-	int ret;
-
-	memset(ff, 0xff, sizeof(ff));
-
-	ret = ls_otbn_pointops_base_mult(LS_OTBN_POINTOPS_CURVE_P256, zero, rx, ry);
-	zassert_true(ret == 0 || ret != 0,
-		     "scalar=0 should not crash (ret=%d)", ret);
-
-	ret = ls_otbn_pointops_base_mult(LS_OTBN_POINTOPS_CURVE_P256, ff, rx, ry);
-	zassert_true(ret == 0 || ret != 0,
-		     "scalar=0xff should not crash (ret=%d)", ret);
-}
+/* 【已删除 2026-09-18】原 `pointops_scalar_edge`（scalar 全 0 / 全 0xFF）：
+ * 其唯一断言是 `zassert_true(ret == 0 || ret != 0, ...)` —— 对任意 ret 恒真，
+ * **永不可能 FAIL**（测试有效性审计 A 组 P0-2）。删除而非改写，理由：
+ *   - `ls_otbn_pointops_base_mult()`（otbn_pointops.c:895-921）对 scalar=0
+ *     不做校验，直接送 OTBN 固件执行；"k=0 ⇒ 无穷远点"的**编码形式**
+ *     （全 0 / 带 flag / 固件直接报错）无驱动或固件契约可依，无法独立算出黄金值；
+ *   - 按审计纪律"支撑不了就删，不要编一个假断言"，本项不保留替代断言。
+ * 覆盖影响与依据见 tests/COVERAGE.md「pointops_scalar_edge」条目。 */
 
 #endif /* MT_HAVE_POINTOPS_ROBUST */
+
+/* ==================================================================
+ * P1a 新增（2026-09-17）：MBED-04 —— 重复密钥生成的堆水位 / 泄漏监控
+ *
+ * 依赖（本工程 prj.conf 已加）：`CONFIG_MBEDTLS_ENABLE_HEAP=y` +
+ * `CONFIG_MBEDTLS_MEMORY_DEBUG=y`。
+ *   - 堆本体 = `CONFIG_MBEDTLS_HEAP_SIZE`(65536) 的静态 buffer，
+ *     由 zephyr/modules/mbedtls/zephyr_init.c 在
+ *     `MBEDTLS_ENABLE_HEAP && MBEDTLS_MEMORY_BUFFER_ALLOC_C` 下调
+ *     `mbedtls_memory_buffer_alloc_init()` 建立。
+ *   - `cur_get` / `max_get` / `verify` 的实现与计数字段
+ *     （`total_used` / `header_count` / `maximum_used`）都在库源码
+ *     `memory_buffer_alloc.c` 的 `MBEDTLS_MEMORY_DEBUG` 之下，
+ *     故必须先开 `CONFIG_MBEDTLS_MEMORY_DEBUG`（它只加计数、不改分配行为）。
+ *
+ * 判据：完整跑「group_load → N 次 P-256 keygen（每次立即释放）→ group_free」
+ * 之后，堆占用必须**回落到进入测试时的基线**（无净增长 = 无泄漏）；
+ * 且逐轮占用不得单调上涨。
+ * ================================================================== */
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C) && defined(MBEDTLS_MEMORY_DEBUG)
+
+ZTEST(robustness, heap_stress_keygen)
+{
+	const int loops = 16;
+	mbedtls_ecp_group grp;
+	size_t pre_used = 0;
+	size_t pre_blocks = 0;
+	size_t base_used = 0;
+	size_t base_blocks = 0;
+	size_t post_used = 0;
+	size_t post_blocks = 0;
+	size_t first_after = 0;
+	size_t max_after = 0;
+	size_t peak_used = 0;
+	size_t peak_blocks = 0;
+	int ret;
+	int i;
+
+	zassert_equal(mbedtls_memory_buffer_alloc_verify(), 0,
+		      "heap header chain broken before keygen stress");
+
+	/* 进入测试时的堆基线 */
+	mbedtls_memory_buffer_alloc_cur_get(&pre_used, &pre_blocks);
+
+	mbedtls_ecp_group_init(&grp);
+	ret = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
+	zassert_equal(ret, 0, "ecp_group_load ret %d", ret);
+
+	/* group_load 之后的常驻占用（grp 自身持有的 P/A/B/G） */
+	mbedtls_memory_buffer_alloc_cur_get(&base_used, &base_blocks);
+
+	for (i = 0; i < loops; i++) {
+		mbedtls_mpi d;
+		mbedtls_ecp_point Q;
+		size_t cur_used = 0;
+		size_t cur_blocks = 0;
+
+		mbedtls_mpi_init(&d);
+		mbedtls_ecp_point_init(&Q);
+
+		/* TRNG 真随机：私钥/候选生成不能用确定性 LCG */
+		ret = mbedtls_ecp_gen_keypair(&grp, &d, &Q, mt_rng_trng, NULL);
+		zassert_equal(ret, 0, "ecp_gen_keypair #%d ret %d", i, ret);
+
+		mbedtls_mpi_free(&d);
+		mbedtls_ecp_point_free(&Q);
+
+		mbedtls_memory_buffer_alloc_cur_get(&cur_used, &cur_blocks);
+		if (i == 0) {
+			first_after = cur_used;
+		}
+		if (cur_used > max_after) {
+			max_after = cur_used;
+		}
+	}
+
+	mbedtls_memory_buffer_alloc_max_get(&peak_used, &peak_blocks);
+	mbedtls_ecp_group_free(&grp);
+	mbedtls_memory_buffer_alloc_cur_get(&post_used, &post_blocks);
+
+	zassert_equal(mbedtls_memory_buffer_alloc_verify(), 0,
+		      "heap header chain broken after keygen stress");
+
+	ZT_INFO("heap_stress_keygen",
+		"loops=%d,pre_used=%u,base_used=%u,first_after=%u,max_after=%u,"
+		"post_used=%u,peak_used=%u,peak_blocks=%u,heap=%u",
+		loops, (unsigned)pre_used, (unsigned)base_used,
+		(unsigned)first_after, (unsigned)max_after, (unsigned)post_used,
+		(unsigned)peak_used, (unsigned)peak_blocks,
+		(unsigned)CONFIG_MBEDTLS_HEAP_SIZE);
+
+	/* 判据 1：逐轮占用不得上涨（第 1 轮后允许一次性常驻，之后必须持平） */
+	zassert_true(max_after <= first_after,
+		     "heap grew across keygen rounds: max_after=%u > first_after=%u",
+		     (unsigned)max_after, (unsigned)first_after);
+
+	/* 判据 2（核心泄漏判据）：整个 group_load+keygen+group_free 周期结束后，
+	 * 堆占用必须回落到进入测试时的基线，不得有净增长 */
+	zassert_true(post_used <= pre_used,
+		     "heap leak: post_used=%u > pre_used=%u (net growth %d bytes)",
+		     (unsigned)post_used, (unsigned)pre_used,
+		     (int)post_used - (int)pre_used);
+
+	/* 判据 3：峰值必须留在堆容量之内（未触顶，测试本身有效） */
+	zassert_true(peak_used < (size_t)CONFIG_MBEDTLS_HEAP_SIZE,
+		     "heap peak %u reached capacity %u",
+		     (unsigned)peak_used, (unsigned)CONFIG_MBEDTLS_HEAP_SIZE);
+}
+
+#endif /* MBEDTLS_MEMORY_BUFFER_ALLOC_C && MBEDTLS_MEMORY_DEBUG */

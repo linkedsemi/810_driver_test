@@ -1,0 +1,48 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * spid_test overlay（单核 cpu1 安全域）：使能 TPM SPI slave（tpm_spis1 / tpm_spis2）
+ * 以及驱动它们所需的一路 SoC SPI master。
+ *
+ * ⚠️ 实例地址以 **DT 实际节点** 为准，不采用模块 sample 里硬编码的
+ *    `SPID2_BASE = 0x4000e000`（该值与 `aliases { spid = &tpm_spis1 }` 不一致，
+ *    见 roadmap §7.2 S-3）。本工程直接用 `DT_NODELABEL(tpm_spis1/2)`。
+ *
+ * 外部条件（SPEC_REFERENCE §6.6）：
+ *   - tpm_spis1 管脚 = MISO PI04 / MOSI PI05 / SCK PI06 / CSN PI07；
+ *     SoC 侧 SPI master（本 overlay 选 `spi1`，管脚 PA00/PA01/PA02）与这 4 根线
+ *     之间需要**外部跳线**才能收发 TPM 帧（master 模式用例 `master_send_tpm_frame`）。
+ *   - 其余寄存器级用例零外部条件。
+ */
+
+#include "lsqsh_pinctrl_pfr_tpm.dtsi"
+
+/ {
+	aliases {
+		/* TPM SPI slave 实例（DT 实际节点；勿用硬编码 base 地址） */
+		spid = &tpm_spis1;
+		spid2 = &tpm_spis2;
+		/* 驱动 TPM slave 的 SoC SPI master —— ⚠️ 实例选择待确认（见 COVERAGE.md 未决项） */
+		spidmaster = &spi1;
+	};
+
+	chosen {
+		zephyr,console = &uart1;
+	};
+};
+
+&tpm_spis1 {
+	status = "okay";
+};
+
+&tpm_spis2 {
+	status = "okay";
+};
+
+/* 外部自环用的 SPI master：CS 走 spi1 自带的 cs-gpios 下标 0 */
+&spi1 {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛） */
+#include "../../../common/gpio_toggle.dtsi"

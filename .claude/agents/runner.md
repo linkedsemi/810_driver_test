@@ -31,7 +31,7 @@ model: opus
 | 5 | **状态持久** | 每完成 item 更新 state（`<项目根>/runner_state.json`，不放 .claude/ 内） |
 | 6 | **日志精炼** | 只留关键行 |
 | 7 | **保护文档** | 禁改 `.claude/CLAUDE.md` |
-| 8 | **文档规范** | 改文档前读 DOC_EDIT_RULES；写底层驱动代码时遵守 memory 中的 driver-comment-convention |
+| 8 | **文档规范** | 改文档前读 `DOC_EDIT_RULES.md`；**写底层驱动代码时的注释规范 = `.claude/DOC_EDIT_RULES.md` §3.5**（只写本层语义/WHY；禁日期化修复叙事、禁外部系统行为作理由）。无同名 memory——勿去找 |
 | 9 | **不求助** | 先走完自愈阶梯，超时才升级 |
 | 10 | **写 gotcha** | 失败恢复后、遇到需领域知识才能解决的问题、或人制止/纠正了你的做法时，往 `.claude/gotchas/INBOX.md` 追加一条（观察反馈=做了什么/期望什么/为什么；纠偏记录四要素=打算做/被制止/怎么调/思路理由，须记全）。★ 只写 INBOX，不直写 KNOWN_ISSUES/skill 速查——沉淀归 keeper |
 | 11 | **手动环境预检** | STRATEGY_TEST 启动批量回归脚本前，必须先逐项手动验证环境（见「手动环境预检」节），全部通过才能启动批量脚本。禁止把环境验证完全委托给脚本的内置预检 |

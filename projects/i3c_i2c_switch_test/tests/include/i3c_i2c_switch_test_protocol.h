@@ -8,6 +8,7 @@
 #define I3C_I2C_SWITCH_TEST_PROTOCOL_H
 
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/sys/printk.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,13 +33,21 @@ extern "C" {
  *           I2C 模式下经 i2c_transfer 写（slave 0x58），首字节均为 opcode。
  * opcode 用可打印 ASCII：逻辑分析仪上能直接认出命令含义。
  *
- * ztest 原生化说明：token 打印宏已随旧框架删除，本头只保留总线协议事实
- * （opcode/地址/时序/常量/测试 id）。i3c_i2c_test_names[] 保留为
- * id <-> 测试名对照表——target 侧 dispatcher 需据此把 'B'/'E' 携带的
- * 总线 id 解析为 ztest_unit_test 段的链接下标（GDB 内存兜底记账按链接序，
- * 见 cpu1_i3c_target/src/i3c_i2c_target_test.c tgt_link_index），
- * 不是 token 机制。脚本侧 TEST_NAMES 各自硬编码并按 nm 链接序对齐（§10.27），
- * 不再解析本文件。
+ * ztest 原生化说明：本工程**不使用 ztest 注册**（固件是"命令通道 + 双端记账"
+ * 的顺序流程，不是离散 test 函数），逐项证据只由下面的 token 宏打印。token 格式
+ * 的形状是**契约**：`common/ztest_report.py::parse_ztest` 直接消费它（本工程之外
+ * 没有第二处产出 `I3C_I2C_TEST:` 前缀的行），`tests/run_test.py::evaluate_case`
+ * 的 `src=token` 就来自这里。
+ *
+ * 为什么 token 宏必须真的打印（而不是 no-op）：批量路径**必须靠 token** —— mem
+ * 兜底（GDB 读 test_results[]）只是调试期的应急通道，批量里若一个串口逐项 token
+ * 都没捕到，PASS 就只剩"上一轮 RAM 里的数字"作依据（common/judge.py::MEM_ONLY_NOTE
+ * 会把这种 case 判 FAIL）。故本头保留所有 token 宏为真实 printk。
+ *
+ * i3c_i2c_test_names[] = id <-> 测试名对照表：target 侧 dispatcher 需据此把
+ * 'B'/'E' 携带的总线 id 解析为 ztest_unit_test 段的链接下标（GDB 内存兜底记账按
+ * 链接序，见 cpu1_i3c_target/src/i3c_i2c_target_test.c tgt_link_index）。
+ * 脚本侧 TEST_NAMES 各自硬编码并按**枚举序**对齐（§10.27；本工程无 ztest 链接序）。
  */
 #define CMD_TGT_BEGIN        'B'	/* 0x42：后随 1 字节 test id，target 开始记账 */
 #define CMD_TGT_END          'E'	/* 0x45：后随 1 字节 test id，target 结账记账 */
@@ -112,31 +121,77 @@ static const char * const i3c_i2c_test_names[I3C_I2C_TEST_COUNT] = {
 	[TEST_BROADCAST_NACK_RECOVERY] = "broadcast_nack_recovery",
 };
 
-/* 兼容旧 token 宏（ztest 迁移后不再输出 token，保留空宏避免编译错误） */
+/* ============ UART 逐项 token（批量判定的**唯一**逐项证据源） ============
+ *
+ * 形状（`<core>` = CTRL | TGT，`<name>` = i3c_i2c_test_names[] 里的名字）：
+ *   I3C_I2C_TEST:<core>:START:<name>
+ *   I3C_I2C_TEST:<core>:PASS:<name>
+ *   I3C_I2C_TEST:<core>:FAIL:<name>:<reason>
+ *   I3C_I2C_TEST:<core>:INFO:<name>:k=v,k=v,...
+ *   I3C_I2C_TEST:<core>:BOOT  /  :DONE:<result>
+ *   I3C_I2C_TEST:<core>:SUMMARY:ITEM:<name>:<PASS|FAIL|NOT_RUN>[:<reason>]
+ *
+ * 消费者 = `common/ztest_report.py::parse_ztest`（只取 `PASS/FAIL/SKIP` 与 `INFO`
+ * 两类；SUMMARY 块是给人看的收尾账，同时供 run_test.py 的 prime 轮"任何固件
+ * 输出"判据）。打印点全部在**线程上下文**（CTRL = test_main；TGT = dispatcher），
+ * ISR 只记账塞队列（CLAUDE.md §4.2 ISR 禁打日志）。 */
 #define I3C_I2C_TOKEN_PREFIX "I3C_I2C_TEST"
-#define I3C_I2C_START_CORE_VAR(core, name)       do {} while (0)
-#define I3C_I2C_PASS_CORE_VAR(core, name)        do {} while (0)
-#define I3C_I2C_FAIL_CORE_VAR(core, name, reason) do {} while (0)
-#define I3C_I2C_INFO_CORE(core, name, kv)        do {} while (0)
-#define I3C_I2C_BOOT_CORE(core)                  do {} while (0)
-#define I3C_I2C_DONE_CORE_VAR(core, result)      do {} while (0)
-#define I3C_I2C_SUMMARY_BEGIN(core)              do {} while (0)
-#define I3C_I2C_SUMMARY_ITEM(core, name, result) do {} while (0)
-#define I3C_I2C_SUMMARY_ITEM_REASON(core, name, result, reason) do {} while (0)
-#define I3C_I2C_SUMMARY_END(core, passed, ran)   do {} while (0)
-#define I3C_I2C_CTRL_BOOT()                      do {} while (0)
-#define I3C_I2C_CTRL_DONE_VAR(result)            do {} while (0)
-#define I3C_I2C_CTRL_START_VAR(name)             do {} while (0)
-#define I3C_I2C_CTRL_PASS_VAR(name)              do {} while (0)
-#define I3C_I2C_CTRL_FAIL_VAR(name, reason)      do {} while (0)
-#define I3C_I2C_TGT_BOOT()                       do {} while (0)
-#define I3C_I2C_TGT_DONE_VAR(result)             do {} while (0)
-#define I3C_I2C_TGT_START_VAR(name)              do {} while (0)
-#define I3C_I2C_TGT_PASS_VAR(name)               do {} while (0)
-#define I3C_I2C_TGT_FAIL_VAR(name, reason)       do {} while (0)
-#define I3C_I2C_TGT_START(name)                  do {} while (0)
-#define I3C_I2C_TGT_PASS(name)                   do {} while (0)
-#define I3C_I2C_TGT_FAIL(name, reason)           do {} while (0)
+
+/* ============ 单出口（SPEC_REFERENCE §6.9.3）：从核 token 交主核打印 ============
+ *
+ * 本工程两核都是"命令通道型"（不注册 ztest），符合 §6.9.3 的适用面 ⇒ **从核不往
+ * 自己的串口打 token**，改把整行经 mbox 交给主核，由主核**原样**打印（单出口）。
+ * 主核侧不做重定向，token 照旧本地打印 —— 于是两核 token 汇成一路串口流。
+ *
+ * 从核的 LOG / panic / assert 文本**不走这里**（它们不是 rlog_emit 的调用点）
+ * ⇒ 从核崩溃现场仍留在本地串口上，不因单出口丢失。
+ *
+ * `I3C_I2C_SINGLE_EGRESS` 只由**从核**的 CMakeLists 定义（也只有从核编入 rlog.c）；
+ * 主核不定义 ⇒ 同一份头在两核各自落到正确的输出通道。 */
+#if defined(I3C_I2C_SINGLE_EGRESS)
+#include "rlog.h"
+#define I3C_I2C_OUT(...) rlog_emitf(__VA_ARGS__)
+#else
+#define I3C_I2C_OUT(...) printk(__VA_ARGS__)
+#endif
+
+#define I3C_I2C_START_CORE_VAR(core, name) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":START:%s\n", name)
+#define I3C_I2C_PASS_CORE_VAR(core, name) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":PASS:%s\n", name)
+#define I3C_I2C_FAIL_CORE_VAR(core, name, reason) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":FAIL:%s:%s\n", name, reason)
+#define I3C_I2C_INFO_CORE(core, name, kv) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":INFO:%s:" kv "\n", name)
+#define I3C_I2C_BOOT_CORE(core) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":BOOT\n")
+#define I3C_I2C_DONE_CORE_VAR(core, result) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":DONE:%s\n", result)
+#define I3C_I2C_SUMMARY_BEGIN(core) \
+	I3C_I2C_OUT("\n" I3C_I2C_TOKEN_PREFIX ":" #core ":SUMMARY:BEGIN\n")
+#define I3C_I2C_SUMMARY_ITEM(core, name, result) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":SUMMARY:ITEM:%s:%s\n", name, result)
+#define I3C_I2C_SUMMARY_ITEM_REASON(core, name, result, reason) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":SUMMARY:ITEM:%s:%s:%s\n", \
+		    name, result, reason)
+#define I3C_I2C_SUMMARY_END(core, passed, ran) \
+	I3C_I2C_OUT(I3C_I2C_TOKEN_PREFIX ":" #core ":SUMMARY:END:%d/%d PASS\n\n", \
+		    passed, ran)
+
+/* core 绑定别名 —— 调用点只使用这些 */
+#define I3C_I2C_CTRL_BOOT()                 I3C_I2C_BOOT_CORE(CTRL)
+#define I3C_I2C_TGT_BOOT()                  I3C_I2C_BOOT_CORE(TGT)
+#define I3C_I2C_CTRL_DONE_VAR(result)       I3C_I2C_DONE_CORE_VAR(CTRL, result)
+#define I3C_I2C_TGT_DONE_VAR(result)        I3C_I2C_DONE_CORE_VAR(TGT, result)
+#define I3C_I2C_CTRL_START_VAR(name)        I3C_I2C_START_CORE_VAR(CTRL, name)
+#define I3C_I2C_CTRL_PASS_VAR(name)         I3C_I2C_PASS_CORE_VAR(CTRL, name)
+#define I3C_I2C_CTRL_FAIL_VAR(name, reason) I3C_I2C_FAIL_CORE_VAR(CTRL, name, reason)
+#define I3C_I2C_TGT_START_VAR(name)         I3C_I2C_START_CORE_VAR(TGT, name)
+#define I3C_I2C_TGT_PASS_VAR(name)          I3C_I2C_PASS_CORE_VAR(TGT, name)
+#define I3C_I2C_TGT_FAIL_VAR(name, reason)  I3C_I2C_FAIL_CORE_VAR(TGT, name, reason)
+#define I3C_I2C_TGT_START(name)             I3C_I2C_START_CORE_VAR(TGT, name)
+#define I3C_I2C_TGT_PASS(name)              I3C_I2C_PASS_CORE_VAR(TGT, name)
+#define I3C_I2C_TGT_FAIL(name, reason)      I3C_I2C_FAIL_CORE_VAR(TGT, name, reason)
 
 #ifdef __cplusplus
 }

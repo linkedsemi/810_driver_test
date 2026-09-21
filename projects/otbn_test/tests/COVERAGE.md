@@ -53,3 +53,60 @@
   `src/rsa_test_key.h`），与 samples/mbedtls_test 同源；expected/ 目录只留说明。
 - 不含硬件 SHA 的 DMA 路径测试（`SHA224_SHA256_SM3_LINKEDSEMI_HARDWARE_ALT` 与
   OTBN SHA ALT 互斥，本工程全走 OTBN；DMA 路径属另一配置轴）。
+
+## 修订（2026-09-18，测试有效性审计 A 组 P0-1）
+
+### `api_sm4_kat` 的 CTR 子路径 —— 停止吞错（`otbn_api_test.c`）
+- **原状**：`sm4_ctr_test()` 的六处错误分支（`setkey`/`setiv`/`ctr_crypto` ×2 段）
+  全部 `goto exit` **跳过 KAT 断言**，函数尾**固定 `return 0`**（非 `return ret`）
+  ⇒ 驱动返回**任何**错误码时，外层 `zassert_equal(ret, 0)`（`api_sm4_kat`）**恒真**，
+  本项永不可 FAIL。
+- **改**：
+  1. 每个驱动调用的非 0 返回**先 `zassert_equal(ret, 0, ...)`**（ztest 记录 test-fail，
+     本项必 FAIL），再 `goto exit` 释放上下文以免泄漏；
+  2. 函数尾改为 **`return ret;`**，使外层断言不再是恒真式。
+- **驱动正确时必过 / 典型失效时必不过**：SM4-ECB/CTR KAT 逐字节相等 ⇒ 必过；
+  `setkey`/`setiv`/`ctr_crypto` 任一返回非 0 ⇒ 新增 zassert 必 FAIL（旧版会静默 PASS）；
+  CTR 结果错误 ⇒ `zassert_hash_eq(enc, c2_ctr)` 必 FAIL。
+- 保留 `goto exit` 仅用于**上下文释放**，不再用于绕过断言；KAT 断言只在**前一步已成功**
+  （即未触发 above FAIL）后才执行，避免用无效输出产生误导性二次失败。
+- 同文件的 `test_sm4()`（ECB/CBC KAT）本就以 `return ret` 收尾，**未改**。
+---
+
+## 独立预期（机器可读）
+
+> 格式 / 判定口径 / 伪独立识别规则见 `common/expect_check.py` 文件头。
+> 文法真源：`SPEC_REFERENCE.md` §6.5.6（`expect` 块文法 / op 表 / 三档标签 / 两条纪律）。
+> 只登记**不由被测代码算出**的预期；没有确定预期的项显式写 `!none`。
+> 来源标签：`handcalc`(手算) `spec`(外部规范/寄存器或 DT 定义) `golden`(黄金向量)
+> `crosscheck`(跨来源交叉) `contract`(API 契约值) `driversrc`(转录自被测驱动实现，
+> **只证"没变"不证"仍对"**) `samecode`(同源复算，**非独立**) `!none`(无确定预期)。
+
+```expect
+# 测试项 | 断言 | 来源标签:说明
+api_rsa_keygen_2048 | nbits == 2048 | contract:被测请求的位宽必须如实回报（错位宽即发现）
+api_rsa_keygen_3072 | nbits == 3072 | contract:同上
+api_rsa_keygen_4096 | nbits == 4096 | contract:同上
+perf_sha256_64k | bytes == 65536 | handcalc:用例名即 64KiB = 65536（分片请求总量）
+api_sha224_kat | !none | !none:KAT 逐字节比对，结果不落在单个标量上（无 INFO）⇒ 不硬凑
+api_sha256_kat | !none | !none:同上
+api_sm3_kat | !none | !none:同上
+api_sha384_kat | !none | !none:同上
+api_sha512_kat | !none | !none:同上
+api_sha256_varlen | !none | !none:逐长度 KAT 的合取，无单一标量
+api_aes_kat | !none | !none:NIST 向量逐字节相等，非标量
+api_sm4_kat | !none | !none:同上
+api_rsa2048_kat | !none | !none:OpenSSL 密文/签名逐字节比对，非标量
+api_ecdsa_p256_kat | !none | !none:r/s 逐字节相等，非标量
+api_ecdsa_p384 | !none | !none:原文 `verify==0`，无 INFO 通道 ⇒ 登记也只会是 NO_ACTUAL
+api_ecdsa_sm2 | !none | !none:同上
+perf_rsa2048_sign | !none | !none:原文"INFO: loops/avg_us"但**未给任何门限值** ⇒ 无确定预期，不编
+perf_ecdsa_p256 | !none | !none:同上（sign_ops/verify_ops 无门限）
+mix_sha256_keygen_seq | !none | !none:真正断言是"keygen 后 digest 仍 == KAT"，无标量上报；keygen_ms 是耗时、无门限
+mix_sha256_stream_keygen | !none | !none:同上
+mix_keygen_sha256_keygen | !none | !none:两次 keygen 的 check_privkey+sign/verify 合取，非标量
+mix_sign_sha256_stream | !none | !none:sign/verify 与流式 digest 的合取，非标量
+mix_sha512_stream_keygen | !none | !none:同上（digest == KAT，无标量）
+mix_sm3_stream_keygen | !none | !none:同上
+mix_ecdsa_sha256_stream | !none | !none:genkey/sign/verify 与 digest 的合取，非标量
+```

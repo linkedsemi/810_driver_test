@@ -23,6 +23,7 @@
 #include "i3c_i2c_switch_test_protocol.h"
 #include "test_results.h"
 #include "ztest_glue.h"
+#include "rlog.h"
 
 #include <stdbool.h>
 #include <stdarg.h>
@@ -110,6 +111,9 @@ static void ctrl_set_fail(const char *reason_fmt, ...)
 
 static void ctrl_test_begin(enum i3c_i2c_test_id id, bool via_bus)
 {
+	/* 单出口（§6.9.3）：先把已到的从核行打出去再打本核 token ——
+	 * drain 同时给从核的 mbox FIFO 腾空间（从核发不进去会丢帧）。 */
+	(void)rlog_relay_drain();
 	I3C_I2C_CTRL_START_VAR(i3c_i2c_test_names[id]);
 
 	ctrl_cur_id = id;
@@ -138,6 +142,11 @@ static void ctrl_test_end(enum i3c_i2c_test_id id, bool via_bus)
 			ctrl_set_fail("send_end");
 		}
 	}
+
+	/* 从核本项的 START/PASS 行就在这几毫秒内到（'E' 之后从核才结账）——
+	 * 给它一点时间并顺手 drain，避免攒到 FIFO 满丢帧。 */
+	k_sleep(K_MSEC(2));
+	(void)rlog_relay_drain();
 
 	if (ctrl_failed) {
 		I3C_I2C_CTRL_FAIL_VAR(i3c_i2c_test_names[id], ctrl_fail_reason);
@@ -313,8 +322,16 @@ static void ctrl_test_pinctrl_states(void)
 		  (ctrl_pcfg->states[1].id == PINCTRL_STATE_PINMUX_I2C);
 
 	if (!ok) {
-		ctrl_set_fail("states:%u[%u,%u]", ctrl_pcfg->state_cnt,
-			      ctrl_pcfg->states[0].id, ctrl_pcfg->states[1].id);
+		/* 守卫：state_cnt < 2 时 states[1] 越界（原实现无条件打印
+		 * states[0]/states[1]，属内存安全缺陷）。`ok` 的短路求值本身
+		 * 已安全，越界只出在失败分支的打印。 */
+		if (ctrl_pcfg->state_cnt >= 2) {
+			ctrl_set_fail("states:%u[%u,%u]", ctrl_pcfg->state_cnt,
+				      ctrl_pcfg->states[0].id,
+				      ctrl_pcfg->states[1].id);
+		} else {
+			ctrl_set_fail("state_cnt:%u (<2)", ctrl_pcfg->state_cnt);
+		}
 	}
 
 	ctrl_test_end(TEST_PINCTRL_STATES, false);
@@ -607,6 +624,10 @@ void test_main(void)
 {
 	zt_init("CTRL");
 
+	/* 单出口（§6.9.3）：本核是**主核** ⇒ 收下从核经 mbox 送来的 token 行，
+	 * 原样打进本核串口。接收回调在 ISR 只入环形缓冲，主线程按点 drain。 */
+	rlog_primary_init();
+
 	LOG_INF("[CPU2 I3C_I2C_CTRL] controller test started");
 
 	tr_init(I3C_I2C_TEST_COUNT);
@@ -646,11 +667,26 @@ void test_main(void)
 	(void)i3c_do_daa(ctrl_i3c_dev);
 	target_desc = i3c_dev_list_i3c_addr_find(ctrl_i3c_dev, I3C_SWITCH_TARGET_ADDR);
 
-	/* 通知 target 打印总结（此时处于 I3C 模式，'P' 走 i3c 帧），
-	 * 稍等让 target 的总结先出完再打印自己的 */
+	/* 通知 target 打印总结（此时处于 I3C 模式，'P' 走 i3c 帧）。
+	 * 单出口（§6.9.3）：从核的 token 只出现在本核串口流里 ⇒ 必须等它把
+	 * SUMMARY + DONE 送齐（期间边等边转发打印），再打本核收尾。
+	 * fail-closed：没等到 DONE，或接收侧有丢帧 ⇒ 判失败 —— 绝不把
+	 * "没收到从核结果"当成"通过"。 */
 	(void)ctrl_send_cmd((const uint8_t[]){ CMD_PRINT_SUMMARY }, 1);
-	k_sleep(K_MSEC(5));
+
+	if (!rlog_wait_secondary_done(RLOG_TX_TIMEOUT_MS)) {
+		ctrl_set_fail(rlog_secondary_silent() ? "SECONDARY_SILENT"
+						      : "SECONDARY_INCOMPLETE");
+	} else if (rlog_lost() != 0U) {
+		ctrl_set_fail("SECONDARY_INCOMPLETE(lost=%u)", (unsigned)rlog_lost());
+	}
 
 	ctrl_print_summary();
 	printk("PROJECT EXECUTION %s\n", ctrl_failed ? "FAILED" : "SUCCESSFUL");
+
+	/* test_main 不得返回（CLAUDE.md §4.1）——返回会进 ztest 强 main() 的
+	 * `TC_END_REPORT`，在本核串口再补 `====` + `PROJECT EXECUTION SUCCESSFUL`，
+	 * 使"完成标记是整条流最后一个"（§6.9.3 硬约束）不再成立、并触发 R6 的
+	 * 相反标记并存。 */
+	k_sleep(K_FOREVER);
 }

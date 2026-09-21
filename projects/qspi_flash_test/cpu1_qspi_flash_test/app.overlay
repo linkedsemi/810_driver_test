@@ -1,0 +1,37 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * QSPI flash 单核测试 overlay（cpu1，lsqsh_evb@1os/lsqsh/cpu1）。
+ *
+ * 硬件：qspi2@40040000 + 板载 32 MiB Puya NOR（JEDEC ID 85 23 19）。
+ *       pinmux 走板载默认（PC05=CSN / PC06-09=DAT0-3 / PC10=SCK，FUNC4），
+ *       零外部接线。
+ *
+ * 配置与 linkedsemi_zephyr_project/samples/spi_ls_flash_nor/ 一致
+ * （该 sample 已实测跑通，是本工程的配置基准）。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&qspi2 {
+	status = "okay";
+	auto-wait-ready;
+	auto-wait-interval = <1000>;
+
+	flash2: flash2@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(50)>;
+		spi-max-buswidth = <4>;
+		status = "okay";
+	};
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）。
+ * GPIO toggle 仅 cpu1 使用，cpu2 侧固件不编入 gpio_toggle.c、不 include 本片段。 */
+#include "../../../common/gpio_toggle.dtsi"

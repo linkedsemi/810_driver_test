@@ -1097,17 +1097,29 @@ static int sm4_ctr_test(void)
     uint8_t dec[SM4_BLOCK_SIZE * 4];
     int ret;
 
+    /* 每一步驱动调用的非 0 返回都**先 zassert 记 FAIL**，再 goto exit 释放上下文。
+     * 旧版六处错误分支只 `goto exit` 跳过 KAT，且函数尾固定 `return 0`
+     * ⇒ 驱动返回任何错误码时外层 `zassert_equal(ret,0)` 恒真、本项永不可 FAIL。
+     * 现改为：错误即断言失败（zassert 走 ztest 的 test-fail 通路，本项必 FAIL），
+     * 只有前一步成功才继续下一步（避免用无效输出做 KAT 产生误导性二次失败），
+     * 并在结尾 `return ret` 让外层断言不再是恒真式。 */
     mbedtls_sm4_init(&sm4);
 
-    if((ret = mbedtls_sm4_setkey(k1)) !=0 ) {
+    ret = mbedtls_sm4_setkey(k1);
+    zassert_equal(ret, 0, "sm4 ctr setkey ret=%d", ret);
+    if (ret != 0) {
         goto exit;
     }
 
-    if((ret = mbedtls_sm4_setiv(&sm4, i1)) !=0 ) {
+    ret = mbedtls_sm4_setiv(&sm4, i1);
+    zassert_equal(ret, 0, "sm4 ctr setiv ret=%d", ret);
+    if (ret != 0) {
         goto exit;
     }
 
-    if((ret = mbedtls_sm4_ctr_crypto(&sm4, enc, p2, sizeof(p2)))!=0 ) {
+    ret = mbedtls_sm4_ctr_crypto(&sm4, enc, p2, sizeof(p2));
+    zassert_equal(ret, 0, "sm4 ctr enc crypto ret=%d", ret);
+    if (ret != 0) {
         goto exit;
     }
 
@@ -1115,15 +1127,21 @@ static int sm4_ctr_test(void)
 
     mbedtls_sm4_init(&sm4);
 
-    if((ret = mbedtls_sm4_setkey(k1)) !=0 ) {
+    ret = mbedtls_sm4_setkey(k1);
+    zassert_equal(ret, 0, "sm4 ctr setkey(2) ret=%d", ret);
+    if (ret != 0) {
         goto exit;
     }
 
-    if((ret = mbedtls_sm4_setiv(&sm4, i1)) !=0 ) {
+    ret = mbedtls_sm4_setiv(&sm4, i1);
+    zassert_equal(ret, 0, "sm4 ctr setiv(2) ret=%d", ret);
+    if (ret != 0) {
         goto exit;
     }
 
-    if((ret = mbedtls_sm4_ctr_crypto(&sm4, dec, enc, sizeof(c2_ctr)))!=0 ) {
+    ret = mbedtls_sm4_ctr_crypto(&sm4, dec, enc, sizeof(c2_ctr));
+    zassert_equal(ret, 0, "sm4 ctr dec crypto ret=%d", ret);
+    if (ret != 0) {
         goto exit;
     }
 
@@ -1132,7 +1150,7 @@ static int sm4_ctr_test(void)
 exit:
     mbedtls_sm4_free(&sm4);
 
-    return 0;
+    return ret;
 }
 #endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT */
 

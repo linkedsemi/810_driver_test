@@ -58,7 +58,6 @@ struct tgt_event {
 static enum tgt_parse_state parse_state;
 static volatile uint8_t current_test_id;
 static volatile uint8_t ctrl_result;
-static volatile bool addressed;
 
 static volatile uint8_t rx_buf[256];
 static volatile size_t rx_idx;
@@ -104,6 +103,15 @@ static volatile bool first_cyc_done;		/* 首笔 cycle 记账完成 */
 static volatile uint16_t last_read_len;
 static volatile int read_req_cnt;
 static volatile int read_proc_cnt;
+/* 本测试项内粘滞的"经回调供出的字节数"（仅 TEST_START / 全局复位清零，
+ * stop_cb 不清）。语义边界（源码依据 i3c_linkedsemi.c:2136/2211/2857）：
+ * target_prefill_tx 经 i3c_target_tx_write 直接写 SWDATAB，**不经过**
+ * read_requested_cb / read_processed_cb；只有 FIFO 装不下、由 TXSEND
+ * 中断续发的部分才走回调。故本计数 = 本项实际供出字节数 − FIFO 预填量
+ * （min(16, tx_len)），是 target 软件唯一能静态确证的"实际供出字节"
+ * 证据。len ≤ 16 时 FIFO 一次装完，回调不被调用（txcount != 0 分支跳
+ * 过回调），target 软件对 master 实际读了多少字节**不可观测**。 */
+static volatile uint32_t rd_cb_bytes;
 
 static volatile uint8_t write_data[256];
 static volatile size_t write_len;
@@ -297,6 +305,7 @@ static void reset_test_state(uint8_t id)
 	last_read_len = 32;	/* 默认读长度：direct read 场景 */
 	read_req_cnt = 0;
 	read_proc_cnt = 0;
+	rd_cb_bytes = 0;
 	delay_read_seen = false;
 	delay_len_seen = false;
 	spin_done_actstate = 0;
@@ -321,7 +330,6 @@ static void reset_test_state(uint8_t id)
 	neg_ret_ibidis = 0;
 	aasa_probe_seen = false;
 	aasa_snap = 0;
-	addressed = true;
 	tgt_failed = false;
 	tgt_fail_reason[0] = '\0';
 	current_test_id = id;
@@ -335,7 +343,6 @@ static void reset_all_target_state(void)
 	parse_state = TGT_PARSE_IDLE;
 	current_test_id = 0;
 	ctrl_result = 0;
-	addressed = false;
 	rx_idx = 0;
 	/* tx_idx 由下面的 target_prefill_tx 返回值设置 */
 	tx_len = 32;
@@ -344,6 +351,7 @@ static void reset_all_target_state(void)
 	last_read_len = 32;
 	read_req_cnt = 0;
 	read_proc_cnt = 0;
+	rd_cb_bytes = 0;
 	delay_read_seen = false;
 	delay_len_seen = false;
 	spin_done_actstate = 0;
@@ -822,6 +830,7 @@ static int slave_read_requested_cb(struct i3c_target_config *config, uint8_t *va
 		/* tx_idx 是相对索引（已预填/已发送字节数），实际数据在
 		 * tgt_tx_buf[tx_offset + tx_idx]（索引读时 tx_offset 非 0） */
 		*val = tgt_tx_buf[tx_offset + tx_idx++];
+		rd_cb_bytes++;	/* 回调供出的字节（>FIFO 预填量的续发部分） */
 		/* 返回 1 = 这是最后字节，驱动为其标 END0 */
 		if (tx_idx >= tx_len) {
 			/* 本笔读完成：复位 tx_offset 和 indexed_read_pending（索引读只影响
@@ -847,6 +856,7 @@ static int slave_read_processed_cb(struct i3c_target_config *config, uint8_t *va
 		/* tx_idx 是相对索引（已预填/已发送字节数），实际数据在
 		 * tgt_tx_buf[tx_offset + tx_idx]（索引读时 tx_offset 非 0） */
 		*val = tgt_tx_buf[tx_offset + tx_idx++];
+		rd_cb_bytes++;	/* 回调供出的字节（>FIFO 预填量的续发部分） */
 		if (tx_idx >= tx_len) {
 			/* 本笔读完成：复位 tx_offset 和 indexed_read_pending（索引读只影响
 			 * 本笔），避免污染后续普通读 */
@@ -949,7 +959,7 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 		case TGT_EVT_TEST_END:
 			current_test_id = evt.test_id;
 			ctrl_result = evt.ctrl_result;
-			/* 按项运行同名 ztest 套件：32 项各注册一个单测试套件
+			/* 按项运行同名 ztest 套件：35 项各注册一个单测试套件
 			 * （套件名 == 测试项名 == i3c_test_names[] 字符串），
 			 * 运行期按名称查表（z_ztest_run_test_suite → strcmp）。
 			 * target 无 zt_run_all（test_main 不返回，§4.1），
@@ -986,7 +996,7 @@ void target_dispatcher_run(void)
 
 /* ========== Target ztest suites ==========
  *
- * 32 个单测试套件：套件名 == 测试项名（i3c_test_names[] 的字符串值，
+ * 35 个单测试套件：套件名 == 测试项名（i3c_test_names[] 的字符串值，
  * strcmp 查表依赖，必须逐字符一致），dispatcher 按 'E' 携带的 test_id
  * 运行期调 z_ztest_run_test_suite() 运行对应套件。
  * 无 setup/before/after/teardown：target 校验全部基于 dispatcher 事件
@@ -1031,7 +1041,23 @@ ZTEST_SUITE(setdasa, NULL, NULL, NULL, NULL, NULL);
 
 static void validate_daa_discovery(void)
 {
-	TGT_EXPECT(addressed, "target was never addressed");
+	/* target 侧独立证据（原 `addressed` 恒真断言已删，见 KNOWN_ISSUES 类
+	 * 问题"恒真空壳"）：DAA 之后本机硬件的动态地址寄存器必须已生效。
+	 * CTRL 侧断言的是 controller 软件视角（target_desc->dynamic_addr），
+	 * 此处读本机 SDYNADDR 是同一事实的**另一侧**观测：
+	 *   - 驱动正确时必过：ENTDAA 成功 → 硬件写 DADDR=0x32、DAVALID=1；
+	 *   - 典型失效时必不过：ENTDAA 未发/地址分配失败 → DAVALID=0；
+	 *     分配到错误地址 → DADDR≠0x32。
+	 * （DADDR 字段为 7 位地址，编码依 NXP I3C slave programmers model，
+	 *   与 validate_aasa_common 的 DADDR 比对同一语义。） */
+	uint32_t dyn = ((I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6)))->SDYNADDR;
+	uint8_t daddr = (uint8_t)((dyn & I3C_SDYNADDR_DADDR_MASK) >>
+				  I3C_SDYNADDR_DADDR_POS);
+
+	TGT_EXPECT((dyn & I3C_SDYNADDR_DAVALID_MASK) != 0U,
+		   "SDYNADDR.DAVALID=0 (target got no dynamic address from DAA)");
+	TGT_EXPECT(daddr == I3C_TARGET_ADDR,
+		   "SDYNADDR.DADDR 0x%02x != 0x%02x", daddr, I3C_TARGET_ADDR);
 }
 
 static void validate_write_8(void)
@@ -1056,21 +1082,49 @@ static void validate_write_100(void)
 
 static void validate_read_32_direct(void)
 {
+	/* 协议点校验（原先裸依赖 reset_test_state 的默认值 32 ⇒ 恒真）。
+	 * controller 现已显式下发 CMD_SET_READ_LEN(32)。
+	 * 读数据正确性由 CTRL 侧 pattern 校验；target 侧对"master 实际读了
+	 * 多少字节"不可观测（len ≤ FIFO 深度 16 时全部由预填供货，续发回调
+	 * 不被调用，见 i3c_linkedsemi.c txcount!=0 分支）。 */
 	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
 }
 
 static void validate_write_read_1(void)
 {
+	/* 写方向：可观测的真实数据通路校验（原先只回显长度命令字节）。
+	 * 驱动正确时必过：写段占位字节 0xA5 被 write_received_cb 原样收到；
+	 * 典型失效时必不过：写段丢字节/多字节/内容错 → write_len/write_data 不符。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 1, "last_read_len %u != 1", last_read_len);
 }
 
 static void validate_write_read_15(void)
 {
+	/* 同 write_read_1：写方向真实数据校验（关键长度 15）。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 15, "last_read_len %u != 15", last_read_len);
 }
 
 static void validate_write_read_16(void)
 {
+	/* 同 write_read_1：写方向真实数据校验（关键长度 16 = FIFO 深度）。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
 }
 
@@ -1161,7 +1215,21 @@ static void validate_write_delay_read_len(void)
 
 static void validate_write_read_17(void)
 {
+	/* 写方向真实数据校验 + 读方向续发证据（关键长度 17 > FIFO 深度 16）。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 17, "last_read_len %u != 17", last_read_len);
+	/* 读方向（关键长度 17）：17 = 16(FIFO 预填) + 1(续发)。第 17 字节
+	 * 只能经 read_processed_cb 供出，是 target 侧唯一可静态确证的"实际
+	 * 供出字节数"证据（i3c_linkedsemi.c:2857 预填受 FIFO 满自停）。
+	 * 驱动正确时必过（续发回调至少 1 次）；
+	 * 典型失效时必不过（续发路径断 → rd_cb_bytes==0，CTRL 侧表现为欠载）。 */
+	TGT_EXPECT(rd_cb_bytes >= 1U,
+		   "read continuation served 0 bytes (len=17 needs 1 beyond FIFO)");
 }
 
 static void validate_write_read_32(void)
@@ -1171,22 +1239,54 @@ static void validate_write_read_32(void)
 
 static void validate_write_stop_read_1(void)
 {
+	/* 写方向真实数据校验（关键长度 1）：STOP 分隔的 write+read 变体，
+	 * 写段同样带 1 字节占位 0xA5。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 1, "last_read_len %u != 1", last_read_len);
 }
 
 static void validate_write_stop_read_15(void)
 {
+	/* 同 write_stop_read_1：写方向真实数据校验（关键长度 15）。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 15, "last_read_len %u != 15", last_read_len);
 }
 
 static void validate_write_stop_read_16(void)
 {
+	/* 同 write_stop_read_1：写方向真实数据校验（关键长度 16 = FIFO 深度）。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
 }
 
 static void validate_write_stop_read_17(void)
 {
+	/* 写方向真实数据校验 + 读方向续发证据（关键长度 17 > FIFO 深度 16）。 */
+	TGT_EXPECT(write_len == 1, "write_len %zu != 1", (size_t)write_len);
+	if (write_len >= 1) {
+		TGT_EXPECT(write_data[0] == CMD_DUMMY_BYTE,
+			   "write_data[0] 0x%02x != 0x%02x",
+			   (unsigned)write_data[0], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 17, "last_read_len %u != 17", last_read_len);
+	/* 读方向：STOP 分隔变体同样需要续发第 17 字节（预填受 FIFO 16 自停）。 */
+	TGT_EXPECT(rd_cb_bytes >= 1U,
+		   "read continuation served 0 bytes (len=17 needs 1 beyond FIFO)");
 }
 
 static void validate_write_stop_read_32(void)
@@ -1206,8 +1306,15 @@ static void validate_hot_join(void)
 
 static void validate_ccc_basic(void)
 {
-	/* Target is passive for CCC; just confirm it was addressed. */
-	TGT_EXPECT(addressed, "target was not addressed");
+	/* CCC（GETPID/GETBCR/ENEC/DISEC）由 target 硬件自动应答，软件无回调，
+	 * 故无"CCC 处理结果"可直接观测。可判别的 target 侧不变量：CCC 帧不得
+	 * 被误当作私有写投递到 write_received_cb ——
+	 *   - 驱动正确时必过：CCC 走硬件路径，write_len 保持 TEST_START 清零值 0；
+	 *   - 典型失效时必不过：驱动把 CCC 帧误分发/误解析为私有写 →
+	 *     write_data/write_len 被污染（write_len > 0）。 */
+	TGT_EXPECT(write_len == 0U,
+		   "CCC frames leaked into private-write buffer: write_len=%zu",
+		   (size_t)write_len);
 }
 
 /* ========== 主机主动临界测试的 target 侧校验 ========== */
@@ -1221,13 +1328,29 @@ static void validate_read_underrun_8_16(void)
 
 static void validate_read_underrun_16_32(void)
 {
+	/* 写方向真实数据校验（关键长度 16）：READ_UNDERRUN 宏每项发**两次**
+	 * write_read（先欠载读 32B，再恢复读 16B），每次写段 1 字节占位 0xA5，
+	 * 故 target 累计收到 2 字节（write_len 只在 TEST_START 清零）。
+	 * 驱动正确时必过；典型失效时必不过（写段丢字节/内容错）。 */
+	TGT_EXPECT(write_len == 2, "write_len %zu != 2", (size_t)write_len);
+	for (size_t i = 0; i < write_len && i < 2; i++) {
+		TGT_EXPECT(write_data[i] == CMD_DUMMY_BYTE,
+			   "write_data[%zu] 0x%02x != 0x%02x",
+			   i, (unsigned)write_data[i], CMD_DUMMY_BYTE);
+	}
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
 }
 
 static void validate_nack_bad_addr(void)
 {
-	/* 错误地址在硬件层 NACK，不经任何软件回调；本侧无感知即正确 */
-	TGT_EXPECT(addressed, "target was not addressed");
+	/* 错误地址在硬件层 NACK，不经任何软件回调。可判别的 target 侧不变量：
+	 * 发往未挂载地址（0x55）的写不得被本机接收 ——
+	 *   - 驱动/硬件正确时必过：非本机地址被地址匹配逻辑丢弃，write_len=0；
+	 *   - 典型失效时必不过：地址过滤失效 → 外部地址的写被投递给应用，
+	 *     write_len > 0（这是硬件/驱动地址匹配缺陷的强信号）。 */
+	TGT_EXPECT(write_len == 0U,
+		   "write to foreign address 0x55 was received: write_len=%zu",
+		   (size_t)write_len);
 }
 
 static void validate_back_to_back_8x8(void)
@@ -1250,18 +1373,33 @@ static void validate_big_256(void)
 			   i, write_data[i], (uint8_t)(0x40 + i));
 	}
 	TGT_EXPECT(last_read_len == 256, "last_read_len %u != 256", last_read_len);
+	/* 读方向（关键长度 256 = 16(FIFO) + 240(续发)）：续发路径必须供出
+	 * 全部 240 字节 ——
+	 *   - 驱动正确时必过：read_processed_cb 逐字节补满 240；
+	 *   - 典型失效时必不过：续发断流 → rd_cb_bytes < 240（CTRL 侧同一
+	 *     故障表现为读到 0xff/欠载）。这是该长度下 target 侧的独立证据。 */
+	TGT_EXPECT(rd_cb_bytes >= 240U,
+		   "read continuation served %u bytes < 240 (16 FIFO + 240 expected)",
+		   (unsigned)rd_cb_bytes);
 }
 
 static void validate_ccc_rapid_8(void)
 {
-	/* CCC 由 target 硬件直接应答，软件不参与；确认被寻址即可 */
-	TGT_EXPECT(addressed, "target was not addressed");
+	/* CCC 由 target 硬件直接应答，软件不参与。可判别的 target 侧不变量：
+	 * 连发 8 次 GETPID 不得污染私有写缓冲（同 ccc_basic 判据，针对
+	 * "重复 CCC 帧"路径）——
+	 *   - 驱动正确时必过：8 帧全部走硬件，write_len 保持 0；
+	 *   - 典型失效时必不过：重复 CCC 帧被误当作私有写投递 → write_len > 0。 */
+	TGT_EXPECT(write_len == 0U,
+		   "rapid CCC leaked into private-write buffer: write_len=%zu",
+		   (size_t)write_len);
 }
 
 static void validate_read_master_abort(void)
 {
-	/* 主机截断读：本侧只需确认默认读长度协议点仍在（32）。
-	 * 真正的对齐校验在 controller 侧（post-abort 读回 0x00.. 起点）。 */
+	/* 主机截断读：本侧确认读长度协议点（controller 现已显式下发
+	 * CMD_SET_READ_LEN(32)，此前裸依赖 reset_test_state 默认值 ⇒ 恒真）。
+	 * 真正的截断恢复校验在 controller 侧（post-abort 读回 0x00.. 起点）。 */
 	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
 }
 
@@ -1277,8 +1415,16 @@ static void validate_ibi_neg_paths(void)
 
 static void validate_api_neg_paths(void)
 {
-	/* 纯 controller 本地负路径，target 不参与 */
-	TGT_EXPECT(addressed, "target was not addressed");
+	/* i3c_transfer 的四个负路径（num_msgs=0 / dynamic_addr=0 / hdr_mode=1 /
+	 * msgs=NULL）都应在驱动入口被拦截、**完全不上总线**。可判别的 target
+	 * 侧不变量：整项期间本机不得收到任何私有写数据 ——
+	 *   - 驱动正确时必过：负路径提前返回，write_len=0（本项末尾的恢复读
+	 *     是读方向，不写 write_data）；
+	 *   - 典型失效时必不过：入口检查失效 → 非法参数被真的发到总线，
+	 *     write_len > 0。这是"负路径只验返回值"之外唯一的跨核独立证据。 */
+	TGT_EXPECT(write_len == 0U,
+		   "negative-path API call put data on the bus: write_len=%zu",
+		   (size_t)write_len);
 }
 
 static void validate_multi_msg_4(void)
@@ -1291,6 +1437,8 @@ static void validate_multi_msg_4(void)
 			   i, write_data[i], CMD_DUMMY_BYTE);
 	}
 	TGT_EXPECT(last_read_len == 32, "last_read_len %u != 32", last_read_len);
+	/* 协议点：controller 现已显式下发 CMD_SET_READ_LEN(32)（此前裸依赖
+	 * reset_test_state 默认值 ⇒ 恒真）。写段两个占位字节已在上方校验。 */
 }
 
 static void validate_read_underrun_stress(void)

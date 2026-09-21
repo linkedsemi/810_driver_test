@@ -45,6 +45,13 @@ extern "C" {
 #define I2C_WAVE_ROUND_DELAY_MS 100
 #define I2C_WAVE_LEN          16U
 
+/* 单出口（SPEC_REFERENCE §6.9.3/§6.9.4）：slave 的 token 经 RLOG 交 master
+ * 打印，master 在转发时加 `<前缀>:<核>:` 信封 ⇒ 采集侧（acquire.split_relay_lines）
+ * 按同一前缀把它们分拣回 `serial_TGT.log`。
+ * 该前缀须与 common/ztest_report.py 的 NATIVE_PREFIXES 登记一致（登记表是
+ * "本仓自有前缀"的唯一清单）。 */
+#define I2C_PURE_TEST_PREFIX "I2C_PURE_TEST"
+
 #ifdef __cplusplus
 }
 #endif

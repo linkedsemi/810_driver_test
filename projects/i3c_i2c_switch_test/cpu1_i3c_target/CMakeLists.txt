@@ -12,9 +12,17 @@ target_sources(app PRIVATE
 # 禁用 cpu1 侧 PA05 toggle 线程（cpu2 用 PA05 做 read 探针标记）
 target_compile_definitions(app PRIVATE GPIO_TOGGLE_DISABLE_PA05=1)
 
+# 单出口（SPEC_REFERENCE §6.9.3）：本核是从核 ⇒ token 经 RLOG 交主核打印
+target_compile_definitions(app PRIVATE I3C_I2C_SINGLE_EGRESS=1)
+
 # 项目特定include目录
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include)
 
 # 包含公共源文件和配置（test_results.c, ztest_glue.c, gpio_toggle.c）
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
+
+# RLOG 单出口（SPEC_REFERENCE §6.9.3）：只在本工程编入 —— 其余工程没有
+# `rlog_channel` 设备树节点，编进去会因 DT_NODELABEL 取不到而构建失败。
+target_sources(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/rlog.c)

@@ -26,7 +26,12 @@ uint8_t tgt_tx_buf[256];
 
 void test_main(void)
 {
-	zt_init("TGT");
+	/* 单出口（SPEC_REFERENCE §6.9.3）：本核是**从核** ⇒ 不往自己的串口打
+	 * token。先开 RLOG 发送通道，引导标记与逐项 token 全部经 mbox 交主核
+	 * 原样打印。本核的 LOG / panic / assert 文本不走 RLOG ⇒ 崩溃现场仍留在
+	 * 本地串口上。 */
+	rlog_secondary_init();
+	I3C_I2C_TGT_BOOT();
 
 	LOG_INF("[CPU1 I3C_I2C_TGT] target test started");
 
@@ -46,5 +51,17 @@ void test_main(void)
 			break;
 		}
 	}
-	printk("PROJECT EXECUTION %s\n", any_fail ? "FAILED" : "SUCCESSFUL");
+	/* 收尾 DONE 帧必须是整条流的**最后一条**：主核等到它才打印自己的
+	 * PROJECT EXECUTION（否则 harness 会因为"已见完成标记"提前杀 gdb、
+	 * 截断从核结果）。行首带 `I3C_I2C_TEST:TGT:` ⇒ 采集侧按前缀分拣回
+	 * serial_TGT.log，重放仍是两核各自成表（§6.9.4）。 */
+	rlog_emit_done(!any_fail, any_fail
+		? "I3C_I2C_TEST:TGT:PROJECT EXECUTION FAILED"
+		: "I3C_I2C_TEST:TGT:PROJECT EXECUTION SUCCESSFUL");
+
+	/* test_main 不得返回（CLAUDE.md §4.1）：返回会进 ztest 强 main() 的
+	 * `TC_END_REPORT`，在本核串口补打 `====` + 一条**本地**
+	 * `PROJECT EXECUTION` —— 那既是本核单出口的漏点（从核又自己出了收尾
+	 * token），也让主核流里多出一条早于从核 DONE 的完成标记。 */
+	k_sleep(K_FOREVER);
 }

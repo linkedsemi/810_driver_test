@@ -45,6 +45,26 @@ def test_parse_kv_multiple():
                                             "mbps": "5.24"}
 
 
+def test_parse_kv_space_separated():
+    """空格分隔的 kv 不得把第二个键吞进第一个键的值里（io_probe / spid 形态）。"""
+    r = parse_ztest(["INFO claim_spi_spif_interconnect: cross_links=54 verdict=CONNECTED",
+                     "INFO positive_control_i3c_link: scl_PJ10_PJ08=2 sda_PJ11_PJ09=2"],
+                    tgt_banners=("CPU1 IOPROBE",))
+    assert r["infos"]["claim_spi_spif_interconnect"] == {
+        "cross_links": "54", "verdict": "CONNECTED"}
+    assert r["infos"]["positive_control_i3c_link"] == {
+        "scl_PJ10_PJ08": "2", "sda_PJ11_PJ09": "2"}
+
+
+def test_parse_kv_space_inside_value():
+    """逗号分隔 + **值内含空格**（flash_test `id=%02x %02x %02x,cap_byte=…`）时，
+    空格是值的一部分，不得把值切短。"""
+    r = parse_ztest(["INFO test_flash_jedec_id: id=ab cd ef,cap_byte=0x12"],
+                    tgt_banners=("CPU1 FLASH",))
+    assert r["infos"]["test_flash_jedec_id"] == {"id": "ab cd ef",
+                                                 "cap_byte": "0x12"}
+
+
 def test_strip_line():
     assert strip_line("\x1b[8D\x1b[Juart:~$ INFO x: a=1\r") == "uart:~$ INFO x: a=1"
 
@@ -52,5 +72,7 @@ def test_strip_line():
 if __name__ == "__main__":
     test_parse_ztest()
     test_parse_kv_multiple()
+    test_parse_kv_space_separated()
+    test_parse_kv_space_inside_value()
     test_strip_line()
     print("ALL TESTS PASS")

@@ -36,7 +36,7 @@ description: 外部插件级 skill 与 MCP 能力目录（嵌入式开发相关�
 - **brainstorming**：做新特性/新工程设计前澄清意图 + 出方案 + 批准门禁。
 - **writing-plans / executing-plans / verification-before-completion**：多步任务写执行计划、
   分步执行、声称完成前跑验证命令自证（evidence before assertions）。与
-  `810_driver_test` 的 CLAUDE.md plan 规范配合使用。
+  根仓库 `SPEC_REFERENCE.md` §7「Plan 管理规范」配合使用。
 
 ### claude-mem（本机的跨会话记忆）
 - 记住"这个坑上次怎么解决的"，配 `debug-issues-quickref`、各 skill 沉淀联动。

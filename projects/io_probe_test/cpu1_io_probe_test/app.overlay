@@ -1,0 +1,74 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * io_probe_test overlay（单核 cpu1 安全域）：把候选引脚所在的 GPIO 端口全部使能，
+ * 引脚本身由固件在运行期接管（详见 src/io_probe_test.c 头注释）。
+ *
+ * ── 为什么这里**不**使能任何被测外设 ────────────────────────────────────────
+ * 本工程不做外设通信，只做 GPIO 位操作。i2c2/3/4、i2cf2/3/4、spi1/3/4、
+ * spif1..4、i3c5/6 全部保持板级默认的 status = "disabled"：
+ *   - 它们不 init => 它们的 pinctrl-N **不会被 apply** => 候选脚停在 GPIO 复位态；
+ *   - 由 zephyr/drivers/gpio/gpio_lsqsh.c 直接以寄存器方式接管
+ *     （该驱动不依赖 pinctrl，见 tests/README.md「运行期上下拉调研」）。
+ * 一旦某个外设被使能，它的 pinctrl 会把对应引脚复用成外设功能，
+ * 探测就既驱不动也读不准（gpio_lsqsh.c 不会主动把复用功能抢回来）。
+ *
+ * ── 为什么不用静态 pinctrl 状态 ────────────────────────────────────────────
+ * 曾考虑给全部候选脚各写一个 "input + bias-pull-up" 的 pinctrl 状态
+ * （75 个 child node，DT 会膨胀到数百行）。调研结论：**不需要** ——
+ * gpio_lsqsh.c 的 gpio_pin_configure() 直接写 OE_DIN/IEN1_IEN0/PU1_PU0/PD_PU2，
+ * 支持 GPIO_INPUT|GPIO_PULL_UP / GPIO_PULL_DOWN / GPIO_OUTPUT_LOW 的运行期切换，
+ * 全程不调用 pinctrl_apply_state。故只用运行期配置，DT 保持最小。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+	};
+};
+
+/*
+ * 使能候选引脚所在的 9 个 GPIO 端口。
+ *
+ * GPIOA 不在下面重复列 —— 它由公共层 common/gpio_toggle.dtsi 使能
+ * （PA05/PA07 翻转线程；SPEC_REFERENCE §6.1.9 复用收敛）。PA00..PA03 与
+ * PA05/PA07 同端口但不同脚，互不影响。
+ *
+ * 其余端口（B/E/F/G/H/I/J/Q）本工程独有，板级默认 disabled，
+ * 不使能则 DEVICE_DT_GET() 取不到设备。同型先例：projects/spi_test
+ * 的 cpu1_spi_test/app.overlay 用 &gpioj 使能 spi2 的 CS 端口。
+ */
+&gpiob {
+	status = "okay";
+};
+
+&gpioe {
+	status = "okay";
+};
+
+&gpiof {
+	status = "okay";
+};
+
+&gpiog {
+	status = "okay";
+};
+
+&gpioh {
+	status = "okay";
+};
+
+&gpioi {
+	status = "okay";
+};
+
+&gpioj {
+	status = "okay";
+};
+
+&gpioq {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛） */
+#include "../../../common/gpio_toggle.dtsi"

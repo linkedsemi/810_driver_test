@@ -15,6 +15,9 @@ void test_main(void)
 #ifdef WDT_DESTRUCTIVE_RESET
 	extern void wdt_destructive_main(void);
 	wdt_destructive_main();
+#elif defined(WDT_PMU_RESET_TEST)
+	extern void wdt_pmu_reset_main(void);
+	wdt_pmu_reset_main();
 #else
 	LOG_INF("[CPU1 WDT] WDT test started");
 	zt_init("TGT");

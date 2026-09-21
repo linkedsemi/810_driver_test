@@ -18,4 +18,4 @@ st_sha384：链接序 sha384 在前，plain nm 名字典序却显示 sha3 在前
 - **增删测试项后重新核对**。
 
 ## 关联
-- 810_driver_test CLAUDE.md §10.27；dump_results.py 的 TEST_NAMES 注释
+- 810_driver_test `KNOWN_ISSUES.md` #27；dump_results.py 的 TEST_NAMES 注释

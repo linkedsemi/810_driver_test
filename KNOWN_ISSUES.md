@@ -1,7 +1,7 @@
 # 810_driver_test 已知坑清单（完整版）
 
-> 从 CLAUDE.md §10 拆出的完整清单。CLAUDE.md 只保留 Top 10 高频坑（精简版），
 > 本文档记录所有实测沉淀的问题，含一次性/已修复的条目。
+> `CLAUDE.md` §5「常见现象速查」只保留最高频几条（精简版），完整清单在本文档。
 > 新坑先加这里，高频的再精简进 CLAUDE.md。
 
 ---
@@ -24,7 +24,7 @@ FlashProgrammer 占用 CKLink。互斥是双向的：烧 flash 时 DebugServer �
 
 **17. DebugServer 连接残留的脚本化自愈**
 detach 不能真正释放连接；唯一可靠 = 重启 DebugServer 进程。四步：① netstat 杀 gdb ② taskkill /F /IM DebugServerConsole ③ netstat 精确杀 1025 LISTENING ④ Popen 重启 + 轮询 `DebuggerServer$` 判就绪。
-Python subprocess 里 taskkill 用单斜杠 `/F /PID`（§16）；若杀不掉，fallback = bash 层 `taskkill //F //PID`（见 #2）。
+Python subprocess 里 taskkill 用单斜杠 `/F /PID`（#16）；若杀不掉，fallback = bash 层 `taskkill //F //PID`（见 #2）。
 
 **20. DebugServer 重启后"不稳定期"**
 新实例立即连跑 → 间歇性 load_fail/断连/WDR 异常。实例稳定 ~5s 后正常。
@@ -46,7 +46,7 @@ run_all.py 加 `cleanup_cklink()`（try/finally），任何退出路径都释放
 
 **4. 两遍烧录法**
 单遍烧录 + continue 因 I-cache 残留跑旧镜像（"慢一拍"）。同一镜像烧两遍，第二遍抓取。
-单核工程已改单遍烧录（reset 冲刷 I-cache，§10.24）。
+单核工程已改单遍烧录（reset 冲刷 I-cache，#24）。
 
 **23. GDB 写包提速 41x**
 load 前发 `set remote memory-write-packet-size 16384` + `set remotewritesize 16384`。
@@ -103,6 +103,11 @@ gdb load 的是 build 目录里的旧 .bin → 固件行为与源码不一致，
 根因：qsh-test-gen 模板生成脚本时未注入 cpu2 hold 步骤。
 修复：dbg_run.py / run_test.py 的 gdb 命令序列在 `reset` 前加
 `set {int}0x4002200c = 2`（APP_CPU_SRST 寄存器，bit1=cpu2 srst）。
+★ 该写入的**副作用**：`is_app_cpu_running()`（= `APP_CPU_SRST > 0`）会返回 true，使带双核运行态
+守卫的驱动 API 全部 `-EBUSY`（eMMC/sdhci 即此）——见 #75。
+⚠️ **2026-09-18 更正**：写 2 后实测**回读 = `0x0`**（GDB + 固件自读一致，见 #75 更正批注），
+该副作用**未复现**；emmc 用例 SKIP=0、API 正常。本条 cpu2 hold 步骤本身仍是模板必需项
+（防 cpu2 自启劫持 uart1），仅"副作用"论断待裁定。
 已固化为 qsh-test-gen 模板约束（见 qsh-test-gen §4）。
 
 **39. chosen 节点丢失导致串口无输出**（2026-09-07，模板缺陷）
@@ -142,6 +147,63 @@ vs `void*(*)(void)`；当初"看着能编译过"正因错槽类型不同也不�
 判据：同一份共享源码在**别的工程**构建通过 → 是工程配置差异，不是共享树问题，**不要盲目改共享
 HAL**；`-DCONFIG_PICOLIBC=y` 命令行覆盖可非侵入验证假设。`NEWLIB_LIBC=y` 的冲突见 #35。
 防再犯：qsh-test-validate §1.3 已加"单核工程 prj.conf 必须显式含三件套"检查项。
+
+**68. mbedtls 堆统计 API 全被 `MBEDTLS_MEMORY_DEBUG` 门控**（2026-09-17）
+`mbedtls_memory_buffer_alloc_cur_get()` / `max_get()` / `status()` / `count_get()` 及其计数字段
+（`total_used`/`maximum_used`/`header_count`）**全部在 `MBEDTLS_MEMORY_DEBUG` 下**
+（`memory_buffer_alloc.c` 与 `memory_buffer_alloc.h:73-114` 同一 `#if`）⇒ 写 mbedtls 堆相关用例前
+必须 `CONFIG_MBEDTLS_MEMORY_DEBUG=y`（`zephyr/modules/mbedtls/configs/config-tls-generic.h:363-365`
+把它映射到该宏）；否则编译报 `implicit declaration`。
+- 迷惑点：`CONFIG_MBEDTLS_ENABLE_HEAP=y` **只建堆**（`zephyr_init.c` 的 `init_heap()`），**不含任何
+  用量可读接口**；不开 `MEMORY_DEBUG` 时唯一可用的是 `mbedtls_memory_buffer_alloc_verify()`
+  （头链完整性，**不是占用**）——容易误以为 `verify()==0` 就是"没泄漏"。
+- 该宏只加计数、不改分配行为（`MBEDTLS_SELF_TEST` 未开时 `check_all_free()` 也不会激活），属安全开关。
+
+**69. 用 `ZT_INFO` 前确认该 `.c` 已 include `ztest_glue.h`；`rtc_ls_test` 是唯一未迁移工程**（2026-09-17）
+- `ZT_INFO` 来自 `common/ztest_glue.h`，而 glue 是**按需 include** 的（`common_sources.cmake` 只保证
+  编译进去，不保证每个 `.c` 都 include）⇒ 新写 `ZT_INFO` 的 `.c` 必须先补 `#include "ztest_glue.h"`，
+  否则 `implicit declaration of ZT_INFO` 编译失败（实测漏在 adc_temper_test / iopmp_test）。
+  判据：文件里能 grep 到 `zt_init`/`zt_run_all`/`ztest_glue.h` 才是 glue 工程。
+- **`rtc_ls_test` 是唯一未迁移到 ztest 原生 glue 的工程**（自带 `tr_record` + 自定义 token +
+  自写 `rtc_test_run()`）⇒ 它的新用例必须沿用它那套 `rtc_begin/rtc_finish` + `enum rtc_test_id`
+  + `rtc_test_names[]` 三处同步，**不能用 `ZT_INFO`**。
+
+**71. 以太网 PHY 复位 `do{read}while` 无超时自旋 → PHY 不应答时 POST_KERNEL 永久挂死（串口 0 行新根因）**（2026-09-17）
+`zephyr/drivers/ethernet/phy/phy_realtek_rtl8211f.c:166-174`（`phy_rt_rtl8211f_reset()` 尾段）是
+`do { phy_rt_rtl8211f_read(dev, MII_PHYID1R, &reg_val); } while (reg_val != REALTEK_OUI_MSB);`
+（`REALTEK_OUI_MSB = 0x1CU`，见同文件 L29）—— **无超时自旋**：read 本身不报错、只是返回值
+始终不是 `0x1C`（复位失败 / MDIO 不通 / 器件异常）时，在 **POST_KERNEL** 阶段**永久挂死**，
+固件不启动、**串口 0 行**。
+- **与 #38/#39/#40/#56/#57 同症状但根因完全不同**：那组是"固件没跑 / 崩溃 / 配置"，
+  带 eth1 的工程走它们会**白查一轮**。
+- 判据：**带 eth1 的工程** load 后串口 0 行 → **优先怀疑 PHY 复位自旋挂死**：gdb attach
+  读 PC，栈落在 `phy_rt_rtl8211f_reset` 的自旋循环内即确认。
+- 驱动侧修法（属改上游，需裁定）：给该自旋加超时（`k_timepoint` 超时后返回 `-ETIMEDOUT`）。
+- 领域招式（跨工程复用）见 `debug-knowledge` zephyr 域 `knowledge/zephyr/init-unbounded-spin-hang.md`；
+  同族 P0（丢弃 PHY 复位返回值致误归因）见 #73。
+
+**72. 以太网 / MDIO 工程 prj.conf 必须显式带 `CONFIG_NET_TCP=y` + `CONFIG_SHELL=y`（驱动侧配置耦合）**（2026-09-17）
+`eth_dwmac.c` 把工程配置耦合进驱动，与具体工程无关（**任何带 eth1 的工程都会踩**）：
+- `eth_dwmac.c:73-75`：RX refill 线程优先级取 `CONFIG_NET_TCP_WORKER_PRIO-1` ⇒ `NET_TCP=n` 时
+  该符号未定义 → 编译报 `'CONFIG_NET_TCP_WORKER_PRIO' undeclared`。
+- `eth_dwmac.c:832` 文件末尾**无条件** `SHELL_CMD_ARG_REGISTER`（无 `#if` 守卫）：该宏在
+  `SHELL=n` 下**不是空宏**（把 entry 塞进 `shell_root_cmds` 段、handler 被强引用），handler 调
+  `shell_error()→shell_fprintf_error()`，该符号只在 `SHELL=y` 时编入 ⇒ 链接报
+  `undefined reference to 'shell_fprintf_error'`。
+修法：prj.conf 显式带 `CONFIG_NET_TCP=y` + `CONFIG_SHELL=y` + `CONFIG_SHELL_BACKEND_SERIAL=n`
++ `CONFIG_SHELL_BACKEND_DUMMY=y`（开 SHELL 拿符号、关串口 backend 只留 dummy：不产生提示符、
+不占 uart1 RX，ztest 串口流不受污染）—— 这是 qsh-test-gen §1.4 第 6 条"810 惯例 `CONFIG_SHELL=n`"
+的**唯一例外**。另 `mdio1` 的 init 挂在 `CONFIG_NETWORKING_AUTO_INIT` 下 ⇒ 网络栈必须打开，
+否则 MDIO 事务必然超时。已固化为 qsh-test-gen §1.7 + qsh-test-validate §1.3 + ref-gen-errors 速查；
+参考实现 `projects/eth_test/cpu1_eth_test/prj.conf`（含逐条注释）。
+
+**73. `mdio_dwmac.c` 丢弃 PHY 复位返回值 → PHY 失效被误归因为 "PHY ID 不符"（P0，未修）**（2026-09-17）
+`mdio_dwmac.c:274-276` 的 `mdio_dwmac_ethphy_reset(dev);` **返回值被丢弃**（qsh-driver-review
+§1.5「硬件控制类返回值丢弃 → P0」）。后果：PHY 复位失败被静默忽略 → MDIO 读回垃圾值 → 测试报成
+**"PHY ID 不符"** 这种**误导性归因**，而不是 "复位失败"。
+- 调试判据：eth/MDIO 用例报 PHY ID / BCR 不符时，**先确认复位是否真的成功**（单独驱动复位
+  GPIO / 读复位前后寄存器复现），再怀疑 PHY 型号或 MDIO 时序。
+- 状态：**未修**（`zephyr/` 下上游文件禁改）；是否上报上游 / 测试侧加防护待裁定（OPEN_ITEMS O-16）。
 
 ---
 
@@ -281,7 +343,7 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
 - 正确做法：① 优先只 `TaskStop` 掉 runner 的父任务；② 清 gdb 残留：`netstat -ano | grep :1025`
   取对端 PID，只杀那一个；③ 清 west/ninja：`tasklist | grep -E "west|ninja"` 取 PID 后逐个
   `//F //PID` 杀。**永远不要 `//IM python.exe`**。
-- 关联：#40 旧修复写法 `wmic ... name='python.exe' delete` 同属按名字杀，已一并纠正。
+- 关联：#106 旧修复写法 `wmic ... name='python.exe' delete` 同属按名字杀，已一并纠正。
 - 反向：**外部**中止（整棵 python 树消失、**无** `BUILD FAILED`）与本条相反，处置是直接续跑 → 见 #64。
 
 **63. 对比两次回归前先确认 timeout 一致，否则"新 FAIL"不是回归而是超时掩盖的潜伏缺陷**（2026-09-16）
@@ -299,18 +361,84 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   丢弃 `HAL_SM4_CTR_Crypt()` 返回值恒返回 0，吞掉 NULL 参数错误），修复后定向复跑 4/4 PASS。
   但**性质上不是本轮改动引入的回归**——缺陷一直存在，只是短 timeout 从未执行到该用例。
 
-**64. 长时全量回归后台任务被外部中止（整棵 python 树消失、DebugServer 独活）→ 全量回归按"可续跑"设计**（2026-09-17）
-- 现象：全量回归（29 case）两次都在跑到第 21 个 case（mbedtls `case_otbn_sha256_hw_sm3`）处被中止——
-  `run_all.py` 后台任务被 kill（任务状态 `killed`，output 尾部 `[killed]`），**整棵 python 进程树
-  同时消失、DebugServer 单独存活**；两次时间点高度一致（约 66 分钟处）。
-- 根因：**长时（>1h）后台批量任务在本环境会被外部中止**，非脚本崩溃、非硬件。故
-  **"单次连续跑完 29 case"不是可靠可达目标**。
+**64. 长时全量回归后台任务可能被外部中止（整棵 python 树消失、DebugServer 独活）→ 全量回归按"可续跑"设计**（2026-09-17）
+- 现象 A（被中止）：全量回归后台任务被 kill（任务状态 `killed`，output 尾部 `[killed]`），**整棵 python
+  进程树同时消失、DebugServer 单独存活**；两次都在第 21 个 case（mbedtls `case_otbn_sha256_hw_sm3`）、
+  约 66 分钟处中止。特征是**无** `BUILD FAILED`、时间点与清进程操作无关。
+- 现象 B（不中止，反例）：同环境、同入口 `run_all.py`，改用 `nohup python -u regression/run_all.py
+  > <log> 2>&1 &` 从 Bash 启动并自主轮询日志，**一次连续跑完 98 分钟（30 case 全执行到）无中止**。
+- 根因：长时（>1h）批量任务**可能**被外部中止，**不是必然**。被中止的两轮都是 **Bash 工具的
+  background 任务**——驻留在工具的任务进程组内，长时易被 harness 清理；`nohup ... &` **脱离工具
+  任务进程组**可规避（现象 B 实测）。故"单次连续跑完"不是保证可达，但**用对启动方式可以达成**。
 - 判据（**与 #62 相反，勿混淆**）：本条 = 进程树**整体**消失、**无** `BUILD FAILED`、时间点与清进程操作无关；
   #62 = **自己** `//IM python.exe` 按名字杀，症状是每 case **秒级整齐** `BUILD FAILED`（时间点与清进程操作对齐）。
   处置相反：本条直接续跑；#62 要先改清理方式（只按精确 PID / `TaskStop`）。
-- 处理：① 全量回归**默认按"可续跑"设计**——`run_all.py` 跑头部 + **幂等 resume 脚本**（写 done 标记、
-  重跑自动跳过已完成 case）补齐尾部；**中断点与续跑情况必须写进报告**，禁止拼成"一次跑完"；
-  ② 监控心跳见"整棵 python 树消失"即判**外部中止**，**直接走续跑，勿重复排查环境**。
+- 处理：① **想一次连续跑完 → 用 `nohup ... &` 从 Bash 启动（脱离工具任务进程组）+ 自主轮询日志**，
+  不要用 Bash 工具的 background 任务；② 仍**默认按"可续跑"设计**兜底——`run_all.py` 跑头部 +
+  **幂等 resume 脚本**（写 done 标记、重跑自动跳过已完成 case）补齐尾部；**中断点与续跑情况必须写进报告**，
+  禁止拼成"一次跑完"；③ 监控心跳见"整棵 python 树消失"即判**外部中止**，**直接走续跑，勿重复排查环境**。
+
+**70. `build_test`/`build_single_test` 无任意 CMake 变量的透传口；`_detect_board` 按目录名关键词判板**（2026-09-17）
+- `test_common.sh` 的构建函数只透传 `overlay` 与 `conf`（第 4 参 = **追加一个 `.conf` 文件**，
+  走 `-DCONF_FILE=...`），**没有传 `-D<任意变量>` 的口**。case 需要额外 CMake 变量
+  （如 `-DWDT_BOUNDARY_TEST=y`）时只能绕过 `test_common.sh` 直接 `west build`——此时**极易照抄样板
+  硬编码 `-b lsqsh_evb@...`**（正是 #57 / qsh-test-validate §1.9f 禁的），必须改走
+  `${SINGLE_BOARD}` / `${TARGET_BOARD}`。
+- `_detect_board`（`test_common.sh:142`）按**目录名关键词**判板：含 `controller`/`master`/`host` →
+  `CONTROLLER_BOARD`，含 `target`/`slave`/`device` → `TARGET_BOARD`，**都不含即
+  `ERROR: cannot detect board`**（如 `cpu1_wdt_test`）→ 该类 case 不能用 `build_test`。
+- 改进诉求（是否改脚本待用户裁定）：给构建函数加额外 CMake 变量透传口；`_detect_board` 加
+  1os/2os 或调用方显式传 board 的兜底。见 `OPEN_ITEMS.md` O-14。
+- 残留：`wdt_test/tests/case_destructive_reset/test.sh:47` 仍硬编码 `-b lsqsh_evb@2os/lsqsh/cpu1`
+  （该 case 为 flash boot 破坏性测试，2os 值本身正确，但写法属 #57 同类，应改 `${TARGET_BOARD}`）。**runner 跟进**。
+
+**76. `build_single_test()` 的 `CONF_FILE` 是"追加"语义，无法表达"复用上游 test 时整体替换其 `prj.conf`"**（2026-09-17，模板缺陷）
+`scripts/test_common.sh` 的 `build_single_test()`（`:344-372`）在 `<src>/prj.conf` 存在时拼
+`-DCONF_FILE=<src>/prj.conf;<conf>`（**追加**，与 #70 的"第 4 参 = 追加一个 conf"同源）。这对
+"810 自建固件 + case 差异化 conf"成立，**复用上游 test/sample 时不成立**：上游
+`zephyr/tests/subsys/fs/fat_fs_api` 需要 `CONF_FILE="prj_mmc.conf"`（**整体替换**，其 `testcase.yaml`
+的 `filesystem.fat.api.mmc` 即如此），用 `build_single_test` 会带回上游 `prj.conf` 的
+`CONFIG_DISK_DRIVER_FLASH=y` → `test_fat.h` 选中 FLASH 分型（`DISK_NAME=DT_NODELABEL(test_disk)`）
+→ 本板无该节点 → **编译失败**。`-DCONF_FILE` 没有"只替换不追加"的写法，`-DEXTRA_CONF_FILE` 只能追加。
+- 处理：复用一个需要整体替换 conf 的上游 test 时，**本工程 `case_*/test.sh` 直接调
+  `west build -b "${SINGLE_BOARD}" <src> -DCONF_FILE="<上游 conf>;<810 增量 conf>"`**，仍走
+  `${SINGLE_BOARD}` 与 `print_launch_json_single`/`load_and_run_single`（不硬编码板级、不碰公共脚本）。
+- "给 `build_single_test` 加 conf 覆盖开关"属公共脚本改造，**需裁定**（同 #70 的改进诉求）。
+- 已固化为 qsh-test-gen §1.5 + qsh-test-validate §1.9j。
+
+**77. 未进 `west.yml` 的模块可在应用 `CMakeLists.txt` 就地注册（`set(EXTRA_ZEPHYR_MODULES ...)`，免 CLI 参数）**（2026-09-17）
+未注册模块（如 `modules/lib/pfr_tpm`）若只能经 `west build -- -DEXTRA_ZEPHYR_MODULES=...` 传，
+则 `test.sh` / `run_test.py` / 手工编译三个调用点都要重复传参、易漏（正是 #70"无透传口"那类痛点）。
+改为在应用 `CMakeLists.txt` 的 `cmake_minimum_required` 之后、`find_package(Zephyr)` **之前**
+`set(EXTRA_ZEPHYR_MODULES "<绝对路径>")` —— `zephyr/cmake/modules/zephyr_module.cmake:39` 的
+`zephyr_get()` 此刻读该 CMake 变量（**放 `find_package` 之后无效**，模块处理已跑完）。实测 1os/2os
+均通过，`zephyr_modules.txt` 与 `zephyr_settings.txt`（`DTS_ROOT`）正确登记，**无需任何 CLI 参数**。
+"注册"跟着工程源码走，三路径自动一致。`ZEPHYR_EXTRA_MODULES` 是 Zephyr 3.4 前废弃名（本树仍兼容读取）。
+已固化为 qsh-test-gen §1.5。
+
+**101. `dbg_run.py` 的 `flash_once` 超时若用 `communicate(timeout=)` 收尾，会落到 `kill` 而非 `interrupt+detach` ⇒ 连接残留**（2026-09-20 记录 / **2026-09-20 已修**）
+原 `projects/*/tests/scripts/dbg_run.py::flash_once`：`proc.communicate(timeout=run_secs)` → `TimeoutExpired`
+→ 原意 `proc.stdin.write("\x03")` + `detach`，实际落进 `except: proc.kill()`。
+- 根因：CPython `Popen.communicate()` 在 `input=None` 时**会 close stdin 并置 `self.stdin = None`**
+  （实测抛 `ValueError: I/O operation on closed file`）⇒ **prime 轮**那条 gdb 是**被 kill 的**，
+  违反 qsh-debug §2.3（kill 留连接残留：下次 `target remote` 能连但 `reset`/`load` 失效 ⇒
+  "flash 输出正常但串口 0 行 / 只有 `\x00`"）。
+- **影响面**：只有 prime 轮这条路径 —— capture 轮本就走 drain 线程 + 定时写 stdin，是对的。
+- **修法（已落地，2026-09-20）**：prime 轮改为 **drain 线程持续排空 stdout + `proc.wait(timeout=…)`**，
+  超时分支再 `stdin.write("\x03")` + `detach\nquit`（stdin 全程可写，`\x03` 才真发得出去）；
+  23 份 live `dbg_run.py` 均已改并加注释"不能用 communicate()"。**残留**：非 live 的
+  `projects/i3c_i2c_switch_test/tmp/backup_*/tests/scripts/dbg_run.py` 仍是旧写法（备份，非模板）。
+- 纪律：**任何"超时后写 `\x03`+detach"的脚本都不得依赖 `communicate(timeout=)` 保留 stdin**。
+- 关联：qsh-debug §2.3 · qsh-test-gen §1.5（模板硬要求）· ref-gen-errors。
+
+**103. `Path.write_text()` 在 Windows 把整份文件的 LF 翻成 CRLF —— diff 从几行炸到几百行**（2026-09-20 登记）
+归档/报告落盘若用 `Path.write_text()`（默认 `newline=None`），Python 会把文件中**所有** `\n`
+翻成 `\r\n`（不只本次新写的那几行）⇒ 一个只改两行的脚本改动，`git diff` 显示整份文件全变。
+**修法**：写文本一律 `open(..., "w", newline="")`（或 `write_bytes()`）。已落地于
+`common/serial_archive.py`（`SPEC_REFERENCE.md` §6.4.7 硬约束 ④）。
+**当场识别法**：diff 行数远大于改动行数 ⇒ 先疑行尾翻转，别急着逐行看。
+- 详版（含实测与失败样例）：`debug-knowledge` 知识库 `common/write-text-newline-flip.md`。
+- 关联：`SPEC_REFERENCE.md` §6.4.7。
 
 ---
 
@@ -333,22 +461,25 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 同类迁移断裂信号：双核 case 串口全静默但 mem 兜底全 PASS → 查 cpu2 `zephyr,console` 是否被
 `cpu2_console_uart5.overlay` 注入（`build/controller/zephyr/zephyr.dts` 应见 `console = &uart5`）。
 
-**38. run_test.py allocate_session_dir 缺 date_str 参数**（2026-09-07）
+**104. run_test.py allocate_session_dir 缺 date_str 参数**（2026-09-07）
 - 现象：`TypeError: allocate_session_dir() missing 1 required positional argument: 'date_str'`
 - 根因：新工程 run_test.py 生成时漏传 date_str
 - 修复：`date_str = datetime.now().strftime("%Y-%m-%d"); session = allocate_session_dir(REPORTS_ROOT, date_str)`
+- ⚠️ **2026-09-21 改号**：原为 `#38`，与"固件与构建"组的 `#38`（新工程脚本漏按住 cpu2）**撞号**；该组有 7 处外部引用，故不动，本条续编为 **#104**。
 
-**39. DebugServer/CKLink 被残留 GDB 进程占用**（2026-09-07）
+**105. DebugServer/CKLink 被残留 GDB 进程占用**（2026-09-07）
 - 现象：`ERROR: Your CKLINK may be used by other program`
 - 根因：测试中断后 GDB 进程未退出，持有 CKLink 连接
 - 修复：`wmic process where "name='riscv64-unknown-elf-gdb.exe'" delete`
+- ⚠️ **2026-09-21 改号**：原为 `#39`（撞号），续编为 **#105**。
 
-**40. 串口被残留 Python 进程占用**（2026-09-07）
+**106. 串口被残留 Python 进程占用**（2026-09-07）
 - 现象：`PermissionError(13, '拒绝访问')`
 - 根因：测试中断后 Python 进程未退出，占用串口
 - 修复：先按精确 **PID** 杀使用该串口的那个进程（`tasklist | grep python` 取 PID →
   `taskkill //F //PID <pid>`）。**禁用 `//IM python.exe` / `wmic ... name='python.exe' delete`
   之类按名字杀**——west/ninja/run_test.py 本体都是 python 进程，会连坐自杀（详见 #62）。
+- ⚠️ **2026-09-21 改号**：原为 `#40`（撞号），续编为 **#106**。
 
 **41. 新工程固件加载成功但串口无输出**（2026-09-07，待解决）
 - 现象：固件加载正常（Transfer rate: 41 KB/sec），GDB 断点可达 zt_init/test_main，但串口 COM10 无任何输出
@@ -399,6 +530,60 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 - 现象：GDB `reset` + `detach` 后 PC 停在 0x1000000（bootrom），固件不启动
 - 根因：GDB 连接 halt CPU，detach 不清除 halt；bootrom 无法继续执行
 - 修复：需要 flash_program 硬复位（--reset-and-run）触发，不 halt CPU；或用户断电重启
+
+**75. 单核加载流程写 `APP_CPU_SRST=2`（保持 cpu2 复位）⇒ `is_app_cpu_running()` 返回 true ⇒ 带该守卫的驱动 API 全部 `-EBUSY`**（2026-09-17）
+> ⚠️ **更正批注（2026-09-18 硬件验证批次 2 实测；证据来源：`tmp/hw2/` 日志）——本条前提未获实测支持**
+> - **寄存器实测（GDB 与固件自读，两路一致）**：`reset` 后 `x/1xw 0x4002200c` = `0x0`；
+>   `set {int}0x4002200c = 2` 之后**回读 = `0x0`**（**并非 `>0`**）；写 `1` 后回读 = `0x3`，
+>   **且写 1 会触发 bootrom 级重启**（写 1 = **释放**，释放后核从 bootrom 起 ⇒ 该输出属正常，见下方措辞更正）。
+> - **固件侧**：emmc `case_block_driver` 用当前源码重新构建后，10 项带 `EMMC_SKIP_IF_GUARDED`
+>   的用例 **SKIP 计数 = 0**，`disk_access_init=0`、读写 PASS ⇒ `is_app_cpu_running()` 为假
+>   ⇒ **守卫未生效**。（原始日志 `tmp/hw2/emmc_fresh_raw.log`：`[emmc_block_data] pass=7
+>   fail=0 skip=0 total=7`、`[zz_emmc_block_edge] skip=0`，两套件 `skip` 均为 0。）
+> - ⇒ 下文"写 2 ⇒ `>0` ⇒ 守卫误判 ⇒ API 全 `-EBUSY`"的因果链**基于 SDK 注释（`app_cpu_reset`
+>   语义），未获实测支持**；此前"10 项 SKIP"的观测**未留下任何日志证据**（全树 grep 无
+>   `app_cpu_srst=0x` 记录）。
+> - **历史报告反证（2026-09-19 复核归档）**：`reports/2026-09-17-4`、`reports/2026-09-17-5`、
+>   `reports/2026-09-18-1` 三份 `emmc_test_case_block_driver/emmc_test_report.md` 均记为
+>   **`FAIL (8/10)`** —— 10 项**全部有结果**、8 PASS 2 FAIL、**`grep -c SKIP` = 0**（零 SKIP）。
+>   两项 FAIL 分别是 `request_mutex_not_leaked`（修复前的 mutex 泄漏，`:441 jret is non-zero`）
+>   与 `set_io_clock_out_of_range_not_silent`（那个**预期就该 FAIL** 的未修缺陷）。
+>   ⇒ **eMMC 读写通路当时确实被跑到并被真正判定**。"`emmc_test` 12 项里 10 项 SKIP、默认回归下
+>   eMMC 通路没被测"的说法**从未被观测到**（该项数 10 系 `emmc_app_cpu_guard` 套件缺
+>   `ZTEST_SUITE` 声明所致，另见 #96，与守卫无关）。
+> - **本条目保留**（登记的机制疑点仍有价值），但读者**不得当作已证事实**引用。**本更正不反推
+>   "反之如何"**——写 1 触发 bootrom 重启这一事实照实登记。
+> - ⚠️ **措辞更正（2026-09-19）**：上句原文曾写"其语义与 SDK 注释的'释放'**指向相反**"，
+>   **该解释错误**。`platform.h:126-129`（写 2 = reset）/ `:152-156`（写 1 = release）——
+>   **写 1 = 释放复位**；释放后核从 **bootrom 起**（正常启动路径）⇒ 串口打 OTP dump / `Flash Boot...`，
+>   与注释『写 1 = 释放』**一致，不矛盾**。写 1 回读 `0x3`（`>0`）与"释放 ⇒ 在跑"亦自洽；
+>   bootrom 输出落在 COM16 可由 #38 的 vuart 代理解释。**实测现象照实保留，解释以本条为准。**
+> - **未决项（待父会话裁定）**：写 2 究竟是"保持复位"还是"释放"？**勿据本条改 `scripts/` 加载脚本**。
+810 的单核加载流程在 `reset` 前写 `set {int}0x4002200c = 2`（`scripts/test_common.sh` + 各工程
+`dbg_run.py`/`run_test.py`，见 #38）——本意是"按住 cpu2 防其自启劫持 uart1"。但该寄存器
+`APP_CPU_SRST`（0x4002200c）**按 SDK 注释**是 **W1S 语义**：**写 2 = 保持复位、写 1 = 释放、写 0 无效**
+（⚠️ **2026-09-18 实测未复现**：写 2 回读 `0x0`、写 1 回读 `0x3` 且触发 bootrom 重启——见上方更正批注）；
+而驱动侧运行态守卫的判据是 `is_app_cpu_running() = (SYSC_SEC_CPU->APP_CPU_SRST > 0)`
+（`modules/hal/linkedsemi/soc/rv32/qsh/include/platform.h:180-183`）——**"CPU 被按住"也满足 `>0`** ⇒ 返回 **true**。
+- 后果：凡带该守卫的驱动（`zephyr/drivers/sdhc/sdhci-of-linkedsemi.c` 的 6 处 API 入口
+  :189-194 / :219-224 / :304-309 / :319-324 / :415-420 / :886-891；其他 AMP 外设同型），
+  **在默认单核加载环境下 API 全部早退 `-EBUSY`** → 通路整条静默不可用（eMMC 表现为 `sd_init`
+  第一步 `sdhc_get_host_props` 即失败）。**⚠️ 此后果按上述推论；2026-09-18 emmc 实测未观察到**
+  （SKIP=0、`disk_access_init=0`、读写 PASS），见上方更正批注。
+- 迷惑性：用例全 FAIL / 串口无有效输出，**极易被误判成硬件或固件问题**。
+- 做测试前先确认：被测驱动**是否有 `is_app_cpu_running()`/双核运行态守卫**；有则先核 `APP_CPU_SRST`
+  的**实测回读值**（**语义待裁定**：SDK 注释称写 2 保持复位，2026-09-18 实测写 2 回读 `0x0`、
+  写 1 回读 `0x3` 且触发 bootrom 重启，见上方更正批注）。用例可裸读 `SYSC_SEC_CPU->APP_CPU_SRST`
+  （`#include <reg_sysc_sec_cpu.h>`）断言"`>0` ⇒ API 应 `-EBUSY`；`==0` ⇒ API 应成功"
+  （**该判据建立在未证的因果链上，属待裁定项**，勿据此判"API 坏"），
+  其余功能用例在 `>0` 时 `ztest_test_skip()` 并把原因打进 INFO。
+- **若要在 1os 下真正跑通，需加载脚本写 1（释放）**——与"按住 cpu2 防串扰"冲突，属**需裁定**项
+  （勿自行改 `scripts/`）。**⚠️ 2026-09-18 实测补充**：写 1 后回读 = `0x3` 且**触发 bootrom 级
+  重启**（OTP dump + `Flash Boot...`）。⚠️ **解释更正（2026-09-19）**：这**不是**"与释放语义相反"——
+  写 1 = **释放复位**（`platform.h:152-156`），释放后核从 **bootrom 起**属正常启动路径，故见 bootrom
+  输出，**与注释一致**。该修法与"按住 cpu2 防串扰"的冲突仍在（释放正是用户需求#7 要防的串扰源），
+  但"语义指向相反"**不成立**，勿再据此论证。
+- 已固化为 qsh-debug §7 速查 + qsh-test-gen §1.0。
 
 ---
 
@@ -454,6 +639,50 @@ RSTACT whole 预期 NACK → 切回后 RSTACT peripheral / RSTDAA 应正常 → 
   属性**（`drive-push-pull`/`drive-open-drain`/上下拉），否则上一次 apply 的电平配置会泄漏到下一次；
   且 PMU 域 pad 配置模块复位清不掉，只有全芯片复位才还原——排查"切回后失效"优先扫 PMU 域寄存器。
 
+**98. `i3c_i2c_switch_test` 的 CTRL 串口同一轮出现 `PROJECT EXECUTION FAILED` 与 `SUCCESSFUL`（前半已定论）；RAM 侧 `ctrl_failed=1` 而 `ctrl_fail_reason` 为空（后半有痕迹、缺手段）**（2026-09-19）
+`case_switch_core` 的 COM18 原始行里两个相反的完成标记**并存**（`parse_ztest` 取最后一条 ⇒ 报告显示 SUCCESSFUL）；
+同轮 GDB 读 RAM：`ctrl_failed = 1`、`ctrl_fail_reason = ""`（空）、`test_results[10] = TR_FAIL`
+（`broadcast_nack_recovery`），TGT 同槽 = `TR_NOT_RUN`。r1/r2/r3 **三次复现**。
+
+**前半 —— 双标记来源已定论（2026-09-19）**：Zephyr ztest 提供**强 `main()`**
+（`zephyr/subsys/testsuite/ztest/src/ztest.c:1458`）：`z_init_mock(); test_main(); end_report();
+flush_log(); LOG_PANIC();`，其中 `end_report()` → `TC_END_REPORT` → `PRINT_LINE`（67 个 `=`）+
+`PROJECT EXECUTION SUCCESSFUL`。而 app 的 `test_main()` 末尾**也**自打一条标记
+（ctrl `i3c_i2c_controller_test.c:663` 依 `ctrl_failed`；tgt `main.c:49` 依 `any_fail`）。
+switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `end_report()` **恒打 SUCCESSFUL（空跑）**。
+⇒ CTRL = app(FAILED) + ztest(SUCCESSFUL)；TGT = app(SUCCESSFUL) + ztest(SUCCESSFUL)，与原始行逐条吻合
+（两标记各占一行、中间隔 `====…` 分隔行 ⇒ 是两段并列输出，不是同一行的 ANSI 重复）。
+- **危害**：解析器若"见到 `SUCCESSFUL` 即判 PASS"（或 `parse_ztest` last-wins）⇒ **CTRL 假 PASS**。
+- **纪律**：同一核流出现相反完成标记 ⇒ **不得只取最后一条**，必须交叉 GDB 读 RAM 记账后再判
+  （已入 qsh-test-compare §2）；新工程固件**不应再自打**完成标记（qsh-test-gen §1.4 第 5 条）。
+- **同族增补（2026-09-20，G-HW5-3）**：第二条恒 `SUCCESSFUL` 的**产生点**锁定为 `ztest.c:76-82` 的
+  `end_report()` → `TC_END_REPORT(TC_PASS)`（`tc_util.h:56-60` 的 `PRINT_LINE` + `:227`）。
+  **只要工程"注册 0 个 ztest 测试"**（命令通道型固件：无 `ZTEST()`），`zt_run_all()` 的 `test_status`
+  恒 0 ⇒ **无条件打 SUCCESSFUL**。后果两层：a) 真 FAIL 时 `parse_ztest` 的 **R6 fail-closed** 判
+  `exec_conflict`（`ctrl_done=CONFLICTING_MARKERS`）—— 此例结论恰好正确；b) 但该固定字面量是
+  **同族"假 SUCCESS 标记"**，会给**全 PASS 的核**也制造无谓的相反标记矛盾噪声（把本可干净的核
+  染成 CONFLICTING）。⇒ 二选一：让命令通道工程的自裁决行**不被 `_EXEC_RE` 命中**（异形文案），
+  或 **glue 在无注册测试时不调 `ztest_run_all`**（qsh-test-gen §1.4 第 4 条）。
+
+**后半 —— reason 被抹：有确定性痕迹，机制仍分不清（2026-09-19 取证）**：
+`test_results[10]=TR_FAIL`、`ctrl_failed=1`、`test_results_valid=0x5A` 均正常；
+但 `x/s test_reasons[10]` 读**空**，**原始字节** = `00×8` + `"hole_should_nack"`
+（目标串 `rstact_whole_should_nack`(24) 的**前 8 字符被抹成 0**，ELF 里字面量完整）；
+`ctrl_fail_reason`（暂存 `0x100665f0`）**96 字节全 0**。两次独立运行字节级一致 ⇒ **不是"没写"，
+是"写过又被部分/整体清零"**。
+- **静态矛盾仍在**：`ctrl_test_end()` 只有两条路径（FAIL 带 `ctrl_fail_reason` / PASS 带 `""`），
+  而 `ctrl_set_fail()` **必写 reason** ⇒ "FAIL + 空 reason"在纯 switch 编译路径下无法解释。
+  app 记账逻辑与 `tr_init`（T-Head `th.srb` 逐字节写）**都排除不掉**。
+- **卡点 = 缺手段**：控制器(cpu2)无法从当前 gdb 会话下断（会话控 cpu1；`BP@0x10000b2a` 75s 未命中）
+  ⇒ 需"能对 **cpu2** 下断 / RAM 写监视"的手段才能定位（picolibc `vsnprintf` 写偏移？他处清零？加载布局？）。
+- **勿据此判驱动**。关联：#53（mem reason 写入/读取下标口径不一致，同属待证）· #51/#52（本工程恢复域）·
+  `COVERAGE.md` 已把 `broadcast_nack_recovery` 记为脆弱项（固定 `k_sleep(6ms)` 抢窗口）。
+- **增补（2026-09-21，归因隔离）**：该脆弱项 2026-09-17 批次 PASS、本轮 FAIL，而同期**框架改造**
+  （日志文法统一 / 单出口 / `LOG_INF` 路径）**改变了采集与日志落地路径**、可能改变跨核 dispatcher 时延
+  ⇒ **框架级改动后时序敏感用例必须重测**，其 PASS→FAIL **不得直接记成驱动回归**（驱动改动后同理）。
+  判据补强（本轮）：失败**只在首帧**、后续步骤（r2/r3、EVR BUSY）全好 ⇒ "窗口错过"成立、**恢复路径完好**。
+  归因纪律见 qsh-test-compare §5 第 3 条 / `SPEC_REFERENCE` §6.2.4 归因纪律注。
+
 ---
 
 ## IOPMP 域（2026-09-17）
@@ -482,4 +711,483 @@ RSTACT whole 预期 NACK → 切回后 RSTACT peripheral / RSTDAA 应正常 → 
   （`iopmp_set_pmpxcfg(base, 0, 0)` 把条目 0~3 全清零）。要按**单条目**改须用 `iopmp_set_pmpxcfg_by_idx()`
   （内部 `ROUND_DOWN(idx, PMPCFG_STRIDE)` 读改写）。**写 IOPMP 用例/驱动时按"整寄存器"保存与恢复**才正确
   （可复用陷阱模式见 `debug-knowledge/mcu/packed-register-setter-scope.md`）。
+
+---
+
+## MBOX 域（2026-09-17）
+
+**66. MBOX 三条板级/驱动约束：共享区仅 4 KiB、ch0 被 flash delegation 占用、`mbox_mtu_get()` 恒 `-ENOSYS`**（2026-09-17）
+动 mbox 用例前先知道（换人读源码也未必得出）：
+- **共享 MBOX 区只有 4 KiB**：`lsqsh_evb_cpu1.dts:65-69` 的 `memory@100bf000`，上界被 cpu1 入口区卡死
+  （`0x100bffff` 以上即 cpu1 入口区）。驱动为每个 consumer **同时**分配 TX+RX 两个 region ⇒
+  **单帧 4 KB 物理上不可能**，大块数据只能分片（`case_mbox_big_crc` 用 79 片 × 64 B 帧 + 端到端 CRC32）。
+  容量上界要顺着 `zephyr,memory-region = "MBOX"` 反查 SRAM 布局。
+- **板级 ch0 = `mbox_consumer_qspi1`，在双核构建里是 flash delegation 专线**：cpu1 `soc_flash_ls.c:506`、
+  cpu2 `soc_flash_ls_client.c:84` 都注册了回调，往 ch0 打测试流量会被 delegation 协议互相解析 ⇒
+  consumer 覆盖只能做 **ch1..ch5**。判断某通道是否已被占用 = 把 `mbox` phandle 的引用者全 grep 一遍。
+- **`mbox_mtu_get()` 是 per-device 接口（签名只有 `dev`，没有 `channel`）**，驱动里存在的
+  `mbox_linkedsemi_tx_mtu_get/rx_mtu_get(dev, channel)` 是**未挂进 `api.mtu_get` 的死代码** ⇒
+  该接口统一返回 `-ENOSYS`（`case_mbox_invalid` 已把它固化成断言项，驱动补齐后该项要改判）。
+  照驱动里的 `*_mtu_get` 签名去写会直接编译报错（"too many arguments"）。
+工程内逐项登记与未覆盖率见 `projects/mbox_test/tests/COVERAGE.md` §4。
+
+---
+
+## Flash 分区与容量（2026-09-17）
+
+**67. boot flash 物理只有 4 MiB，分区表是陈旧信息；唯一可写的 `rwfs` 落在 15 MiB（超芯片）**（2026-09-17）
+- **容量证据只有 `flash1` 节点的 `reg = <0x8000000 DT_SIZE_M(4)>`**（4 MiB，用户裁定 S-5）。
+  **分区表的 offset/size 不能当容量证据**——现分区表是从另一颗大容量 flash 抄来的（排到 32 MiB）。
+- 4 MiB 内的 4 个分区（`sbl` / `sbl_env` / `a_sec_image` / `a_app_image`）**全是固件镜像区、
+  无空闲可写段**；唯一带 `PMP_R|PMP_W` 的 `rwfs` 在 `0xf00000`（15 MiB）、**超出芯片**
+  （既有 7 项 flash 读写用例正是"在超芯片地址上读写"）。
+- ⇒ 今后任何 flash **写/擦**用例：要么承认走 15 MiB（现状），要么先与用户确认可牺牲的区段；
+  **只读用例没有这个限制**。
+
+---
+
+## WDT 域（2026-09-17）
+
+**74. `iwdt_calculate_load()` 两个 uint32_t 相乘先回绕 → 饱和判据恒假（死分支）**（2026-09-17 记录 / **2026-09-18 已修 + 用例改判**）
+`zephyr/drivers/watchdog/wdt_iwdg_ls.c:43-48`（原）：`uint64_t ticks = timeout_ms * frequency / 1000;`
+—— `timeout_ms` 与 `frequency` **都是 `uint32_t`**，乘法/除法都在 32 位内完成、结果才赋给
+`uint64_t` ⇒ 饱和判据 `ticks > UINT32_MAX` **恒假（死分支）**。sec_iwdg/pmu_iwdg 的
+`clock-frequency = 32768`（`lsqsh.dtsi`），回绕起点 = `131072 * 32768 == 2^32`。
+- 修前实际语义（host 侧同式复现）：131071999 ms → **4294934**（64 位算式为 4294967263）；
+  131072000 ms → **0**（64 位算式设想"溢出饱和到 0xFFFFFFFF"）；0xFFFFFFFF ms → **4294934**。
+- **修复（2026-09-18）**：`wdt_iwdg_ls.c:43-51` 现为
+  ```c
+  uint64_t ticks = (uint64_t)timeout_ms * frequency / 1000;
+  return (ticks > UINT32_MAX) ? UINT32_MAX : (uint32_t)ticks;
+  ```
+  显式 64 位提升 ⇒ 饱和判据 `ticks > UINT32_MAX` **可达**，超限即钳到 `0xFFFFFFFF`。
+  修后语义：131071999 ms → **4294967263**；131072000 ms → **0xFFFFFFFF**；
+  0xFFFFFFFF ms → **0xFFFFFFFF**。**饱和阈值 = 131072000 ms（≈ 36.4 h）**
+  ⚠ **不是** 131072 ms —— 后者是旧的"32 位回绕起点"，两者**差 1000 倍**
+  （档案 `DEFECT_ANALYSIS_2026-09-17.md §1.6` 已就地更正过这个错误）。
+- **用例同步（已改判）**：`wdt_test/case_boundary` 的 3 项
+  （`test_load_ticks_just_below_saturation` / `_saturation_boundary` / `_uint32_max_timeout`）
+  及常量组（`wdt_boundary_test.c:50-55`）已改为 64 位语义、预期 PASS；
+  `wdt_test/tests/COVERAGE.md` §2.2 脚注与 §3 饱和分支条目同步更新
+  （原"死代码 / 未修 / 回绕周期 131072 ms"表述已作废）。
+- **判据风险（保留提醒）**：这 3 项断言的是**当前驱动行为**；若日后有人把
+  `(uint64_t)` 提升去掉，它们会 FAIL —— 这正是它们该有的判别力，不是假 FAIL。
+- 状态：**已修**（驱动 + 用例双改判）。原 OPEN_ITEMS O-15 可收口。
+- 可复用教训：拿"数学期望"当预期值前，先按 **C 整型提升/溢出语义**核算，或把式子抽到 host
+  用相同类型复现（qsh-test-gen §1.6「边界常量必须有实测来源」的延伸）。
+
+**100. 破坏性复位 case 的采集窗口按"标称超时"设 ⇒ 误判"没复位"（判据须取跨复位 `__noinit` 终态，或窗口 ≥60s）**（2026-09-20）
+`wdt_test case_destructive_reset`（sec_iwdg）按 `run_destructive.sh` 的 18s（另两次 20s / 25s）采集，
+串口在 `PHASE 0 complete, waiting for watchdog reset...` 之后**再无输出** ⇒ 初判"sec_iwdg 没复位"。
+- **实际复位发生了**：GDB 读回 `__noinit test_phase` **终态 = 2**（只有 Phase 1 跑过才会写 2）；
+  把窗口拉到 **90s** 才看到真正的重启在 PHASE 0 之后 **33.9s**（另一样例 4.1s ⇒ 延迟不确定）。
+- 根因：`WDT_TIMEOUT_MS 2000` 是驱动给的**标称**值，sec_iwdg 的实际复位延迟受 IWDT 时钟/复位域影响
+  可达 ~34s；**"窗口内没看到"≠"没发生"**。
+- **判据（跨复位状态机通用）**：
+  a. **首选 `__noinit` 终态**（`test_phase == 2` 等），不依赖在窗口内捕捉到重启；
+  b. 只能看串口时，采集窗取**远大于标称超时**的值（≥60s），且**不得**按标称 2s 反推"是否发生"。
+- 同类（"标称 2s、实际未知"的跨复位状态机）：`app_iwdg_cpu2_test case_reset`、`case_pmu_iwdg_full_reset`。
+- 关联：#46/#47（sec_iwdg = HART 复位 / WDT flash boot 流程）· qsh-test-run §6 · qsh-test-compare §2 ·
+  qsh-debug `ref-flash-variants.md` §2。
+
+**102. `app_iwdg_cpu2_test case_reset` 的 flash 固化流不启动 cpu2（COM18 全静默）—— 2os 板上 bootrom 只引导 cpu1**（2026-09-20）
+按 `run_reset.sh` 一次会话烧 cpu1@0x08000000 + cpu2@0x08100000、`--reset-and-run`，采 COM18（cpu2 uart5）
+25s / 90s 均 **0 行**；COM16（cpu1）正常（`boot_cpu2: address: 0x10000000` + cpu1 supervisor + 2 项 ztest PASS）。
+- 根因：cpu1 build `CONFIG_CPU2_BOOT_ADDR=0x10000000` 且 `# CONFIG_CPU2_IMAGE_HEADER is not set`
+  ⇒ `boot_cpu2()` 只 `app_cpu_dereset_by_addr(0x10000000)`、**不搬运镜像**；启动日志只有一条
+  `flash_image --exe_addr:0x10124000`（cpu1）。GDB 读 `0x10000000` = ELF magic、`e_entry=0x10000800`，
+  **不是**本次构建的 cpu2 镜像 ⇒ **该 flash 流从未校准**（与 `run_reset.sh` 文件头自述的未校准项
+  #1/#4"若 bootrom 不引导则按 §6.7.4 换 CPU1 构建变体"完全对上）。
+- 事实：**这台 2os 板上 bootrom 只引导 cpu1**；cpu2 的镜像需**先 staging 进 RAM**（GDB `restore`
+  或 cpu1 的 boot 搬运代码），**烧进 flash `0x08100000` ≠ 会自动起**。
+- 判别顺序（cpu2 串口全静默时）：先 GDB 读 `0x10000000` 是否为**本次构建**的 cpu2 镜像
+  （ELF magic + `e_entry` 对照该 case 的 `objdump`）→ 是 ⇒ 查固件；否 ⇒ 镜像从未被搬运上电。
+- 关联：#47-#49（flash boot 流程 / 引导头 / GDB halt 阻止 bootrom）· SPEC_REFERENCE §6.7.3/§6.7.4 ·
+  qsh-debug `ref-flash-variants.md` §2 · qsh-test-run §8。
+
+---
+
+## SPI filter / pfr_tpm 域（2026-09-17）
+
+**78. `spif_add_cmd()` 表外野写：命中"命令已在固定表"分支时用过期索引算写地址（P0，2026-09-18 已修；数值已更正）**（2026-09-17 记录 / 2026-09-18 更正数值并修复）
+`modules/lib/pfr_tpm` 的 `spif_add_cmd()` 在"命令已存在于固定表"分支用**过期 `idx`**计算写地址
+`table_base + idx * 4`（`spi_filter.c:884`；`spif_add_cmd_with_dummy` 同型在 `:938`）。
+**数值更正（2026-09-18）**：过期 `idx` = `-ENOSR` = **-63**（本项目 picolibc；**`-28` 是 `ENOSPC`，旧记录有误**）
+⇒ 偏移 **-252 字节（-0xFC）**，写到 `SPIF_CMD_BASE - 252` 的**表外寄存器**；spif1 落点 =
+**`0x4006FF30`**（落在 RTC 块 `0x4006FC00..0x4006FFFF`），**不是旧记录的 `0x4006ff90` / `-112`**。
+- 触发条件：任何"传一个 DT 默认命令值"的自然写法都会命中该分支（**负向模式：断言成功 ≠ 行为正确**，
+  反而污染实机寄存器）。
+- 写 spif 测试时：改用 `spif_add_general_cmd()`（无该分支），并在用例内以 `spif_cmd_in_fixed_table()`
+  **显式断言所选命令不在固定表内**，从源头规避。
+- **修复（2026-09-18）**：两处写址改用固定表循环变量 **`off`**（即 `table_base + off * 4`，`off ∈ [0,30)`）。
+  原 `idx` 是第一个扫描循环失败后残留的 `-ENOSR`，而固定表槽位号的唯一正确来由是 `off`。
+  **已加回归护栏（2026-09-18 F1 波）**：`spif_test` 的 `cmd_table_add_remove` 末尾新增"固定表分支"段
+  —— 用 `spif_set_cmd_by_idx()` 只改 HW、不动 SW 镜像 `fixed_cmd_tab[]` 制造 HW/SW 不一致，再调
+  `spif_add_cmd(0x03)`，断言目标槽 `CMD` 回写且 **`EN==1`**（修复前 EN 保持 0 ⇒ 该段必 FAIL）。
+  详见 `spif_test/tests/COVERAGE.md`「跳过项」首行 + `cmd_table_add_remove` 行。
+  ⚠ 该段**只断言 `CMD`/`EN` 两个字段**（`spif_cmd_t` union 未清零，见缺陷 #20）。
+- 可复用形态（**过期索引/变量作写地址**）已登记 qsh-driver-review §1.8 P0 清单 + qsh-test-gen §1.6。
+
+---
+
+## 驱动 / 硬件 / 工具 / 用例（2026-09-18 登记）
+
+**79. `pwm_ls.c` 的 `resets` 成员声明与实例初始化项守卫不对称 → `CONFIG_RESET=n` 时编译失败**（2026-09-18）
+`zephyr/drivers/pwm/pwm_ls.c` 的 `ls_pwm_config` **成员声明**带
+`IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))`（`:44`），而实例初始化项
+`IF_ENABLED(DT_INST_NODE_HAS_PROP(n, resets), (.reset = RESET_DT_SPEC_INST_GET(n), ))`（`:158`）
+**没有同样的守卫** ⇒ `CONFIG_RESET=n` 且 DT 节点有 `resets` 属性时，为不存在的成员做指定初始化
+→ 编译失败。本板 `CONFIG_RESET` 默认 `y`（`dma_test` 未显式写也是 `y`）⇒ 当前**潜伏**，
+一旦有人在 prj.conf 关掉 RESET 才暴露。
+- 判据（跨驱动通用）：**带 `resets`/`clocks` 的 DT 节点，其驱动的 config 成员声明与实例初始化项
+  守卫必须对称**；写新工程 prj.conf 前显式核对被测驱动 init 引用的 CONFIG 开关与 DT 属性守卫。
+- 本工程处置：prj.conf 显式 `CONFIG_RESET=y` 规避；**未改上游**（纪律"发现缺陷只登记不修"）。
+  细节见 `projects/pwm_test/tests/COVERAGE.md` §6。
+
+**80. `spi_ls.c` 缺陷簇：P0 空指针解引用 / 同指针重配静默改频 / 分频循环越界 / 同步路径重复 complete**（2026-09-18 记录，只登记不修改）
+`zephyr/drivers/spi/spi_ls.c` 四处独立缺陷（写 SPI 用例前必读）：
+1. **P0 空指针解引用**：`spi_ls_configure()` 的 `-ENOTSUP`（半双工 `:72-75`、TI 模式 `:77-80`）与
+   `-EINVAL`（超频 `:118-121`）都在 `ctx->config = config`（`:140`）**之前**返回；
+   `spi_ls_transceive()` 走 `goto done` → `spi_context_release(ctx, err)`，在 `CONFIG_SPI_ASYNC=n`
+   下执行 `ctx->config->operation`，而**首次调用** `ctx->config == NULL`（dev_data 零初始化、
+   `spi_context_lock` 只写 `owner`）⇒ **load access fault**，固件进异常入口、串口静默、整轮套件中断。
+   ⇒ 错误路径用例必须**先成功配置一次**建立 `ctx->config` 再触发错误分支。
+2. **同指针重配静默改频**：`spi_ls_configure()` `:64-70` 在 `spi_context_configured()`（**指针比较**）
+   早退之前就无条件 `SPE=0` + `BR ← scaler[0]`（=/8）⇒ 用**同一个 `spi_config` 指针**第二次
+   `spi_transceive`，实际波特率被静默改成 `clock/8`（本板 9.375 MHz），无任何日志。
+3. **分频循环越界**：`spi_ls.c:123` 循环上界写成 `i <= ARRAY_SIZE(scaler)`（数组长 6）⇒
+   `frequency < clock>>8`（本板 < 292968 Hz）时越界读 `scaler[6]` 并写入不可预测的 BR。
+   ⇒ 分频表下界取 `292968`。
+4. **同步路径重复 complete（P0）**：`spi_ls_transceive()` 先 `spi_context_wait_for_completion()`
+   （`:359`）、紧接着又 `spi_ls_complete()`（`:360`），后者 `:274` 调 `spi_context_complete()` ——
+   非 ASYNC 下**无条件 `k_sem_give(&ctx->sync)`**（`spi_context.h:209-212`）⇒ 每完成一次传输
+   `ctx->sync` 残留 1 个令牌。主设备侧因 ISR 把线程饿死到传输结束而**表象正常**，只有从设备侧暴露
+   （返回后 `spi_ls_complete()` 立刻 `SPE=0`，等不到主机时钟）。对照 `spi_gd32.c:400-406`
+   （同为 STM32-like SPI）：同步模式**不再** complete。
+- 本工程处置（`spi_test`）：错误路径用例先 `spi_arm_instance()`；分频下界取 `292968`；第 2 条做成
+  `reconfigure_same_cfg_prescaler` **刻意固化**；从设备侧加带运行时自检的
+  `lb_drain_stray_sync()` 清残留令牌（**驱动修好后应整体删除**）。
+- 共 11 条观察记在 `projects/spi_test/tests/COVERAGE.md`；**未改上游**。
+- 可复用教训：**"配置失败的返回值检查必须早于任何已落地副作用"**；判据 = "返回值语义
+  （`0` vs 有界超时 `-115`）反推对端是否真在等"（`debug-knowledge` mcu 域）。
+
+**81. lsqsh 所有 GPIO 端口默认 `status = "disabled"` → CS/中断脚在非 GPIOA 端口时设备静默不就绪**（2026-09-18）
+`lsqsh.dtsi` 里每个 GPIO 端口节点都带 `status = "disabled"`（`:183` gpioa、`:264` gpioj …）。
+`spi_ls_init()` → `spi_context_cs_configure_all()`（`spi_ls.c:462` / `spi_context.h:220-236`）对每个
+`cs-gpios` 条目做 `if (!device_is_ready(cs_gpio->port)) return -ENODEV;` ⇒ **CS 所在端口未使能时
+`spi_ls_init` 直接失败，设备静默 "not ready"（无任何日志）**。
+- 实例：`spi_test` 的 `spi2` → CS 在 `gpioj 15`，板级 `cs-gpios` 给出但 overlay 未使能 `&gpioj`
+  ⇒ `spi2` 不可用；补 `&gpioj { status = "okay"; }` 后恢复。
+- 防再犯：新工程 overlay 前先查外设的 `cs-gpios`/中断/复位引脚落在哪个端口，**该端口须显式
+  `status="okay"`**（公共层 `common/gpio_toggle.dtsi` 只使能 `&gpioa`）。判据见 qsh-test-gen §1.0。
+
+**82. `spi1/spi2` 与 `spi3/spi4` 是两个不同驱动（`spi_ls.c` vs `spi_dw.c`）；启用 DW SPI 实例须同时带 `&dmac2` + `timing-calibration-disabled`**（2026-09-18）
+- **归属看 compatible，不看实例号连续性**：`lsqsh.dtsi:1179-1234` —— `spi1@4008a000` / `spi2@4008a400`
+  是 `linkedsemi,ls-spi`（`spi_ls.c`，`DT_DRV_COMPAT linkedsemi_ls_spi`）；`spi3@4006e000` /
+  `spi4@4006e400` 是 **`snps,designware-spi`（`spi_dw.c`）**。SPIF 通路：`spif3.spi = <&spi4>`
+  （`modules/lib/pfr_tpm/include/lsqsh_pinctrl_pfr_tpm.dtsi:1063`）、`spif1/2 → spi3` ⇒ pfr 的
+  `spi_master_communication` 走 **DW SPI**，与 `spi_ls.c` 无关。
+- **使能 `spi3`/`spi4` 的两条硬依赖**（缺一即 `west build` rc=1）：
+  ① `spi_dw.c:2221` 的 `DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(inst, rx))` 要求 `dmas = <&dmac2 …>`
+  的控制器**已使能**，且 `CONFIG_DMA_DW_LLI_POOL_SIZE`（`drivers/dma/Kconfig.dw_common:11`）只在
+  DW DMA 编入时才有定义 ⇒ overlay 加 **`&dmac2 { status = "okay"; };`**（回环本身不走 DMA，
+  走 `spi_dw.c:692-817` 通用 IRQ 通路）。
+  ② `spi_dw.c:467-469` 在 master 且未禁用幅度校准时下标访问
+  `info->timing_calibration_delay_arr[config->slave]`，该数组由 `DT_INST_FOREACH_CHILD_STATUS_OKAY`
+  （`:2161-2163`）生成 —— **无子节点 ⇒ 空数组 ⇒ 越界读** ⇒ overlay 加
+  **`timing-calibration-disabled;`**（binding `snps,designware-spi.yaml` 有此布尔属性）。
+- **NSS/片选复用宏的命名变体**：该 SoC 片选叫 **`CSN`**（`SPI3_CSN0_FUNC2_PG13_PINMUX` /
+  `SPI3_CSN1_FUNC2_PG12_PINMUX`，`lsqsh-pinctrl_func_2_3_4.h:119-120`），与板级
+  `&spi3 cs-gpios = <&gpiog 13>, <&gpiog 12>` 逐脚对应 ⇒ **spi3 有片选复用**。判定某外设
+  "有/没有某类复用"必须按**关键字全集**检索（`NSS|CSN|CS|SS|FSS|片选`），勿只搜 `NSS`。
+- 主从方向：`spi_dw.c:407-411` 要求 DT `serial-target` 才允许从模式，而全树 `.dts/.dtsi/.overlay`
+  里该属性**出现 0 次**（spi3/spi4 在所有用例中都是 master）⇒ 唯一有证据支持的回环方向 =
+  **`spi3`(DW)=master / `spi1`(LS)=slave**；`spi3` 可当从设备属"未证伪"（证据强度降权）。
+
+**83. "配对控制器"让渡引脚：pfr_tpm 的 `pinctrl-noinit` 与 SPIF master 的配对 SPI `pinctrl-0` 是同一坑的两个实例**（2026-09-18）
+pfr_tpm 模块把若干控制器标为某滤波器的**配对控制器**，其引脚默认归滤波器所有；一旦把该控制器
+**挪作他用（上游 master）**，这层假设不再成立，必须显式解除。**不解除不报错、不编译失败，只会静默无波形**。
+- **I2C 侧（`pinctrl-noinit`）**：模块 dtsi（`lsqsh_pinctrl_pfr_tpm.dtsi:899-902`）给 `i2c1..i2c4`
+  一律标 `pinctrl-noinit`，而 `i2c_ls.c:901` 是 `if (!dev_config->pinctrl_noinit) { i2c_ls_pinctrl(...); }`
+  ⇒ 该实例 SCL/SDA 停在上电默认态（GPIO/模拟），控制器根本没有引脚。症状伪装成"接线错 / 从设备不在位"。
+  修法：本工程 overlay `&i2cN { status = "okay"; /delete-property/ pinctrl-noinit; };`
+  （属性在 `dts/bindings/i2c/linkedsemi,ls-i2c.yaml:48` 有绑定声明，删除合法），**改完须删 build 全量重建**。
+- **SPI 侧（配对 DW SPI 的 `pinctrl-0`）**：`spif_switch_to_master(spifX)` 用 SPIF 自己的 `pinctrl-2`
+  （master 态引脚），但**配对控制器**（`spif3.spi = <&spi4>`）默认仍持有板级 pinctrl ⇒ 两个 owner
+  抢同一 net。修法：overlay 对配对控制器显式 `&spi4 { pinctrl-0 = <>; pinctrl-names = "default"; };`
+  （参考资产 `samples/spi_master_communication` 即如此）。
+- 另：**"配对控制器（O 侧）"与"上游 master"是两个不同角色**——前者 `i2cfN.i2c = <&i2cN>` 由 DT 可证
+  （引脚重叠），后者是外接跳线到 `i2cfN.SCLI/SDAI` 的**任意**实例，**DT 里没有任何属性描述**。
+  两个角色的引脚关系不同、不能互相推断；更不可用后者的假设去否定前者。上游 master 建议做成
+  **DT alias**（用例一律 `DEVICE_DT_GET(DT_ALIAS(...))`），接线变更只改 overlay 一行。
+
+**84. 裸 `spi_nor_op` 用例必须适配器件运行态；`spi-ctrl-caps-mask` 是 disable 掩码（更正 INBOX G-C1C2-2 的"上电即进 QPI 4-4-4"）**（2026-09-18）
+- **属性语义**：binding `dts/bindings/spi/linkedsemi,ls-qspi.yaml` 的位表全部写作 **"bit N : disable …"**
+  （bit18 = disable 4-4-4）；驱动 `spi_nor_multi_dev.c:2490` 做
+  `data->cap_mask = ~(cfg->spi_ctrl_caps_mask | cfg->spi_nor_caps_mask)` 之后才判
+  `cap_mask & SPI_NOR_MODE_4_4_4_CAP`（`:2498` / `:2644` 的 `enter_qpi_mode`）。
+  本工程编译产物实测 `.spi_ctrl_caps_mask = 262144`（= 0x40000）⇒ **关掉** 4-4-4，
+  `spi_nor_enter_qpi_mode()` 不会被调用。
+- **真实运行态**：**SPI 单线 + 4 字节地址**（`flash_size` 32 MiB > 16 MiB ⇒ `:2676` 使能 4B 地址、
+  `:1380` 用 `addr_len=4`）。故 `qspi_flash_test` 两个 raw case 的修法是 `addr_len` 3 → 4，
+  **不是**改 `MODE_444`、也不是"先退出 QPI"。
+- **raw 用例必须断言内容**：只断言 `ret == 0` 会得到假 PASS（驱动只按参数发波、内容错位也返回 0）；
+  `raw_read_1_1_4_ok` / `raw_read_1_4_4_ok` 即如此。
+- 防再犯（读 DT 属性纪律）：**先看 binding 位表的措辞（enable 还是 disable），别按属性名想当然**。
+  完整分析见 `810_driver_test/TRIAGE_QSPI_SPIF_2026-09-18.md` §1/§4。
+
+**85. `LOG_MODE_DEFERRED` 下批量直吐大块输出会丢消息/合并行/中文乱码，必须给 log 线程留间隔**（2026-09-18）
+deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 字节约 13 ms 才能送完；
+循环里不睡就一秒塞进 20 KB，**ring 直接被撑满，超出部分被静默丢弃**。
+- 实例：`io_probe_test` 的矩阵 + ASYM 共 565 行逐行 `LOG_INF` 连发 ⇒ 观察到的现象是
+  `IOPROBE total measured links (undirected) = N` 行**整条丢失**、若干行被**合并到同一行**、
+  中文成片乱码；串口侧只有 ASCII 数字/脚名可可靠解析。同族于
+  `spi_test` 的 75×75 邻接矩阵（每行 ~150 字符，共约 20 KB）。
+- 处理：逐行打印必须 `k_msleep(20)` 让 log 线程排空（`IO_PROBE_LINE_GAP_MS`），**分块间隔须按段长动态调**
+  （固定 20 ms 对 200+ 行段仍不够）；缓冲一律放 `.bss`（`static`）不放线程栈，并把
+  `CONFIG_LOG_PROCESS_THREAD_STACK_SIZE` 提到 2048（150 字符行在 log 线程里格式化，默认 1024 偏紧）。
+- ⚠ 这是"**最需要证据的时候报告最像好消息**"的同族坑（与内存兜底假 PASS —— INBOX G-P6-1 / G-D1，已由哨兵门修复 —— 同源）：
+  报告缺行不会报错，只会静默少内容。
+
+**86. `io_probe_test` 首跑矩阵是下三角 artifact —— 驱动过的脚没还原，整张矩阵不可信**（2026-09-18）
+- 实测：`links=2862 / asym=2624`（75 脚无向对数上限 2775，links 已超上限）。逐行统计 block1 的 `#`
+  数 = `0,1,2,3,4,5,7,9,10,11,12,14,…` **严格递增**，`row49(PG13)` block1 = 36 个 `#`（占满 cols0..35）
+  —— 即第 i 行对全部 j<i 都是 `#`，**完美下三角**。
+- 根因：某脚被 `GPIO_OUTPUT_LOW` 驱动后，`pin_to_input_pullup()`
+  （`gpio_pin_configure(dev,pin,GPIO_INPUT|GPIO_PULL_UP)`，`io_probe_test.c:239-242`）**没把它拉回高电平**
+  ⇒ 之后所有行都把它读成低 ⇒ 误判"连通"。⇒ **只有上三角（i<j，`dump_links()` 的口径）才是真实信息**；
+  下三角 + 全部 `asym` 都是 artifact。设计自带的 `positive_control_i3c_link` 仍 PASS
+  （PJ10↔PJ08、PJ11↔PJ09 都是上三角）⇒ 检测通路没问题，坏的是**驱动后还原**。
+  还原失败的真因见 **#93**（HAL `io_cfg_input()` 清错 `OE_DIN` 半区，撤销静默无效）。
+- 附带：`pin_controllable` 实测 FAIL（PH12 `spif4.SCKI`、PG07 `spif4.IO3_IN` 不受控，
+  PF12 `spif4.IO2_IN` 基线为低）—— spif4 三根脚行为异常，详见 **#94**。
+- 防再犯：**扫描类工程必须加"还原自检"**——每脚驱动后还原、再读回自身，必须回到基线电平，
+  否则 `LOG_ERR` + 单独 FAIL 闸（命名如 `pin_restorable`，与现有 a/b 闸并列）。
+  **加闸前该矩阵不可用于任何接线结论**。见 qsh-test-gen §1.4 第 10 条。
+
+**87. `i3c_dualcore_test case_mixed_400k_6m25` 实测有 flaky（约 1/4 复现）**（2026-09-18）
+- 数据：改前基线（2026-09-17-1）PASS 35/35；某轮基线（2026-09-17-3）FAIL 22/35
+  （尾部 `write_*` 13 项 `src=mem` 全 NOT_RUN，串口在 `write_delay_read_len` 后长时间静默、
+  始终未见 `PROJECT EXECUTION`）；随后定向复跑 2 次均 PASS 35/35。4 次采样 3 PASS / 1 FAIL
+  ⇒ **真 flaky**，不是框架回归、也不是稳定缺陷。
+- 失效形态 = **套件中后段停摆**（不是单项断言失败）。
+- 处置：跨轮对比时必须**同 timeout**；该 case 的"新 FAIL"不可直接当回归；后续如需闭环，
+  按 qsh-debug 分层定位在停摆点断点抓现场。
+- **补注（2026-09-21）：同族第二种 sub-mode —— 「prime 首轮零输出」**。原形态是**套件中后段停摆**
+  （上条：尾部 `write_*` 全 NOT_RUN、长时间静默）；本轮实测到的是 **prime 轮 20s 内完全没有固件
+  输出**（首轮就出不来）。二者**同族、不同 sub-mode**：一个是"跑起来后停摆"，一个是"根本没进首轮"。
+  - 新形态实测（各 3 次）：`case_mixed_1m_12m5` = **FAIL / FAIL / PASS**；
+    `case_pure_i3c_6m25` = **FAIL / PASS / PASS**。
+  - **失败从不落在断言层**：全部 FAIL 都是 **`prime 20s 内无固件输出`**，且**都伴随
+    `[ENV] restarting DebugServer`**；复跑时**同样的 prime 失败在 DS 重启后重试即成功**
+    ⇒ 与用例断言无关，是**环境（DebugServer / 连接）层**的间歇失败。
+  - **判据**：这两个 case 的**单次结果不可判**，必须**多次取众数**（多数 PASS 才判 PASS），
+    并把 prime 失败 + DS 重启记进报告。与本次 G-E1/G-E2（DS 单点故障级联）同层，见 qsh-test-run §4.1。
+
+**88. per-case 构建粒度：`--skip-build` 复用前必须按该 case 自己的产物校验新鲜度**（2026-09-18）
+- 事实：**每个 case 有自己独立的 `tests/<case>/build/` 目录**，同一工程"首个 case 已构建"**不覆盖**
+  后续 case 的目录 ⇒ `--skip-build` 复用到的可能是**上一次会话**留下的 ELF。
+  （`SPEC_REFERENCE.md:293` 早在 2026-08-31 就有勘误写明"首个 case 只构建它自己"——**文档是对的，
+  只有 `run_all.py` 的代码注释没同步、且说反了**。）
+- 放大效应：哨兵 `test_results_valid`（2026-09-18 加入）之后，旧 ELF 无该符号 ⇒
+  `dump_results.py` fail-closed 成 `no_sentinel_symbol` ⇒ 内存兜底整体失效 ⇒ case 集体翻成
+  看起来像"内核挂死"的 FAIL。实测：`cases.yaml` 启用 51 个 case、现存 56 个 ELF，其中 **41 个
+  缺哨兵符号（73%）**。
+- 已修（2026-09-18）：`--skip-build` 改为**哨兵感知**（仅当该 case **自己的** ELF 含
+  `test_results_valid` 才加，否则强制重建 + `WARN`），并在 case 循环前新增
+  `audit_stale_elves()` 显式列出全部缺哨兵旧镜像。
+- 通用原则：**任何 `--skip-build` / 产物复用前，必须按该 case 自己的产物校验新鲜度；
+  哨兵/版本标记类符号可作新鲜度判据**（qsh-test-run §4.2 已同步）。
+- **姊妹形态：哨兵门只验"符号存在"、不验"源码新鲜度" ⇒ 烧陈旧 ELF 产生假 FAIL / 假 PASS**（2026-09-20，G-FAMFILL-1）——
+  `--skip-build` 的 `_elf_has_sentinel()` 门（`run_all.py:513-518`）**只**检查 ELF 内是否含
+  `test_results_valid` 符号（保证内存兜底可用）。**"含哨兵"≠"源码最新"**：fix 之后源码已改、
+  但 build 目录仍是 fix 前的旧 ELF 时，哨兵符号在、门放行 ⇒ `run_test.py:1088` 构建段被跳过、
+  `test.sh`（`AGENT_RUN=y`）也跳过构建 ⇒ **烧旧镜像**。实测 `i3c_dualcore_test` 的
+  `case_mixed_400k_6m25`（build 目录 2026-09-18 21:40，早于 F5 修复）与 `case_pure_i3c_6m25`
+  （09-18 18:18）两边 `.config` **md5 逐字节相同**、CMakeCache 参数一致 ⇒ 与构建路径 / Kconfig /
+  优化级别 / 时序**无关**，**唯一变量是 ELF 陈旧**。
+  后果**双向**：旧 ELF 里 `validate_read_underrun_16_32` 被 GCC `-fipa-icf` 折叠到别处 ⇒ **假 FAIL**
+  （`write_len 2 != 1`）；`case_pure_i3c_6m25` 那份更老源码折叠到**没有断言的共享体** ⇒ **假 PASS**
+  （更危险）。三重锁定：反汇编 + DWARF 行号 + 失败串格式。
+  ⇒ 修法方向（**未改代码，`run_all.py` 在写域外**）：`audit_stale_elves()` 增加"build mtime < 相关源
+  mtime 即强制重建"，或去掉该快路径。**通用**：哨兵 / 版本标记只证明"当时编过、格式对"，
+  **不证明"对应当前源码"**；产物新鲜度必须比对 mtime（或内容哈希），与 G-CLEAN-2 / qsh-test-compare §5 同族。
+
+**89. 以太网/网络类工程：`CONFIG_NET_CONFIG_INIT_TIMEOUT` 默认 30 s —— 网线未插时 ztest 开机阻塞**（2026-09-18）
+`subsys/net/lib/config/init.c` 的 `net_config_init_by_iface()` 在 `check_interface()` 为假（网口未 up）时
+`while (count-- > 0) k_sem_take(&waiter, K_MSEC(loop))` 等链路，`loop = CONFIG_NET_CONFIG_INIT_TIMEOUT / 10`，
+**默认 timeout=30 ⇒ 最坏阻塞 30 s**。网线未插 / 对端未激活正是"网口 up 不了"的场景 ⇒ 开机白等 30 s，
+把 case 超时窗口吃掉，表现为"load 后很久才有输出"或直接判 no_log。
+- 修法：凡 ztest 用 `CONFIG_NET_CONFIG_SETTINGS` 的工程**必须同时设 `CONFIG_NET_CONFIG_INIT_TIMEOUT=0`**
+  （`count=0` ⇒ 等待循环整体跳过，**静态地址仍立即写入**）。
+- 已固化为 qsh-test-gen §1.7 + qsh-test-validate §1.3（WARN 级）。
+
+**90. Zephyr 4.0 已移除 `net/arp.h` —— ARP 判据只能间接做**（2026-09-18）
+本树 `zephyr/include/zephyr/net/arp.h` **不存在**，全树 grep 无 `net_arp_lookup`/`net_arp_query`
+公开声明（ARP 表在 `subsys/net/l2/ethernet/arp.c` 内部，无导出查询 API）
+⇒ 只能以**回包源 IPv4 == 对端地址**做等价覆盖（ARP 未解析成功则收不到该对端回包）。
+- 已写入 `eth_test/tests/COVERAGE.md` 跳过项 16；生成网络类工程时按此设计判据。
+
+**91. `dbg_run.py` 直接 `print()` 串口原始行 → GBK 控制台遇非 GBK 字符抛 `UnicodeEncodeError`，采集半途中断**（2026-09-18）
+`python scripts/dbg_run.py --case case_default --raw` 时，`dbg_run.py:245` 的裸 `print(ln)`
+在 Windows 控制台默认 GBK 编码下，遇到固件日志里的 `↔`（U+2194，`spi_loopback.c` 的调试打印）
+即抛 `UnicodeEncodeError: 'gbk' codec can't encode character '↔'` ⇒ **脚本当场退出 rc=1**，
+后续 RAW 输出全丢（SUMMARY 因先打印而幸存）。
+- 影响面：任何固件日志含非 GBK 字符（箭头/数学符号/生僻汉字）的工程。
+- 修法（模板统一，全 23 份 `dbg_run.py`）：启动时
+  `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`，或把 `print` 包在
+  `try/except UnicodeEncodeError`。已固化 qsh-test-gen §1.5 + ref-gen-errors。
+
+**92. `wdt_iwdg_ls.c:73` 守卫用整寄存器非零判定，被 `IWDT_CNT_CLR`(bit3) 误触发**（2026-09-18）
+`test_setup_twice_ebusy` 两项失败方向与预期相反（该返回 0 的返回 `-EBUSY`）。
+- 根因：该守卫判"整寄存器非零"，而 `feed` 后硬件留存的 `IWDT_CNT_CLR`(bit3) 使寄存器非零
+  ⇒ 误判为"已在使用"。**不是** `install_timeout:119` 清 CTRL 绕过 EBUSY 守卫（P1-3）那条路径：
+  两项 `setup` 之间无 `install_timeout`，**勿再按 P1-3 归因这两项**。
+- 完整定位见 `TRIAGE_MISC_2026-09-18.md` §1。
+
+**93. HAL `io_cfg_input()` 清错 `OE_DIN` 半区 —— OUTPUT→INPUT 撤不掉输出使能，pad 一直保持旧值**（2026-09-18 记录；**2026-09-20 已修**）
+`modules/hal/linkedsemi/soc/rv32/qsh/ls_soc_gpio.c` 的四个函数对 **同一个 `OE_DIN` 寄存器**各写一半：
+
+| 函数 | 动作 | 半区 |
+|---|---|---|
+| `io_cfg_output()` | 置 `1<<pin<<16` | 高半区 = 输出使能 |
+| `io_is_output_enabled()` | 读 `1<<pin<<16` | 高半区 |
+| `io_cfg_disable_output()` | 清 `1<<pin<<16` | 高半区（**正确**） |
+| `io_cfg_input()` | 清 `1<<pin` | **低半区 = DIN 回读位** |
+⇒ `gpio_pin_configure(dev, pin, GPIO_INPUT|GPIO_PULL_UP)` **从不撤销输出使能**（清的是只读回读位，
+是个空动作），pad 保持驱动在上一次写入的值；而驱动读回
+`zephyr/drivers/gpio/gpio_lsqsh.c::gpio_ls_port_get_raw()` = `OE_DIN & 0xffff`（读的正是 pad 值）
+⇒ **一根脚一旦被驱动过，此后永远读到那个值**，且**任何调用都返回成功、无日志**。
+- 实例：`io_probe_test` 逐脚驱动 LOW 后想还原成高阻输入 → 整张矩阵"完美下三角"、
+  `links=2862` 超 75 脚无向对上限 2775（首跑）。见 #86。
+- **绕过（不改 HAL）**：还原走 `gpio_pin_configure(dev, pin, GPIO_DISCONNECTED)`
+  （内部 `io_cfg_disable()` → `io_cfg_disable_output()`，清的是高半区）再配
+  `GPIO_INPUT|GPIO_PULL_UP`，**并且必须读回验证**（见 #86 的还原自检闸）。
+- **影响面**：任何"先输出、再改回输入"的 lsqsh GPIO 用法，不限于单工程。
+- 可复用检查维度（已入 qsh-driver-review §1.10）：**enable/disable 成对函数的"撤销位"必须
+  与"使能位"同掩码同半区**；撤销落到只读回读位 ⇒ 撤销静默失败、状态残留污染后续所有观测。
+- **已修（2026-09-20，用户裁定"O-17，修复"）**：`ls_soc_gpio.c::io_cfg_input()` 第一句改为
+  清 **OE 高半区** `OE_DIN &= ~(1<<pin<<16)`（原 `&= ~(1<<pin)` 清的是 DIN 回读位）。
+  **语义依据（权威头文件，非对称性推测）**：`reg_app_pmu_rg.h` 的 `IOE_DIN_OE` 字段定义
+  `GPIOE_DIN_MASK=0xffff @0` / `GPIOE_OE_MASK=0xffff0000 @16`；同库 leo 版
+  `soc/rv32/leo/ls_soc_gpio.c::io_cfg_input()` 只清 OE、从不写 DIN。
+  **硬件实验**（独立最小工程，除这一行外无其它改动）：对 DIN 低位**置 1 与清 0 均无任何可观测效果**
+  （方向不变、回读不变）⇒ 原低半区写确为空动作，**没有**"另行用途"需要保留。
+  **修复前后对比**（同一工程同一序列 `GPIO_OUTPUT_LOW → GPIO_INPUT|GPIO_PULL_UP`）：
+  修复前 `OE_DIN=0x00100000`（OE 位仍 1、`port_get_raw=0`，缺陷）；修复后
+  `OE_DIN=0x00000010`（OE=0、DIN=1、`port_get_raw=1`）。四根脚（PB04/PB01/PB15/PE02）一致。
+  **回归**：`io_probe_test` 复跑 `links=22 / asym=0 / not_restored=0`（与既有基线一致）；
+  `trng_test` 15/15 PASS；`spi_test` 18 PASS + 1 FAIL(`link_probe`，既有缺陷) + 7 SKIP，与基线一致。
+  影响面清单：`OE_DIN` 低半区在**全仓仅此一处**被写（`ls_soc_gpio.c` 其余引用全是高半区读写）；
+  `io_cfg_input()` 调用方中的 `pinctrl_lsqsh.c` 走的是 `io_cfg_input_pure()`（不受影响），
+  `psram.c` 的 PSRAM 数据脚调用点上一步 OE 本就为 0（行为等价）。**代码未提交**。
+- ⚠️ **未由此修复解释的**：`io_probe_test` 的 `PH12`/`PG07` not-controlled **复跑后依旧存在**
+  （见 #94）—— 与 `OE_DIN` 无关；疑为 `CONFIG_PSRAM=y` 的 `psram_pin_init()`
+  把 `PH12`(PSRAM_DAT3)/`PG07`(PSRAM_CSN0)/`PF12`(PSRAM_CLK) 设成 Func3，待单独定论。
+
+**94. `spif4` 输入侧三根脚行为异常：`PH12`/`PG07` 不受 GPIO 控制、`PF12` 基线即低（2026-09-18，待查）**
+`io_probe_test` 实测（首跑 + 修复轮共 3 次复现，稳定现象）：
+- `PH12`（`spif4.SCKI`）、`PG07`（`spif4.IO3_IN`）：`gpio_pin_configure(GPIO_OUTPUT_LOW)` 后读回
+  仍为**高**，按"轮询到 5ms 上限"排除 settle 太短 ⇒ `pin_controllable` FAIL，两脚被排除出证据集。
+- `PF12`（`spif4.IO2_IN`）：全输入 + 内部上拉时读回**低** ⇒ 被外部压住，无法归因
+  ⇒ 按基线门不产生任何连线证据，单列 `BASELINE_LOW`。
+- 已排除：生成 `zephyr.dts` 中无任何启用的 pinmux 占用这两脚。**真因未定**（疑默认 pinmux 非
+  GPIO / 焊盘特性 / 外部驱动）。同分组 3/5 输入脚异常（`SI=PH10`、`IO1_IN=PH08` 正常）⇒ 指向
+  spif4 那几根焊盘/跳线的外部条件，值得后续单独查（超出 `io_probe_test` 写域）。
+- 数据：`projects/io_probe_test/tests/COVERAGE.md` §7.2 / `README.md` §8。
+
+**95. `common/judge.py::mem_state_line()` 在 `mem_state==ok` 时丢弃 `note` ⇒ "mem 结果被门禁拒绝"这一诊断串在 `.md`/控制台不可见**（2026-09-18）
+`common/judge.py:116-121`：`if state == MEM_OK: return f"{prefix}: {label}"` —— **直接丢 `note`**。
+而"`mem_state==ok` **但本轮无 `ZT_BOOT`** ⇒ mem 项被门禁拒绝（E5/E6）"**恰好落在 `state==MEM_OK`
+分支** ⇒ 报告只剩"内存兜底: 有效"，读者**看不到"结果被拒绝"**；该 `mem_note` 只存在于 JSON。
+- 实测：`eth_test case_mdio` 拔线等效场景，JSON 有
+  `mem_note="内存兜底结果被拒绝（无 ZT_BOOT 佐证…）：5 项降级为无证据"`，而
+  `.md`/控制台 `grep -c 被拒绝 = 0`。
+- 影响：**最需要证据的时候报告最像好消息**（同族于零证据假 PASS / deferred 丢行）。核验 E6 是否
+  触发**必须以 JSON `mem_note` 为准**，不能只看 `.md`。
+- 修法：`mem_state_line()` 在 `ok` 且 `note` 非空时也应输出 note（与其余分支同形）。
+- **✅ 已修（2026-09-19）**：`common/judge.py:116-129` 的 `mem_state_line()` 改为
+  `if state == MEM_OK and not note:`（`:127`）才走裸标签 —— `ok` **且 note 非空**时照常拼接。
+  向后兼容（`ok` 且无 note 的常规路径输出**逐字不变**）已离线验证：
+  四种输入（`ok+note` / `ok 无 note` / `invalid` / `no_sentinel_symbol`）渲染控制台 / `.md` / `.json`，
+  仅 `ok+note` 变化，其余三种 `new == old`；脚本 `tmp/emmcfix/verify_mem_state_line.py`。
+  ⚠ **残留缺口**：`projects/eth_test/tests/run_test.py` 的**控制台** `print_report()`（:360-373）
+  只打印 `mem={mem_state}`，**不经** `mem_state_line()` ⇒ 该工程控制台仍看不到 note
+  （`.md`（:393）/ `.json` 已可见）。H12② 的症状恰来自 eth_test；补齐需改该工程（不在本轮写域）。
+- 关联：SPEC_REFERENCE §6.2.4 E6 诊断可见性注 · qsh-test-compare §2。
+
+**96. 有 `ZTEST(<suite>,…)` 但缺同名 `ZTEST_SUITE(<suite>,…)` ⇒ 该套件全部用例从未注册执行**（2026-09-18）
+Zephyr ztest 里**只有 `ZTEST_SUITE` 才会把套件登记进 `ztest_unit_test` 链接段**；只有 `ZTEST()`
+而无同名 `ZTEST_SUITE()` 时，**用例函数被编译但永不运行，也无任何构建期/运行期报错**。
+- 实例：`projects/emmc_test/cpu1_emmc_block_test/src/emmc_block_test.c` 有
+  `ZTEST(emmc_app_cpu_guard, …)` 两处（`:137`/`:166`），全文件却**只有**
+  `ZTEST_SUITE(emmc_block_data,…)`（`:209`）与 `ZTEST_SUITE(zz_emmc_block_edge,…)`（`:358`）
+  ⇒ 套件 `emmc_app_cpu_guard` 2 项**从未执行**（报告项数 10 而非 12）。
+- **第二实例（2026-09-18 keeper 静态扫描新发现，待 runner 核验）**：
+  `projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c` 有 8 处
+  `ZTEST(qspi_flash_id, …)`（`:127-229`），而该文件**只有** `ZTEST_SUITE(qspi_flash_rw/…_stg/…_calib)`
+  三处 ⇒ 套件 `qspi_flash_id` 8 项**从未注册**。该 8 项却在
+  `tests/scripts/dump_results.py` 的 `TEST_NAMES` 里（`jedec_id_match`/`jedec_id_cached`/
+  `jedec_id_null_arg`/`line_width_set`/`sfdp_header`/`size_is_32mib`/`get_parameters`/
+  `four_byte_mode_unknown_mfr`）⇒ 宣称项与实际运行项不一致，**同时命中 §1.10n 检查项**。
+  修法方向（未改码，属 runner 写域）：补 `ZTEST_SUITE(qspi_flash_id, NULL, NULL, NULL, NULL, NULL);`
+  并重核 `TEST_NAMES` 链接序（§1.10n）。
+- 后果层级：本该打印 `app_cpu_srst=0x%x` 的守卫探针从未跑过 ⇒ 寄存器态失去**直接观测点**
+  （正是 #75 争议中本可一锤定音的那条证据）。
+- 防再犯（已入 qsh-test-validate §1.10s）：机器判据 = `grep -nE '\bZTEST\(' <file>` 取套件集合
+  必须 ⊆ `grep -nE '\bZTEST_SUITE\(' <file>` 取套件集合；差集非空即 FAIL。同类于 #92/TEST_NAMES
+  同步（"人记同步清单必漏，机器判据才拦得住"）。
+- **归因陷阱（2026-09-19，G-CLEAN-1）**：报告里"看起来有结果"≠该项真跑过。8 项 `qspi_flash_id`
+  从未注册，但仍列在 `tests/scripts/dump_results.py` 的 `TEST_NAMES` 里 ⇒
+  `TRIAGE_QSPI_SPIF_2026-09-18.md` 曾据该套件的 "`size_is_32mib` PASS" 反推 `flash_size`
+  上界 —— **该 PASS 在 batch-1 报告里根本不存在，推断不成立**。纪律：**任何跨报告归因，
+  先确认所引报告项对应的套件在本轮确实注册执行过**；`nm` 见 `_ztest_unit_test_list`
+  符号只证明"链进去了"，**不证明"会跑"**，唯一判据是 `ZTEST_SUITE`/`ZTEST` 集合差
+  （§1.10s）。报告分析侧的同类纪律见 qsh-test-compare §5。
+- **姊妹形态：token 宏 no-op ⇒ 批量里只能靠 mem（2026-09-20，G-R7-2 / O-13）**：与 #96 同一根因家族
+  —— **"固件侧声明了逐项输出、实际一条不产"**。`i3c_i2c_switch_test` 协议头把 `I3C_I2C_*` token
+  宏定义为 `do {} while (0)`、两个固件无 `ZTEST()` ⇒ 该 case 11 项在批量里**零串口逐项 token**、
+  整份证据来自 GDB 内存兜底 ⇒ 命中批量判定 **G9/D6**（`SPEC_REFERENCE` §6.2.4）判 FAIL（弱证据）。
+  **已根治**：token 宏恢复真 `printk` + `common/ztest_report.py::parse_ztest` 认领其原生 token 形态
+  `I3C_I2C_TEST:<CTRL|TGT>:(PASS|FAIL|SKIP):<name>[:reason]`（**未实机验证**，见 OPEN_ITEMS O-13）。
+  **通用教训**：「批量必须靠 token」的前提是**两条腿都通** —— a) 固件真的产 token；b) 判定链真的
+  消费它。缺任一条，该套件在批量里就只剩弱证据（mem）。同类残留（**只报不改**）：`emmc_test` 的
+  `emmc_app_cpu_guard`、`qspi_flash_test` 的 `qspi_flash_id` 空套件（即本 #96 本体）。
+
+---
+
+## i2c_pure_test 域（2026-09-19 登记）
+
+**97. `i2c_pure_test` 串口采集窗口内拿不到"测试启动后"的逐项输出 —— 根因已定位：`dbg_run.py` capture 轮 gdb stdout 管道未排空**（2026-09-19）
+`projects/i2c_pure_test/tests/scripts/dbg_run.py --case case_pure_i2c_400k` 在 **40 / 60 / 90 / 150s**
+四档采集窗下，两核都只采到「boot banner + `START - i2c_wave` + 启动 LOG」，**无任何 `PASS/FAIL/INFO` 行**，
+SUMMARY 恒为 `ZT_BOOT seen`。同轮 GDB 读 RAM：`test_results[0] = TR_PASS`（两核）、
+`test_results_valid = 0x5A`、TGT 计数 `tgt_write_cnt=100 / tgt_write_bytes=1600`、
+**PC = `arch_cpu_idle`（测试已结束）** ⇒ **用例确实跑完了，只是证据没采到**（该 case 并不慢，见 #99）。
+- **根因（2026-09-19 定位）**：capture 轮 `Popen(gdb, stdout=subprocess.PIPE)` 之后**整个采集窗内不读该管道**。
+  Windows 匿名管道缓冲写满 ⇒ gdb 阻塞在写 stdout ⇒ DebugServer 会话停摆 ⇒ 目标被中途 halt ⇒
+  长用例尾部的 `PASS - i2c_wave` / `PROJECT EXECUTION` 永远采不到。窗口结束调 `communicate()` 排空管道后
+  gdb 才解阻塞并处理 `\x03`+detach，detach 恢复目标 ⇒ 固件跑完、RAM 结果正确，**只有证据丢了**。
+  **本质 = 采集工具缺陷，不是固件/驱动问题**。
+- **隔离实验（确定性）**：复刻该结构（`stdout=PIPE` 不读）⇒ gdb 进程挂死（`stdin write failed`）、
+  串口 **0 行**（`tmp/hw4/cap_ts2.txt` + `cap_ts2_run.log`）；改 `stdout=DEVNULL` 的采集脚本一次拿到
+  完整输出（`tmp/hw4/cap_ts_r1.txt`，两核 PASS）。
+- **修法（已落地 `i2c_pure_test`）**：capture 轮补 drain 线程（`for ln in proc.stdout: gdb_out.append(ln)`），
+  用 `proc.wait()` 替代 `communicate()` 取回文本。修后重跑两核 PASS + 完整串口输出
+  （`tmp/hw4/i2c_fix_r1.log` 插桩版 / `i2c_final_r1.log` 无插桩最终复验）。
+- **残留（待 runner 推广）**：其余工程多由同一模板复制、**同缺陷**；`run_test.py`（正式回归）自带
+  stdout drain 线程、**不受影响**。未修的工程仍以 `dump_results.py --json` 内存兜底为准
+  （qsh-test-compare §3），修好串口判读前勿据此判驱动挂死。
+- 关联：qsh-test-run §3/§6 · qsh-debug §7 · qsh-test-compare §3 · qsh-test-gen §1.5（模板须带 drain）。
+
+**99. `i2c_pure_test` 的 `i2c_wave` 整轮实测 ≈ 10.28s —— 源码注释正确（原"≥40s"结论已撤回）**（2026-09-19，**2026-09-19 更正**）
+插桩 `k_uptime_get_32()` 逐轮毫秒 + 墙钟时间戳对照：单轮 **102.76 ms**（100ms 延迟 + ~2.8ms 传输）
+⇒ 100 轮 = **10.276 s**；固件时钟与墙钟 **1:1**（HB0..99 = 10.175s 固件 / 10.14s 墙钟）；
+gdb `load` 仅 **4s**（写包提速已生效）。
+- **更正**：原"实测整轮 **≥40s**、40s 窗只跑到 85/100 轮"**撤回** —— 那是**采集窗口从 gdb 启动起算**
+  造成的测量假象（窗口被 `load` 占用），**不是固件变慢**。源码注释 `~10s` / `≈10.1s` **正确，不改**。
+- 处置：`--timeout` 不必因"变慢"加大，但**采集窗须留够 = 用例时长 + `load`（~4s）**；
+  该 case 拿不到尾部证据的真因是 #97 的管道缺陷（与耗时正交），修 `dbg_run.py` 后串口可正常判读。
+- 证据：`tmp/hw4/cap_ts_r1.txt`（逐轮时间戳）· `tmp/hw4/load_timing_nopkt.log`（load 4s）。
+- 关联：qsh-test-run §6 · KNOWN_ISSUES #97。
 

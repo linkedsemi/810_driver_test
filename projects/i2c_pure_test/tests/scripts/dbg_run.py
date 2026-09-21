@@ -51,6 +51,7 @@ FP_SCRIPT = DRIVER_TEST_ROOT / "scripts" / "flash_program.py"
 # 公共解析层：810_driver_test/common/（trng 样板同款路径）
 sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))
 from ztest_report import parse_ztest  # noqa: E402
+from acquire import dbg_run_preflight  # noqa: E402
 
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
@@ -278,6 +279,7 @@ def main():
             sys.exit(f"ERROR: not built: {f}")
 
     explicit = [p for p in (args.ctrl_uart, args.tgt_uart) if p]
+    dbg_run_preflight()   # F1：DS 不健康先自愈，起不来则明确中止（不退化 error 138）
     names = discover_ports(explicit)
     ports = {name: {"lines": [], "stop": threading.Event()} for name in names}
 
@@ -305,8 +307,21 @@ def main():
         proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
+        # ★ 不能用 communicate()：它会关闭 proc.stdin，之后再写 "\x03" 必抛 ValueError
+        # → 优雅中断 (interrupt+detach+quit) 直接退化成 proc.kill() → DebugServer 连接残留
+        # （qsh-debug §2.3）。改 drain 线程持续排空 stdout， stdin 全程保持可写，\x03 才真发得出去。
+        _gdb_lines = []
+
+        def _drain_stdout():
+            try:
+                for _ln in proc.stdout:
+                    _gdb_lines.append(_ln)
+            except Exception:
+                pass
+        _drain_t = threading.Thread(target=_drain_stdout, daemon=True)
+        _drain_t.start()
         try:
-            out, _ = proc.communicate(timeout=run_secs)
+            proc.wait(timeout=run_secs)
         except subprocess.TimeoutExpired:
             try:
                 proc.stdin.write("\x03")   # interrupt: 暂停目标
@@ -314,10 +329,12 @@ def main():
                 time.sleep(1.0)
                 proc.stdin.write("detach\nquit\n")
                 proc.stdin.flush()
-                out, _ = proc.communicate(timeout=10)
+                proc.wait(timeout=10)
             except Exception:
                 proc.kill()                # 兜底（正常路径不走到）
-                out, _ = proc.communicate()
+                proc.wait()
+        _drain_t.join(timeout=2)
+        out = "".join(_gdb_lines)
         # gdb 完整输出存文件，失败时打印尾部
         with open(TESTS_DIR / "dbg_gdb_last.log", "w", encoding="utf-8") as f:
             f.write(out)
@@ -341,6 +358,20 @@ def main():
     proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
+    # ★ HW4 fix: gdb stdout 必须在窗口内**持续排空**。Windows 匿名管道缓冲
+    # 写满后 gdb 阻塞在写 stdout 上 → DebugServer 会话停摆 → 目标被中途 halt，
+    # 长用例（i2c_wave ~10s）的尾部（PASS / PROJECT EXECUTION）永远采不到。
+    # 实测：不排空时 gdb 进程挂死、串口 0 字节（tmp/hw4/cap_ts2.txt）。
+    gdb_out = []
+
+    def _drain_gdb():
+        try:
+            for ln in proc.stdout:
+                gdb_out.append(ln)
+        except Exception:
+            pass
+    threading.Thread(target=_drain_gdb, daemon=True).start()
+
     time.sleep(args.timeout)  # target runs while gdb sits in 'continue'
     try:
         proc.stdin.write("\x03")   # 干净退出，避免连接残留（见 flash_once 注释）
@@ -348,10 +379,11 @@ def main():
         time.sleep(1.0)
         proc.stdin.write("detach\nquit\n")
         proc.stdin.flush()
-        out, _ = proc.communicate(timeout=10)
+        proc.wait(timeout=15)
+        out = "".join(gdb_out)
     except Exception:
         proc.kill()
-        out, _ = proc.communicate()
+        out = "".join(gdb_out)
     if "Loading section" in out or "Restoring binary" in out:
         print("[dbg] flash OK", flush=True)
     else:

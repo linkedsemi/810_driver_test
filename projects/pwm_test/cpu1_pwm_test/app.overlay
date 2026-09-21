@@ -1,0 +1,36 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * pwm_test overlay (cpu1, lsqsh_evb@1os)
+ *
+ * 被测对象：片内 PWM 控制器 pwm@40082000（compatible "linkedsemi,ls-pwm"），
+ * 驱动 zephyr/drivers/pwm/pwm_ls.c。CONFIG_PWM_LS_V2=y（SOC_SERIES_LSQSH 默认）
+ * ⇒ 驱动 CHAN_CONT = 16（见 modules/hal/linkedsemi/hal_driver/inc/reg_pwm_type.h）。
+ *
+ * 板级 lsqsh_evb_cpu1.dts 中 `&pwm` 及其三个 pinctrl 引用均为注释态，本 overlay 是
+ * 本工程自有的使能配置（不改板级文件、不改其他工程）：
+ *   - prescaler / pinctrl-0 / pinctrl-names 是 binding 必填属性
+ *     （linkedsemi,ls-pwm.yaml 的 required），缺一即 dtc 报错。
+ *   - pinctrl 三条沿用板级注释里给出的同一组（PWM1_FUNC1 PA04 / PWM7_FUNC1 PG02 /
+ *     FAN_PWM10_FUNC2 PH05），是板卡自带定义，非本工程新造引脚映射。
+ *   - prescaler = 3 ⇒ 分频 4，get_cycles_per_sec = 75MHz / 4 = 18750000。
+ *
+ * 引脚与通道的对应关系按信号名约定（PWM1/PWM7/FAN_PWM10），本工程不做波形观测，
+ * 故不构成判据依赖；三个引脚在板上无其他已使能外设占用（见 tests/COVERAGE.md）。
+ */
+
+#include "../../../common/gpio_toggle.dtsi"
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&pwm {
+	status = "okay";
+	prescaler = <3>;
+	pinctrl-0 = <&pwm1_pa04 &pwm7_pg02 &fan_pwm10_ph05>;
+	pinctrl-names = "default";
+};

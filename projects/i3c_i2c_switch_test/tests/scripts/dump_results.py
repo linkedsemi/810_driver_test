@@ -34,8 +34,14 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+
+# ---- F1/F2/F3 判定框架收敛点：哨兵状态词表与分类见 common/judge.py ----
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "common"))
+from judge import (MEM_INVALID, MEM_NO_SENTINEL, MEM_OK,  # noqa: E402
+                   sentinel_state)
 
 TESTS_DIR = Path(__file__).resolve().parents[1]
 GDB = "riscv64-unknown-elf-gdb"
@@ -82,6 +88,13 @@ TEST_NAMES = [
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址
 RESULT_SYM = "test_results"
 REASON_SYM = "test_reasons"
+# 有效性哨兵（test_results.h，2026-09-18 加）：tr_init() 填完槽位后置 TR_VALID_MAGIC。
+# 未置位 = 固件没跑到 tr_init（挂在内核初始化 / POST_KERNEL / 早期崩溃）
+# -> test_results[] 停在 .bss 零值，而零值语义就是 TR_PASS -> 必须判"结果无效"，
+# 禁止读成全 PASS（否则固件静默时报告最像好消息）。
+# 旧 ELF 里没有这个符号 -> nm 查不到 -> 同样判无效（优雅降级，不崩）。
+VALID_SYM = "test_results_valid"
+TR_VALID_MAGIC = 0x5A
 
 
 def log(args, msg):
@@ -167,9 +180,10 @@ def main():
     for role, elf in (("CTRL", ctrl_elf), ("TGT", tgt_elf)):
         res = nm_addr(elf, RESULT_SYM)
         reason = nm_addr(elf, REASON_SYM)
+        valid = nm_addr(elf, VALID_SYM)   # None = 旧 ELF 无哨兵符号
         if res is None or reason is None:
             sys.exit(f"ERROR: symbol not found in {elf}: {RESULT_SYM}={res} {REASON_SYM}={reason}")
-        addrs[role] = (res, reason)
+        addrs[role] = (res, reason, valid)
         log(args, f"[dump] {role}: {RESULT_SYM}@{res}, {REASON_SYM}@{reason}")
 
     # 2. 可选：先烧录跑一轮（复用两遍烧录法 + 干净退出，串口全程不开）
@@ -187,44 +201,98 @@ def main():
         proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         log(args, f"[dump] flashing + running {args.run}s (prime pass) ...")
+        # ★ 不能用 communicate()：它会关闭 proc.stdin，之后再写 "\x03" 必抛 ValueError
+        # → 优雅中断 (interrupt+detach+quit) 直接退化成 proc.kill() → DebugServer 连接残留
+        # （qsh-debug §2.3）。改 drain 线程持续排空 stdout， stdin 全程保持可写，\x03 才真发得出去。
+        _gdb_lines = []
+
+        def _drain_stdout():
+            try:
+                for _ln in proc.stdout:
+                    _gdb_lines.append(_ln)
+            except Exception:
+                pass
+        _drain_t = threading.Thread(target=_drain_stdout, daemon=True)
+        _drain_t.start()
         try:
-            out, _ = proc.communicate(timeout=args.run)
+            proc.wait(timeout=args.run)
         except subprocess.TimeoutExpired:
             try:
-                proc.stdin.write("\x03"); proc.stdin.flush(); time.sleep(1.0)
-                proc.stdin.write("detach\nquit\n"); proc.stdin.flush()
-                out, _ = proc.communicate(timeout=10)
+                proc.stdin.write("\x03")   # interrupt: 暂停目标
+                proc.stdin.flush()
+                time.sleep(1.0)
+                proc.stdin.write("detach\nquit\n")
+                proc.stdin.flush()
+                proc.wait(timeout=10)
             except Exception:
-                proc.kill(); out, _ = proc.communicate()
+                proc.kill()                # 兜底（正常路径不走到）
+                proc.wait()
+        _drain_t.join(timeout=2)
+        out = "".join(_gdb_lines)
         time.sleep(1)
         proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         log(args, f"[dump] capture pass {args.run}s ...")
+        # ★ 不能用 communicate()：它会关闭 proc.stdin，之后再写 "\x03" 必抛 ValueError
+        # → 优雅中断 (interrupt+detach+quit) 直接退化成 proc.kill() → DebugServer 连接残留
+        # （qsh-debug §2.3）。改 drain 线程持续排空 stdout， stdin 全程保持可写，\x03 才真发得出去。
+        _gdb_lines = []
+
+        def _drain_stdout():
+            try:
+                for _ln in proc.stdout:
+                    _gdb_lines.append(_ln)
+            except Exception:
+                pass
+        _drain_t = threading.Thread(target=_drain_stdout, daemon=True)
+        _drain_t.start()
         try:
-            out, _ = proc.communicate(timeout=args.run)
+            proc.wait(timeout=args.run)
         except subprocess.TimeoutExpired:
             try:
-                proc.stdin.write("\x03"); proc.stdin.flush(); time.sleep(1.0)
-                proc.stdin.write("detach\nquit\n"); proc.stdin.flush()
-                out, _ = proc.communicate(timeout=10)
+                proc.stdin.write("\x03")   # interrupt: 暂停目标
+                proc.stdin.flush()
+                time.sleep(1.0)
+                proc.stdin.write("detach\nquit\n")
+                proc.stdin.flush()
+                proc.wait(timeout=10)
             except Exception:
-                proc.kill(); out, _ = proc.communicate()
+                proc.kill()                # 兜底（正常路径不走到）
+                proc.wait()
+        _drain_t.join(timeout=2)
+        out = "".join(_gdb_lines)
         time.sleep(1)
 
     # 3. dump 会话：interrupt + 读双核结果数组
     log(args, f"[dump] connecting {GDB_HOST}:{GDB_PORT} to read memory ...")
-    out = gdb_session([
-        "-ex", f"x/{args.count}db 0x{addrs['CTRL'][0]}",
-        "-ex", f"x/{args.count}db 0x{addrs['TGT'][0]}",
-    ])
+    _ex = []
+    for _role in ("CTRL", "TGT"):
+        if addrs[_role][2] is not None:
+            # 哨兵与结果数组同一 gdb 会话读（少一次连接 = 少一次 DebugServer 残留）
+            _ex += ["-ex", f"x/1db 0x{addrs[_role][2]}"]
+        _ex += ["-ex", f"x/{args.count}db 0x{addrs[_role][0]}"]
+    out = gdb_session(_ex)
     if args.raw:
         print("\n===== GDB RAW =====")
         print(out)
 
     # 4. 解析数组 → 结构化结果
-    results = {}
+    # 按**读取顺序**位置切分（每核 = [哨兵] + args.count 个槽位）。
+    # 注意：不能对同一 out 调两次 parse_x_bytes(out, N)——它总是从头扫，
+    # 会把 CTRL 的数组同时当成 TGT 的（2026-09-18 修复的既有错归属 bug）。
+    _n_read = args.count * 2 + sum(1 for _r in ("CTRL", "TGT")
+                                   if addrs[_r][2] is not None)
+    _all = parse_x_bytes(out, _n_read)
+    results, valid_ok = {}, {}
+    _pos = 0
     for role in ("CTRL", "TGT"):
-        results[role] = parse_x_bytes(out, args.count)
+        if addrs[role][2] is not None:
+            valid_ok[role] = bool(_all[_pos:_pos + 1]) and _all[_pos] == TR_VALID_MAGIC
+            _pos += 1
+        else:
+            valid_ok[role] = False
+        results[role] = _all[_pos:_pos + args.count]
+        _pos += args.count
 
     # 5. 失败的项读 reason（内存里的失败原因，串口丢了一样能拿到）
     fail_items = []  # [(role, name)]
@@ -250,9 +318,39 @@ def main():
         for (role, name), r in zip(fail_items, matches):
             reasons[name] = r
 
+    # 6b. 有效性门（2026-09-18；F2/F3 2026-09-18 拆两态）：哨兵未置位 / 旧 ELF 无哨兵符号
+    # => 该核固件没跑到 tr_init，槽位停在 .bss 零值（= TR_PASS）。无效核清空，
+    # 消费者按 MISSING 处理（fail-closed），禁止输出假 PASS。
+    # 两态区分见 common/judge.py："ELF 无符号 = 旧构建需重编" vs "符号在但未置位 = 不可信"。
+    if not all(valid_ok.values()):
+        _bad, _notes, _states = [], [], {}
+        for _r in ("CTRL", "TGT"):
+            if valid_ok[_r]:
+                continue
+            _st, _nt = sentinel_state(addrs[_r][2] is not None, False)
+            _states[_r] = _st
+            _bad.append(_r)
+            _notes.append(f"{_r}: {_nt}")
+        # 汇总状态取"更需要动作"的那个：缺符号（要重编）> 未置位（内存不可信）
+        _mem_state = (MEM_NO_SENTINEL if MEM_NO_SENTINEL in _states.values()
+                      else MEM_INVALID)
+        _note = " ".join(_notes)
+        log(args, "[dump] " + _note)
+        for _r in _bad:
+            results[_r] = []
+        if args.json:
+            print(json.dumps({"valid": False, "mem_state": _mem_state,
+                              "CTRL": {}, "TGT": {}, "reasons": {},
+                              "note": _note}))
+            return
+        print("\n===== RESULTS FROM MEMORY =====")
+        print("!!! " + _note + " !!!")
+        return
+
     # 6. 输出：人读表格 / --json 结构化
     if args.json:
-        out_json = {"CTRL": {}, "TGT": {}, "reasons": reasons}
+        out_json = {"valid": True, "mem_state": MEM_OK,
+                    "CTRL": {}, "TGT": {}, "reasons": reasons}
         for role, vals in results.items():
             for i, v in enumerate(vals):
                 name = TEST_NAMES[i] if i < len(TEST_NAMES) else f"test_{i}"

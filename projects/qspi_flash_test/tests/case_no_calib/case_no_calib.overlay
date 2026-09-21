@@ -1,0 +1,39 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * case_no_calib overlay（cpu1，lsqsh_evb@1os/lsqsh/cpu1）。
+ *
+ * 与 case_default 的差异（只差两处）：
+ *   1. qspi2 关掉时序校准（timing-calibration-disabled）→
+ *      qspi_ls_read_init() 不再跑 qspi_ls_timing_calibration()，
+ *      qspi_timing_calibration_status() 应返回 QSPI_TIMING_CALIB_UNUSED。
+ *   2. flash2 降到 25 MHz（在校准关掉后仍走 apply_clk 的正常频率区间）。
+ *
+ * 用例代码与 case_default 完全相同（同一份固件），差异只在本 overlay 与 test.sh。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+&qspi2 {
+	status = "okay";
+	auto-wait-ready;
+	auto-wait-interval = <1000>;
+	timing-calibration-disabled;
+
+	flash2: flash2@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(25)>;
+		spi-max-buswidth = <4>;
+		status = "okay";
+	};
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）。
+ * case 目录相对 810_driver_test/common 多两级：case_x → tests → <driver>_test → projects。 */
+#include "../../../../common/gpio_toggle.dtsi"

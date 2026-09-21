@@ -1,8 +1,8 @@
-# 模板缺陷防漏检查（8 项必查）——参考
+# 模板缺陷防漏检查（10 项必查）——参考
 
-> **定位**：承接 qsh-test-validate §1.9 的完整内容。以下 8 项源自新工程实机跑测
-> 暴露的模板缺陷（2026-09-07/08 沉淀 a~d，2026-09-16 沉淀 e~h），验证工程合规时
-> **必须逐项检查**。
+> **定位**：承接 qsh-test-validate §1.9 的完整内容。以下 10 项源自新工程实机跑测
+> 暴露的模板缺陷（2026-09-07/08 沉淀 a~d，2026-09-16 沉淀 e~h，2026-09-17 沉淀 i、j），
+> 验证工程合规时**必须逐项检查**。
 
 ## 1. cpu2 hold 步骤（串口 0 行最高频根因）
 
@@ -204,3 +204,53 @@ for src in project_dir.rglob("src/*.c"):
 **改动面审查**：比对 `git diff`，出现"参数缩容 / 超时调小 / 新增 before 钩子调 stop"而
 提交说明与注释**无根因**的，判 FAIL——先给出根因（量程截断？时序？残留状态？），
 再决定改值还是改驱动。
+
+## 9. C/H 文件块注释内不得出现 `*/` 序列
+
+生成的头文件/固件源码在**块注释**里写"通配路径示例"（`case_*/controller.conf`、`a*/b`）
+是高频写法，但 `*/` 会**提前终止注释**，其后的中文说明被当代码 → 编译报
+`error: expected '=', ',', ';', 'asm' or '__attribute__' before '.' token`（列号指向注释行）。
+这是"注释里写通配路径"与 C 词法的固有冲突，与工程无关，**换任何工程都会再踩**。
+生成时注释内用 `case_xxx/` 代替 `case_*/`。
+
+**检查方法**（行级启发式，命中需人工确认该 `*/` 确在块注释内）：
+```python
+import re
+# 缺陷形态：`*/` 紧贴标识符/路径字符（`_*/c`、`a*/b`）。
+# 排除合法行尾注释终止符 ` */`（前一字符为空白）与 `/*foo*/`（后一字符为行尾）。
+pat = re.compile(r"[A-Za-z0-9_.\-]\*/(?=[A-Za-z0-9_.\-])")
+for src in project_dir.rglob("src/*"):
+    if src.suffix not in (".c", ".h"):
+        continue
+    for i, line in enumerate(src.read_text(errors="replace").splitlines(), 1):
+        if pat.search(line):
+            print(f"FAIL {src}:{i}: 注释内 `*/` 序列会提前终止注释 —— {line.strip()}")
+```
+
+## 10. build_single_test 的 `CONF_FILE` 语义（复用上游 test/sample 时）
+
+`test_common.sh` 的 `build_single_test()`（`:344-372`）在 `<src>/prj.conf` 存在时把 conf 参数拼成
+`-DCONF_FILE=<src>/prj.conf;<conf>`（**追加**）——这对"810 自建固件 + case 差异化 conf"成立，
+但**复用上游 test/sample** 时不成立：上游 `zephyr/tests/subsys/fs/fat_fs_api` 需要
+`CONF_FILE="prj_mmc.conf"`（**整体替换**，其 `testcase.yaml` 的 `filesystem.fat.api.mmc` 语义），
+用 `build_single_test` 会带回上游 `prj.conf`（如 `CONFIG_DISK_DRIVER_FLASH=y`）→ 固件按错误分型
+编译 → **编译失败**。`-DCONF_FILE` 没有"只替换不追加"的写法，`-DEXTRA_CONF_FILE` 只能追加。
+
+规则：**复用需要整体替换 conf 的上游 test/sample** 时，本工程 `case_*/test.sh` 直接调
+`west build -b "${SINGLE_BOARD}" <src> -DCONF_FILE="<上游 conf>;<810 增量 conf>"`，仍走
+`${SINGLE_BOARD}` 与 `print_launch_json_single`/`load_and_run_single`（不硬编码板级、不碰公共脚本）。
+
+**检查方法**（启发式，命中需人工确认 conf 目标）：
+```python
+# case 的 test.sh 若用 build_single_test 且 src 指向本工程之外的"上游 test/sample"，
+# 而该上游需要整体替换 conf → FAIL（应自持 west build -DCONF_FILE="..."）
+for sh in tests.glob("case_*/test.sh"):
+    txt = sh.read_text()
+    if "build_single_test" not in txt:
+        continue
+    for line in txt.splitlines():
+        if "build_single_test" in line and ("zephyr/tests" in line or "zephyr/samples" in line):
+            print(f"FAIL {sh}: 用 build_single_test 构建上游 test/sample —— 须确认其 conf 是否需整体替换"
+                  f"（需替换则改自持 west build -DCONF_FILE=\"<上游 conf>;<增量>\"，KNOWN_ISSUES #76）")
+```
+

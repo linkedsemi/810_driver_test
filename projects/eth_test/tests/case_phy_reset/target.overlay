@@ -1,0 +1,33 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * case_phy_reset 专用 overlay 片段（单核 cpu1）。
+ *
+ * 目的：让 mdio_dwmac_ethphy_reset() 的**脉冲子块**真正执行。
+ *
+ * 机理（zephyr/drivers/mdio/mdio_dwmac.c）：
+ *   - :225 `if (dev_config->reset_gpios.port)` —— 取的是 mdio1 的**直接子节点**中
+ *     带 reset-gpios 的那个（:364 CHILD_RESET_GPIOS + :383
+ *     DT_INST_FOREACH_CHILD_STATUS_OKAY）；本板 = `eth1_phy`
+ *     （板级 dts 给了 reset-gpios = GPIOG pin1）⇒ **该门为真，函数每次上电都执行**。
+ *   - :231 / :252 两个脉冲子块的门是 `reset_hold_ms && circuits_set_ms`，二者都是
+ *     **mdio1 自己的 DT 属性**（:381-382 `DT_INST_PROP_OR(inst, ...)`），
+ *     binding `zephyr/dts/bindings/mdio/snps,dwmac-mdio.yaml:12,18` 已声明，缺省 0
+ *     ⇒ 默认板级下门恒假，复位脚**从未被拉低过**（只做 configure + set(1)）。
+ *
+ * 本片段给 &mdio1 补上这两个属性，使 :231-244（拉低 + 保持）与 :252-259（电路稳定等待）
+ * 两段代码被真正执行。
+ *
+ * 取值来源（非拍脑袋）：
+ *   - reset-hold-ms = 10  —— 驱动 :242 自述 "the minimum time specified by datasheet" = 10 ms
+ *   - circuits-set-ms = 30 —— 驱动 :257 自述 "Wait another 30 ms (circuits settling time)"
+ *
+ * 注意：**不改板级 dts**（zephyr/boards/...），只在工程自己的 case overlay 里补属性。
+ */
+
+#include "../../cpu1_eth_test/app.overlay"
+
+&mdio1 {
+	reset-hold-ms = <10>;
+	circuits-set-ms = <30>;
+};

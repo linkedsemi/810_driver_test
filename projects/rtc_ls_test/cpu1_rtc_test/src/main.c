@@ -9,6 +9,7 @@
  */
 
 #include "rtc_test.h"
+#include "ztest_glue.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -22,6 +23,11 @@ const struct device *rtc_dev = DEVICE_DT_GET(DT_NODELABEL(rtc));
 
 void test_main(void)
 {
+	/* BOOT 标记（§6.2.3 门禁 / §6.9.1 引导语义）：本工程原先唯一不调
+	 * zt_init ⇒ 无 `ZT_BOOT`，是全仓最后一个缺引导标记的工程。zt_init
+	 * 只打印一行，不注册/不记账，对 rtc_test_run() 的既有流程零影响。 */
+	zt_init("TGT");
+
 	LOG_INF("[CPU1 RTC] RTC test started");
 
 	rtc_test_run();

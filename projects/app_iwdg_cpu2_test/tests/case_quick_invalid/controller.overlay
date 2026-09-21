@@ -1,0 +1,14 @@
+/*
+ * case_quick_invalid - cpu2 (controller) overlay
+ *
+ * 复用工程既有 app.overlay（app_iwdg status=okay），追加 quick-enable 且把
+ * quick-timeout-ms 显式置 0，触发 iwdt_init 的 -EINVAL 拒绝分支。
+ * cpu2 侧控制台/内存布局仍由 CMakeLists 的 EXTRA_DTC_OVERLAY_FILE 注入。
+ */
+
+#include "../../cpu2_controller_app_iwdg_test/app.overlay"
+
+&app_iwdg {
+	quick-enable;
+	quick-timeout-ms = <0>;
+};

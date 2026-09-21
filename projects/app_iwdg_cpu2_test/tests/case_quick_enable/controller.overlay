@@ -1,0 +1,17 @@
+/*
+ * case_quick_enable - cpu2 (controller) overlay
+ *
+ * 复用工程既有 app.overlay（app_iwdg status=okay），仅追加 quick-enable
+ * 属性以覆盖 iwdt_init 的 quick 分支。
+ * cpu2 侧控制台/内存布局仍由 CMakeLists 的 EXTRA_DTC_OVERLAY_FILE 注入。
+ *
+ * quick-timeout-ms 取 60000（60s，远离单个测试项耗时），
+ * 换算 IWDT_LOAD = 60000 * 32768 / 1000 = 1966080（不回绕）。
+ */
+
+#include "../../cpu2_controller_app_iwdg_test/app.overlay"
+
+&app_iwdg {
+	quick-enable;
+	quick-timeout-ms = <60000>;
+};

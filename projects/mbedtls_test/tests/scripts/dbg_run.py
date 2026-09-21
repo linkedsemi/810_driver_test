@@ -45,6 +45,7 @@ TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")
 # common/ 在 810_driver_test 级（trng/rtc/otbn dbg_run.py 同款）
 sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))
 from ztest_report import parse_ztest   # noqa: E402
+from acquire import dbg_run_preflight  # noqa: E402
 
 TGT_BANNERS = ("CPU1 MBEDTLS", "mbedtls_test", "MBEDTLS test")
 
@@ -126,6 +127,7 @@ def main():
     if not Path(target_elf).exists():
         sys.exit(f"ERROR: not built: {target_elf}")
 
+    dbg_run_preflight()   # F1：DS 不健康先自愈，起不来则明确中止（不退化 error 138）
     names = discover_ports([p for p in (args.tgt_uart,) if p])
     ports = {name: {"lines": [], "stop": threading.Event()} for name in names}
 

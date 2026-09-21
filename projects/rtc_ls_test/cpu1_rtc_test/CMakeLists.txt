@@ -13,11 +13,16 @@ target_sources(app PRIVATE
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/include)
 
-# 包含公共源文件（仅test_results.c和gpio_toggle.c，rtc_test不使用ztest_glue）
+# 包含公共源文件（test_results.c / gpio_toggle.c / ztest_glue.c）
+# ztest_glue.c 提供 zt_init()：本工程原先刻意不编入，是全仓**唯一不打印
+# `ZT_BOOT`** 的工程（§6.9.5 B 级缺口）。补入后 test_main 首行调 zt_init
+# 即可获得统一引导标记；本工程不调 zt_run_all()（rtc_test_run 自驱动），
+# ztest_glue 的其余函数不参与本工程流程。
 set(COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)
 target_sources(app PRIVATE
     ${COMMON_DIR}/test_results.c
-    ${COMMON_DIR}/gpio_toggle.c)
+    ${COMMON_DIR}/gpio_toggle.c
+    ${COMMON_DIR}/ztest_glue.c)
 target_include_directories(app PRIVATE ${COMMON_DIR})
 
 # 选择性运行测试：1=编译进去跑，0=编译期裁掉。

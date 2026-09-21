@@ -29,10 +29,18 @@
 #include <zephyr/ztest.h>
 
 #include "ztest_glue.h"
+#include "rlog.h"
+#include "test_results.h"
 
 LOG_MODULE_REGISTER(i2c_pure_slave_test, LOG_LEVEL_INF);
 
 const struct device *slave_i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c6));
+
+/* 'P' 收尾命令等待上限。正常路径 ≈ I2C_WAVE_ROUNDS × (单轮传输 ~0.7ms +
+ * I2C_WAVE_ROUND_DELAY_MS 100ms) ≈ 10.1s；取 30s（3 倍余量），同时显著
+ * 小于 harness 的 case 超时默认 60s（run_test.py I2C_CASE_TIMEOUT），
+ * 保证 master 崩溃时失败落在可归因的 zassert 上而非 harness 强杀。 */
+#define I2C_TGT_SUMMARY_TIMEOUT_MS 30000U
 
 /* 读返回缓冲：0xAA + i（master 侧校验） */
 uint8_t tgt_tx_buf[256];
@@ -166,22 +174,61 @@ ZTEST(i2c_pure_tgt, i2c_wave)
 
 	zassert_equal(ret, 0, "i2c_target_register rc=%d", ret);
 
-	/* 等 'P'（master 100 轮后发送）：ISR 置标志，本测试体轮询 */
-	while (!tgt_summary_evt) {
+	/* 等 'P'（master 100 轮后发送）：ISR 置标志，本测试体轮询。
+	 * 带超时（原实现 `while (!tgt_summary_evt) k_sleep(20ms)` 无限等 ⇒
+	 * master 崩溃时本测试体永久挂起，只能靠 harness case 超时强杀，
+	 * 报告里归因不出"从机在等 master"，与"固件挂死"无法区分）。 */
+	uint32_t waited_ms = 0;
+
+	while (!tgt_summary_evt && waited_ms < I2C_TGT_SUMMARY_TIMEOUT_MS) {
 		k_sleep(K_MSEC(20));
+		waited_ms += 20;
 	}
 
-	/* 判定：写过且写内容校验全过 → PASS（读内容由 master 校验） */
+	zassert_true(tgt_summary_evt,
+		     "timeout waiting for 'P' after %ums: master aborted or link "
+		     "dead (writes=%u,bytes=%u,reads=%u)",
+		     (unsigned)waited_ms, (unsigned)tgt_write_cnt,
+		     (unsigned)tgt_write_bytes, (unsigned)tgt_read_cnt);
+
+	/* 判定①：写过且写内容校验全过（原判据，保留） */
 	zassert_true(tgt_write_seen, "no_write_seen");
 	zassert_false(tgt_data_mismatch, "write_data_mismatch");
 
-	ZT_INFO("i2c_wave", "writes=%u,bytes=%u,reads=%u",
-		(unsigned)tgt_write_cnt, (unsigned)tgt_write_bytes,
-		(unsigned)tgt_read_cnt);
+	/* 判定②（新增，堵空壳）：写**轮数/字节数**必须与 master 协议一致。
+	 * 原实现只验"见过至少一笔写 + 无错字节" ⇒ 丢 99/100 轮仍 PASS，
+	 * TGT 侧对"链路整段静默/大面积丢帧"零判别力（CTRL 侧会拦，但
+	 * "双核双 PASS"里 TGT 这一半是弱证据）。
+	 * 期望值来源（源码，非猜测）：协议头 I2C_WAVE_ROUNDS=100、
+	 * I2C_WAVE_LEN=16 —— master 每轮发 1 帧 'W'<16><16B 数据>，
+	 * 故完整跑完 = 100 帧 / 1600 数据字节。
+	 *   - 驱动正确时必过：100 轮各 1 帧完整到达；
+	 *   - 典型失效时必不过：master 中途崩/掉帧/写帧被截断（解析停在
+	 *     PS_WRITE_DATA 不计帧）⇒ 计数偏小。 */
+	zassert_equal(tgt_write_cnt, (uint32_t)I2C_WAVE_ROUNDS,
+		      "write frames %u != %d (rounds lost or master aborted)",
+		      (unsigned)tgt_write_cnt, I2C_WAVE_ROUNDS);
+	zassert_equal(tgt_write_bytes,
+		      (uint32_t)I2C_WAVE_ROUNDS * (uint32_t)I2C_WAVE_LEN,
+		      "write bytes %u != %d",
+		      (unsigned)tgt_write_bytes,
+		      I2C_WAVE_ROUNDS * (int)I2C_WAVE_LEN);
+
+	/* 单出口：INFO 是四类标记之一（§6.9.1）⇒ 不能留在本核串口 */
+	RLOG_ZT_INFO("i2c_wave", "writes=%u,bytes=%u,reads=%u",
+		     (unsigned)tgt_write_cnt, (unsigned)tgt_write_bytes,
+		     (unsigned)tgt_read_cnt);
 }
 
 void test_main(void)
 {
+	/* 单出口（SPEC_REFERENCE §6.9.3/§6.11.5）：本核是**从核**（ztest 型）⇒
+	 * 不往自己的串口打 token。ztest 的逐项输出（START/结果/====/断言行）经
+	 * `tc_util_user_override.h` 把 PRINT_DATA 指向 RLOG 自动换出口；BOOT 与
+	 * INFO 走的是公共宏的 printk 路径（不经 PRINT_DATA）⇒ 此处显式换出口。
+	 * 本核的 LOG / panic / assert 现场仍走本核串口。 */
+	rlog_secondary_init();
+
 	LOG_INF("[CPU1 I2C_PURE_TGT] slave test started");   /* 角色 banner（harness 依赖） */
 
 	/* 读返回缓冲预填：0xAA + i（master 侧校验） */
@@ -192,6 +239,27 @@ void test_main(void)
 	tgt_ps = PS_OPCODE;
 	tgt_tx_idx = 0;
 
-	zt_init("TGT");
+	RLOG_ZT_BOOT("TGT");
 	zt_run_all();
+
+	/* 本核结论：zt_run_all 已按 ztest stats 记入 test_results[] ⇒ 扫一遍即可
+	 * （与主核同源，不另设判据）。DONE 帧是**本核发出的最后一条**：主核等到
+	 * 它才打自己的 PROJECT EXECUTION（§6.9.3 硬约束：完成标记必须是整条流的
+	 * 最后一个，否则 harness 提前杀 gdb、截断后续行）。 */
+	bool any_fail = false;
+
+	for (int i = 0; i < TR_MAX_COUNT; i++) {
+		if (test_results[i] == TR_FAIL) {
+			any_fail = true;
+			break;
+		}
+	}
+	rlog_emit_done(!any_fail, any_fail ? "PROJECT EXECUTION FAILED"
+					   : "PROJECT EXECUTION SUCCESSFUL");
+
+	/* test_main 不得返回（CLAUDE.md §4.1）：返回会进 ztest 强 main() 的
+	 * `TC_END_REPORT`，在本核再补一条 `PROJECT EXECUTION` —— 此刻 PRINT_DATA
+	 * 已被覆盖，它同样会被转发到主核流里、**排在主核收尾之后** ⇒ 破坏
+	 * §6.9.3 的"完成标记是整条流最后一个"硬约束。 */
+	k_sleep(K_FOREVER);
 }

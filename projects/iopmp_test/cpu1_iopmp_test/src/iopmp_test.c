@@ -14,6 +14,7 @@
 #include <zephyr/ztest.h>
 #include <iopmp.h>
 #include <reg_base_addr.h>
+#include "ztest_glue.h"   /* ZT_INFO 约定行（§13.4；P1a 新增项使用） */
 
 #define IOPMP_BASE SEC_IOPMP1_ADDR
 
@@ -137,6 +138,150 @@ ZTEST(iopmp, test_iopmp_register_readback)
 		iopmp_get_pmpxcfg(IOPMP_BASE, 0), cfg0_before);
 	zassert_equal(iopmp_is_enable(IOPMP_BASE), en_before,
 		"global IOPMP enable state changed by TC-5");
+}
+
+/* ==================================================================
+ * P1a 新增用例（2026-09-17）
+ *
+ * 仍遵循本工程「非破坏性」契约：凡是动到在册条目/使能位的用例，
+ * 一律**先读原值 → 测完整体写回 → 断言恢复**。
+ * 被测条目统一用「条目 1~3」而不是条目 0：条目 0 可能承载上层规则
+ * （TC-5 已覆盖条目 0），新增项换条目可避免与既有项互相污染。
+ * 注意 CFG0 是**打包寄存器**（一个 32 位含条目 0~3，各 1 字节），
+ * 故恢复必须用 `iopmp_set_pmpxcfg(base, 0, 原值)` 整体写回。
+ * ================================================================== */
+
+/* TC-6: 多区域同时配置与隔离（覆盖此前零调用的 `iopmp_config_region_napot`
+ *   经 `iopmp_set_pmpxcfg_by_idx` 按条目读改写、`iopmp_get_pmpxcfg_by_idx`
+ *   按条目读取，以及 `iopmp_config_region_tor`）。 */
+ZTEST(iopmp, test_iopmp_multi_region)
+{
+	/* 整寄存器保存：CFG0 含条目 0~3 */
+	uint32_t cfg0_before = iopmp_get_pmpxcfg(IOPMP_BASE, 0);
+	uint32_t a1_before = iopmp_get_pmpaddrx(IOPMP_BASE, 1);
+	uint32_t a2_before = iopmp_get_pmpaddrx(IOPMP_BASE, 2);
+	uint32_t a3_before = iopmp_get_pmpaddrx(IOPMP_BASE, 3);
+	bool en_before = iopmp_is_enable(IOPMP_BASE);
+
+	/* 条目 1：NAPOT 0x200000 +0x1000，R|W */
+	int r1 = iopmp_config_region_napot(IOPMP_BASE, 1, 0x200000, 0x1000,
+					   true, true, false, false);
+	/* 条目 2：NAPOT 0x300000 +0x1000，只读 */
+	int r2 = iopmp_config_region_napot(IOPMP_BASE, 2, 0x300000, 0x1000,
+					   true, false, false, false);
+	/* 条目 3：TOR 0x400000，R|W（覆盖 iopmp_config_region_tor） */
+	iopmp_config_region_tor(IOPMP_BASE, 3, 0x400000, true, true, false, false);
+
+	zassert_equal(r1, 0, "napot entry1 ret %d", r1);
+	zassert_equal(r2, 0, "napot entry2 ret %d", r2);
+
+	uint8_t c1 = (uint8_t)iopmp_get_pmpxcfg_by_idx(IOPMP_BASE, 1);
+	uint8_t c2 = (uint8_t)iopmp_get_pmpxcfg_by_idx(IOPMP_BASE, 2);
+	uint8_t c3 = (uint8_t)iopmp_get_pmpxcfg_by_idx(IOPMP_BASE, 3);
+
+	ZT_INFO("test_iopmp_multi_region", "cfg1=0x%02x,cfg2=0x%02x,cfg3=0x%02x",
+		c1, c2, c3);
+
+	/* 位域：bit0=R / bit1=W / bit2=X / bit[4:3]=MODE / bit7=LOCK
+	 * （iopmp.h:45-55；NAPOT=0x3、TOR=0x1，见 :27-30） */
+	zassert_equal(c1 & 0x1Fu, 0x1Bu, "entry1 cfg low5=0x%02x != 0x1B",
+		      c1 & 0x1Fu);
+	zassert_equal(c2 & 0x1Fu, 0x19u, "entry2 cfg low5=0x%02x != 0x19",
+		      c2 & 0x1Fu);
+	zassert_equal(c3 & 0x1Fu, 0x0Bu, "entry3 cfg low5=0x%02x != 0x0B",
+		      c3 & 0x1Fu);
+
+	/* 隔离性：写条目 2/3 不得改写条目 1（同一打包寄存器内的读改写） */
+	zassert_equal(c1 & 0x02u, 0x02u,
+		      "entry1 COMP_WRITE cleared by later entry writes");
+
+	/* 安全：三条目都不得置 LOCK（置位后只能复位解除，会破坏非破坏性契约） */
+	zassert_equal(c1 & 0x80u, 0u, "entry1 COMP_LOCK unexpectedly set");
+	zassert_equal(c2 & 0x80u, 0u, "entry2 COMP_LOCK unexpectedly set");
+	zassert_equal(c3 & 0x80u, 0u, "entry3 COMP_LOCK unexpectedly set");
+
+	/* ADDR 各自独立（ADDR 寄存器按原值存储，见 O-11 的 GDB 直读证据） */
+	zassert_equal(iopmp_get_pmpaddrx(IOPMP_BASE, 1), addr2napot(0x200000, 0x1000),
+		      "ADDR1 = 0x%08x != 0x%08x", iopmp_get_pmpaddrx(IOPMP_BASE, 1),
+		      addr2napot(0x200000, 0x1000));
+	zassert_equal(iopmp_get_pmpaddrx(IOPMP_BASE, 2), addr2napot(0x300000, 0x1000),
+		      "ADDR2 = 0x%08x != 0x%08x", iopmp_get_pmpaddrx(IOPMP_BASE, 2),
+		      addr2napot(0x300000, 0x1000));
+	zassert_equal(iopmp_get_pmpaddrx(IOPMP_BASE, 3), 0x400000,
+		      "ADDR3 = 0x%08x != 0x400000", iopmp_get_pmpaddrx(IOPMP_BASE, 3));
+
+	/* 整体恢复（打包寄存器一次写回条目 0~3） */
+	iopmp_set_pmpaddrx(IOPMP_BASE, 1, a1_before);
+	iopmp_set_pmpaddrx(IOPMP_BASE, 2, a2_before);
+	iopmp_set_pmpaddrx(IOPMP_BASE, 3, a3_before);
+	iopmp_set_pmpxcfg(IOPMP_BASE, 0, cfg0_before);
+
+	zassert_equal(iopmp_get_pmpxcfg(IOPMP_BASE, 0), cfg0_before,
+		      "CFG0 not restored (0x%08x != 0x%08x)",
+		      iopmp_get_pmpxcfg(IOPMP_BASE, 0), cfg0_before);
+	zassert_equal(iopmp_get_pmpaddrx(IOPMP_BASE, 1), a1_before,
+		      "ADDR1 not restored");
+	zassert_equal(iopmp_is_enable(IOPMP_BASE), en_before,
+		      "global IOPMP enable state changed by TC-6");
+}
+
+/* TC-7: NAPOT 地址边界 ±1 与最小粒度（纯函数 + 配置层双查）。
+ *   - 纯函数：`napot_reg2addr_size`（此前零覆盖）与 size=8（NAPOT 最小粒度）往返；
+ *   - 配置层：addr 与 size 对齐时接受；addr±1 必须 -EINVAL 且不写寄存器。 */
+ZTEST(iopmp, test_iopmp_napot_boundary)
+{
+	/* --- 纯函数边界 --- */
+	zassert_equal(addr2napot(0x1000, 8), 0x400u,
+		      "addr2napot(0x1000, 8) = 0x%x != 0x400",
+		      addr2napot(0x1000, 8));
+	zassert_equal(napot_reg2size(0x400), 8u,
+		      "napot_reg2size(0x400) = %u != 8", napot_reg2size(0x400));
+	zassert_equal(napot_reg2addr(0x400), 0x1000u,
+		      "napot_reg2addr(0x400) = 0x%x != 0x1000",
+		      napot_reg2addr(0x400));
+
+	uint32_t dec_addr = 0;
+	uint32_t dec_size = 0;
+
+	zassert_equal(napot_reg2addr_size(addr2napot(0x8000, 0x100), &dec_addr,
+					  &dec_size),
+		      0, "napot_reg2addr_size ret != 0");
+	zassert_equal(dec_addr, 0x8000u, "decoded addr 0x%x != 0x8000", dec_addr);
+	zassert_equal(dec_size, 0x100u, "decoded size 0x%x != 0x100", dec_size);
+
+	/* --- 配置层 ±1 边界（条目 0 借用后整体恢复） --- */
+	uint32_t cfg0_before = iopmp_get_pmpxcfg(IOPMP_BASE, 0);
+	uint32_t addr0_before = iopmp_get_pmpaddrx(IOPMP_BASE, 0);
+	bool en_before = iopmp_is_enable(IOPMP_BASE);
+
+	/* 对齐点：addr == size 边界，接受 */
+	int ret = iopmp_config_region_napot(IOPMP_BASE, 0, 0x1000, 0x1000,
+					    true, true, false, false);
+
+	zassert_equal(ret, 0, "aligned addr(0x1000, size 0x1000) ret %d", ret);
+
+	uint32_t addr0_aligned = iopmp_get_pmpaddrx(IOPMP_BASE, 0);
+
+	/* 未对齐点：addr−1 与 addr+1 都必须 -EINVAL，且不得改动 ADDR0 */
+	ret = iopmp_config_region_napot(IOPMP_BASE, 0, 0x1000 - 1, 0x1000,
+					true, true, false, false);
+	zassert_equal(ret, -EINVAL, "addr-1 ret %d != -EINVAL", ret);
+	zassert_equal(iopmp_get_pmpaddrx(IOPMP_BASE, 0), addr0_aligned,
+		      "addr-1 rejected but ADDR0 was modified");
+
+	ret = iopmp_config_region_napot(IOPMP_BASE, 0, 0x1000 + 1, 0x1000,
+					true, true, false, false);
+	zassert_equal(ret, -EINVAL, "addr+1 ret %d != -EINVAL", ret);
+	zassert_equal(iopmp_get_pmpaddrx(IOPMP_BASE, 0), addr0_aligned,
+		      "addr+1 rejected but ADDR0 was modified");
+
+	/* 整体恢复 */
+	iopmp_set_pmpaddrx(IOPMP_BASE, 0, addr0_before);
+	iopmp_set_pmpxcfg(IOPMP_BASE, 0, cfg0_before);
+	zassert_equal(iopmp_get_pmpxcfg(IOPMP_BASE, 0), cfg0_before,
+		      "CFG0 not restored after boundary test");
+	zassert_equal(iopmp_is_enable(IOPMP_BASE), en_before,
+		      "global IOPMP enable state changed by TC-7");
 }
 
 ZTEST_SUITE(iopmp, NULL, NULL, NULL, NULL, NULL);
