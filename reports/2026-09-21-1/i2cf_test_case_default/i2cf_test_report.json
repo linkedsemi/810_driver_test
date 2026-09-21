@@ -1,0 +1,82 @@
+{
+  "driver": "i2cf_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=30s",
+  "timestamp": "2026-09-21T13:17:08",
+  "execution": "FAILED",
+  "mem_state": "ok",
+  "mem_note": "",
+  "missing_evidence": [],
+  "results": {
+    "addr_7bit_field": "PASS",
+    "callback_register": "PASS",
+    "cold_reset_state": "PASS",
+    "concurrent_fill": "PASS",
+    "device_ready": "PASS",
+    "duplicate_addr_rejected": "PASS",
+    "en_clears_table": "PASS",
+    "enable_channel_boundary": "PASS",
+    "fill_dump_roundtrip": "PASS",
+    "filter_blocks_nonwhitelist": "FAIL",
+    "filter_passthrough_whitelist": "FAIL",
+    "filter_set_bits": "PASS",
+    "invalid_args": "PASS",
+    "isr_addr_beyond_whitelist": "FAIL",
+    "master_eeprom_rw": "FAIL",
+    "scl_hold_time_roundtrip": "PASS",
+    "slave_addr_scan": "PASS",
+    "switch_master_filter": "PASS"
+  },
+  "infos": {
+    "addr_7bit_field": {
+      "max_ok": "0x7f",
+      "ovf_readback": "0"
+    },
+    "cold_reset_state": {
+      "reg_enable": "0x1",
+      "intr_msk": "0x3",
+      "scl_hold": "0xfa"
+    },
+    "concurrent_fill": {
+      "threads": "2",
+      "rounds": "4",
+      "channels": "16"
+    },
+    "slave_addr_scan": {
+      "range": "08..77",
+      "count": "1",
+      "addrs": "50"
+    },
+    "switch_master_filter": {
+      "PE02_func_i2c4": "0",
+      "PE02_func_i2cf4": "1"
+    }
+  },
+  "reasons": {
+    "filter_blocks_nonwhitelist": "WEST_TOPDIR/810_driver_test/projects/i2cf_test/cpu1_i2cf_test/src/i2cf_test.c: 876: i2cf_filter_blocks_nonwhitelist: (ret_blocked < 0 is false)",
+    "filter_passthrough_whitelist": "WEST_TOPDIR/810_driver_test/projects/i2cf_test/cpu1_i2cf_test/src/i2cf_test.c: 962: i2cf_filter_passthrough_whitelist: (readback not equal to pattern)",
+    "isr_addr_beyond_whitelist": "WEST_TOPDIR/810_driver_test/projects/i2cf_test/cpu1_i2cf_test/src/i2cf_test.c: 806: i2cf_isr_addr_beyond_whitelist: (i2cf_isr_wait(100) is false)",
+    "master_eeprom_rw": "WEST_TOPDIR/810_driver_test/projects/i2cf_test/cpu1_i2cf_test/src/i2cf_test.c: 626: i2cf_master_eeprom_rw: (i2c_burst_read(master, slave, 0x00, readback, sizeof(readback)) is non-zero)"
+  },
+  "notes": {
+    "addr_7bit_field": "src=token",
+    "callback_register": "src=token",
+    "cold_reset_state": "src=token",
+    "concurrent_fill": "src=token",
+    "device_ready": "src=token",
+    "duplicate_addr_rejected": "src=token",
+    "en_clears_table": "src=token",
+    "enable_channel_boundary": "src=token",
+    "fill_dump_roundtrip": "src=token",
+    "filter_blocks_nonwhitelist": "src=token",
+    "filter_passthrough_whitelist": "src=token",
+    "filter_set_bits": "src=token",
+    "invalid_args": "src=token",
+    "isr_addr_beyond_whitelist": "src=token",
+    "master_eeprom_rw": "src=token",
+    "scl_hold_time_roundtrip": "src=token",
+    "slave_addr_scan": "src=token",
+    "switch_master_filter": "src=token"
+  }
+}

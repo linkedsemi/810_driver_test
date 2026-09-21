@@ -67,4 +67,3 @@ cases:
 #  - projects\app_iwdg_cpu2_test\tests\case_reset        # 破坏性：cpu2 真实复位，单独跑
 #  - projects\wdt_test\tests\case_pmu_iwdg_full_reset    # 破坏性：整芯片复位
 #  - projects\wdt_test\tests\case_destructive_reset      # 破坏性：HART 复位
-#  - projects\io_probe_test\tests\case_default           # 一次性诊断工具，不入册

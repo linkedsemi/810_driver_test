@@ -1,0 +1,79 @@
+{
+  "driver": "rtc_ls_test",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=150s",
+  "timestamp": "2026-09-21T11:22:36",
+  "execution": "PASS",
+  "mem_state": "ok",
+  "mem_note": "",
+  "results": {
+    "set_get_roundtrip": "PASS",
+    "time_advances": "PASS",
+    "invalid_set_args": "PASS",
+    "alarm_set_get": "PASS",
+    "alarm_fires": "PASS",
+    "alarm_invalid_args": "PASS",
+    "calibration_roundtrip": "PASS",
+    "calibration_negative": "PASS",
+    "calibration_null_arg": "PASS",
+    "calendar_rollover": "PASS",
+    "invalid_set_args_ext": "PASS",
+    "leap_year_dates": "PASS",
+    "alarm_supported_fields": "PASS",
+    "update_callback_notsup": "PASS",
+    "drift_measure": "PASS"
+  },
+  "infos": {
+    "alarm_fires": {
+      "value": "fire1:triggered=1,pending=0,now=2026-09-01 08:00:07"
+    },
+    "alarm_cb": {
+      "value": "callback triggered"
+    },
+    "alarm_supported_fields": {
+      "value": "mask=0x003f,expect=0x003f"
+    },
+    "calendar_rollover": {
+      "value": "feb29_to_mar1_leap28:set=2028年02月29日 周2 23:59:57 expect=2028年03月01日 周3 00:00:00 get=2028年03月01日 周3 00:00:00"
+    },
+    "calibration_negative": {
+      "value": "calib_reg=0x36007ffe,ctrl=0x0000000f"
+    },
+    "calibration_roundtrip": {
+      "value": "ppb=100000000"
+    },
+    "drift_measure": {
+      "value": "rtc_ms=10000,uptime_ms=10001,drift_ms=-1"
+    },
+    "leap_year_dates": {
+      "value": "y2028_get=2028-02-29"
+    },
+    "set_get_roundtrip": {
+      "value": "delta_s=0"
+    },
+    "time_advances": {
+      "value": "delta_s=2"
+    },
+    "update_callback_notsup": {
+      "value": "ret=-134"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "set_get_roundtrip": "src=token",
+    "time_advances": "src=token",
+    "invalid_set_args": "src=token",
+    "alarm_set_get": "src=token",
+    "alarm_fires": "src=token",
+    "alarm_invalid_args": "src=token",
+    "calibration_roundtrip": "src=token",
+    "calibration_negative": "src=token",
+    "calibration_null_arg": "src=token",
+    "calendar_rollover": "src=token",
+    "invalid_set_args_ext": "src=token",
+    "leap_year_dates": "src=token",
+    "alarm_supported_fields": "src=token",
+    "update_callback_notsup": "src=token",
+    "drift_measure": "src=token"
+  }
+}

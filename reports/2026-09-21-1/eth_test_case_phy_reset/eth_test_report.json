@@ -1,0 +1,16 @@
+{
+  "case": "case_phy_reset",
+  "result": "FAIL",
+  "execution": "UNKNOWN",
+  "mem_state": "invalid",
+  "mem_note": "test_results_valid 符号**存在但未置位**：固件没跑到 tr_init（挂在内核初始化 / POST_KERNEL / 早期崩溃）→ test_results[] 停在 .bss 零值（零值语义 = TR_PASS）→ **内存结果不可信，不是全 PASS**。",
+  "items": [],
+  "missing_evidence": [
+    "eth_dev_ready",
+    "eth_phy_link_state",
+    "mdio_invalid_args",
+    "mdio_phy_id",
+    "mdio_reg_rw"
+  ],
+  "missing_note": "证据缺失（非驱动失败）：5 项已声明测试项无确定结果（token 与内存兜底都没有值）—— eth_dev_ready、eth_phy_link_state、mdio_invalid_args、mdio_phy_id、mdio_reg_rw"
+}

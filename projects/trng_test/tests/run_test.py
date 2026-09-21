@@ -51,6 +51,9 @@ from judge import (MEM_ONLY_NOTE, mem_only_evidence,
                    EXEC_UNKNOWN, MEM_OK, exec_label, mem_state_line,  # noqa: E402
                    mem_state_of_payload, missing_evidence,
                    missing_evidence_note, truncation_evidence)
+# ---- R8（2026-09-21）: 批量路径下 mem 取到的项一律不算证据 ----
+from judge import (MEM_NOEVID, MEM_WEAK_ITEM_NOTE, evidence_gaps,  # noqa: E402
+                   mem_noevid_source, mem_noevid_value, mem_weak_note)
 from judge import (REPORT_TABLE_HEADER, REPORT_TABLE_SEP,  # noqa: E402
                    clip_cell, coverage_expected, format_report_header,
                    md_table_row, result_text, source_label)
@@ -119,14 +122,14 @@ def evaluate_case(case, lines, test_names, mem_data):
             continue
         if st == MISSING and mem_data is not None:
             mem = mem_data.get("TGT", {}).get(name)
-            if mem == "PASS":
-                st, note = PASS, "src=mem"
-                reasons.setdefault(name, mem_data.get("reasons", {}).get(name, ""))
-            elif mem == "FAIL":
-                st, note = FAIL, "src=mem"
-                reasons.setdefault(name, mem_data.get("reasons", {}).get(name, ""))
-            elif mem == "NOT_RUN":
-                st, note = NOT_RUN, "src=mem(NOT_RUN)"
+            # R8（2026-09-21，用户裁定 2026-09-20）：**mem 取到的项一律不算证据**。
+            # 取值保留给报告（来源列 `mem(非证据:X)`，人可查），但逐项结果落
+            # MEM_NOEVID ⇒ 不进 passed / 不进 ran / 计入 missing_evidence，
+            # 由既有的"无证据"通道兜住（截断接受也不再放行）。
+            if mem in ("PASS", "FAIL", "NOT_RUN"):
+                st, note = MEM_NOEVID, mem_noevid_source(mem)
+                if mem != "NOT_RUN":
+                    reasons.setdefault(name, mem_data.get("reasons", {}).get(name, ""))
             else:
                 note = "mem-unavailable"
         elif st == MISSING and mem_data is None:
@@ -168,6 +171,10 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
             reason = ""
         elif st == SKIP:
             reason = '用例主动跳过（ztest_test_skip）；不计入分母'
+        elif st == MEM_NOEVID:
+            # R8：mem 取到的项 —— 理由串必须与"驱动/测试失败"分开表述
+            reason = MEM_WEAK_ITEM_NOTE + (
+                f"；{reasons[name]}" if reasons.get(name) else "")
         else:
             reason = reasons.get(name, "")
         info = ", ".join(f"{k}={v}" for k, v in infos.get(name, {}).items()) or "-"
@@ -240,13 +247,24 @@ def l2_spec(facts=None):
         results, infos, reasons, notes, execution = evaluate_case(
             ci.case, ci.lines["TGT"], TEST_NAMES, mem)
         passed = sum(1 for n in TEST_NAMES if results[n] == PASS)
-        ran = sum(1 for n in TEST_NAMES if results[n] not in (NOT_RUN, SKIP))
+        # R8：mem 非证据项不计入 ran（分子分母两端同时摘掉）
+        ran = sum(1 for n in TEST_NAMES
+                  if results[n] not in (NOT_RUN, SKIP, MEM_NOEVID))
         n_skip = sum(1 for n in TEST_NAMES if results[n] == SKIP)
         mem_line_before = mem_state_line(mem_state, mem_note)
         # R7：全项证据都来自 mem ⇒ 不得判 PASS；理由串挂 mem_note（三处同源）
         mem_only = mem_only_evidence(notes.values())
         if mem_only:
             mem_note = ((mem_note + "；") if mem_note else "") + MEM_ONLY_NOTE
+        # R8（2026-09-21，用户裁定 2026-09-20）：mem 取到的项**一律不算证据**。
+        # 无证据项按成因拆开：真"没测到"（missing）与"mem 有值但不算证据"
+        # （mem_noevid）—— 判定效果相同（都进 missing_evidence ⇒ 不得判 PASS），
+        # 但理由串必须分开，不能把 mem 有值说成"token 与内存兜底都没有值"。
+        _missing, _mem_noevid = evidence_gaps(TEST_NAMES, results)
+        _weak = mem_weak_note(
+            [f"{n}(mem={mem_noevid_value(notes.get(n, ''))})" for n in _mem_noevid])
+        if _weak:
+            mem_note = ((mem_note + "；") if mem_note else "") + _weak
         verdict = judge_case(results, passed, ran, execution, TEST_NAMES)
         return {"case": ci.case, "mem_none": mem is None,
                 "mem_state": mem_state, "mem_note": mem_note,
@@ -255,7 +273,7 @@ def l2_spec(facts=None):
                 "results": results, "infos": infos, "reasons": reasons,
                 "notes": notes, "execution": execution, "passed": passed,
                 "ran": ran, "n_skip": n_skip, "verdict": verdict,
-                "exec_report": verdict["exec"], "missing": verdict["missing"],
+                "exec_report": verdict["exec"], "missing": _missing,
                 "case_ok": verdict["ok"] and not mem_only}
 
     def _console(jl):

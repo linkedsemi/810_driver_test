@@ -39,6 +39,10 @@ __all__ = [
     "EXEC_CONFLICT", "exec_conflict_note",
     "ZERO_EVIDENCE_NOTE", "has_evidence", "missing_evidence_note",
     "MEM_ONLY_NOTE", "mem_only_evidence",
+    # R8（2026-09-21）: 批量路径下 mem 取到的项**一律不算证据**
+    "MEM_NOEVID", "MEM_WEAK_NOTE", "MEM_WEAK_ITEM_NOTE",
+    "mem_noevid_source", "mem_noevid_value", "mem_weak_note", "evidence_gaps",
+    "mem_noevid_cell",
     "sentinel_state", "mem_state_of_payload", "mem_state_line",
     "missing_evidence", "truncation_evidence", "exec_label",
     "NO_EVIDENCE_STATES",
@@ -228,12 +232,112 @@ def mem_only_evidence(sources):
     return not any("token" in s for s in srcs)
 
 
+# ============================== R8（2026-09-21，触发来源 = 用户裁定 2026-09-20）
+#
+# 用户原话：「**内存兜底只在调试时候使用，测试结果必须以 token 为判断标准**」；
+# 追问"批量测试里，内存兜底（mem）取到的项该怎么算？"→ 裁定 **"B 严：mem 一律不算证据"**。
+#
+# 与 R7 的关系（**R8 在 R7 之上再加一层，R7 不撤**）：
+#   * R7（`mem_only_evidence`）只堵「**整个 case** 一条串口逐项 token 都没有」；
+#   * R8 把口径下沉到**逐项**：任何一项只要它的 PASS/FAIL/NOT_RUN 来自 mem，
+#     **该项即非证据** —— 不再需要"全 case 零 token"这个前提。
+#   * 既有哨兵门 / 独立性门**全部保留**（R2：`mem_state != ok` ⇒ dumper 侧已清空；
+#     R5-E6：`ok` 但无 `ZT_BOOT` ⇒ mem 项降级剔除）。R8 是它们**之后的**一道闸。
+#
+# R8 对逐项的处置（三处必须一致：判定 / 计数 / 报告）：
+#   1. 逐项结果落 `MEM_NOEVID`（见下），**不进 `passed`**、**不进 `ran`**；
+#   2. 落进 `missing_evidence`（`NO_EVIDENCE_STATES` 新增本状态）⇒ 走既有的
+#      "零证据 / 证据缺失"通道：`truncation_evidence()` 不放行、case 必须 FAIL；
+#   3. **报告里仍要能看到 mem 的取值**（人得能查）：取值写进「来源」列
+#      （`mem(非证据:PASS)`），结果列写 `⬜ 无证据(mem)`，理由串走 `MEM_WEAK_NOTE`
+#      「证据弱（仅内存兜底，非串口逐项）」—— 与「驱动/测试失败」**严格分开**。
+#
+# **调试路径（dbg_run.py）不受影响**：它既不 import 本模块、也不调用这两个守卫
+# （判据 = `dbg_run.py` 里引用 `mem_only_evidence` / `MEM_ONLY_NOTE` / `mem_noevid*`
+# 的次数为 0），mem 兜底在调试时照常可用。
+MEM_NOEVID = "MEM_NOEVID"          # 逐项结果词：该项唯一证据来自内存兜底 ⇒ 非证据
+
+#: 逐项理由（报告「失败原因」列；★ 与"驱动/测试失败"分开表述）
+MEM_WEAK_ITEM_NOTE = (
+    "证据弱（仅内存兜底，非串口逐项）：本项没有串口逐项 token，只有 GDB 内存兜底"
+    "读到的值 ⇒ 批量路径**不计为证据**"
+)
+
+#: 整 case 理由（`str.format(n=..., detail=...)`；控制台 / .md / .json 三处同源）
+MEM_WEAK_NOTE = (
+    "证据弱（仅内存兜底，非串口逐项）：{n} 项无串口逐项 token，只有 GDB 内存兜底"
+    "读到的值（{detail}）⇒ 批量路径**一律不计为证据**，按『无证据』处理"
+    "（用户裁定 2026-09-20：内存兜底只在调试时使用，测试结果必须以 token 为判断标准；"
+    "调试路径 `dbg_run.py` 不受此约束）。"
+    "★ 这是『串口没拿到逐项证据』，**不是**驱动/测试失败 —— 与 `missing_evidence_note`"
+    "「没测到」同侧，与 G2「测坏了」分开表述。"
+)
+
+#: 取值 → 「来源」列的写法（`mem(非证据:PASS)`）。取值**保留原样**，人才查得到。
+MEM_NOEVID_SOURCE_RE = re.compile(r"mem\(非证据:([^)]*)\)")
+
+
+def mem_noevid_source(mem_value):
+    """R8：mem 非证据项在「来源」列/notes 里的写法 —— 取值与"非证据"必须同时可见。"""
+    return f"mem(非证据:{mem_value})"
+
+
+def mem_noevid_value(source_or_note):
+    """R8：从 `mem(非证据:X)` 串里取回 mem 的原始取值（取不回返回 `""`）。"""
+    m = MEM_NOEVID_SOURCE_RE.search("" if source_or_note is None else str(source_or_note))
+    return m.group(1) if m else ""
+
+
+def mem_weak_note(entries, limit=12):
+    """R8：mem 非证据项的**可区分理由串**（"证据弱" ≠ "驱动/测试失败"）。
+
+    Args:
+        entries: 可迭代的条目描述串（各家族自定，建议含取值，如
+                 `"autocorr_8k(mem=PASS)"` / `"TGT:i2c_rw_1(mem=NOT_RUN)"`）。
+        空表 → `""`（不产生噪音）。
+    """
+    entries = [str(e) for e in entries]
+    if not entries:
+        return ""
+    shown = "、".join(entries[:limit])
+    if len(entries) > limit:
+        shown += f" …（另 {len(entries) - limit} 项）"
+    return MEM_WEAK_NOTE.format(n=len(entries), detail=shown)
+
+
+def evidence_gaps(declared, status_by_name):
+    """R8：把"无证据"的已声明项按**成因**拆成两类（报告用）。
+
+    返回 `(missing, mem_noevid)`：
+
+      * `missing`    —— `MISSING` / `NOT_RUN`：token 与 mem **都没给值** ⇒ 真"没测到"；
+      * `mem_noevid` —— `MEM_NOEVID`：**mem 有值、但按 R8 不算证据**（取值见来源列）。
+
+    两类的**判定效果完全相同**（都已被 `missing_evidence()` 计入 ⇒ 不得判 PASS），
+    差别只在报告里的理由串 —— `missing_evidence_note()` 说"token 与内存兜底都没有值"，
+    对 `MEM_NOEVID` 项是**假话**（mem 明明有值），故必须拆开各说各的。
+    """
+    if not declared:
+        return [], []
+    missing, memn = [], []
+    for n in declared:
+        st = status_by_name.get(n, "MISSING")
+        if st == MEM_NOEVID:
+            memn.append(n)
+        elif st in NO_EVIDENCE_STATES:
+            missing.append(n)
+    return missing, memn
+
+
 # 截断接受判据里的"无确定结果"状态集（★ 2026-09-18 A 组审计追补）。
 # ★ 作用域**仅限截断接受**：常规路径里 `NOT_RUN` 是合法状态（用例确实没跑到，
 #   各工程按既有语义把它排除出 `ran` 分母）—— 那条语义**不改**。
 #   本集合只保证：`NOT_RUN` **不能成为"截断接受"放行的依据**。
 # ★ `SKIP` **不并入**：它是 `ztest_test_skip()` 的**主动跳过 = 确定结果**。
-NO_EVIDENCE_STATES = ("MISSING", "NOT_RUN")
+# ★ `MEM_NOEVID`（2026-09-21 R8）**并入**：mem 取到的项不算证据 ⇒ 同样不得
+#   成为截断接受 / 常规判 PASS 的依据；它同时被 `missing_evidence()` 收走，
+#   因此"某个 case 靠 mem 补出来的空档"再也不会被静默写成 PASS。
+NO_EVIDENCE_STATES = ("MISSING", "NOT_RUN", MEM_NOEVID)
 
 
 def missing_evidence(declared, status_by_name):
@@ -246,6 +350,11 @@ def missing_evidence(declared, status_by_name):
         无收尾标记 ⇒ `passed == ran == 5` ⇒ **被截断接受判成 PASS**。
 
     即"任何工程中途挂死都被静默写成 PASS"。`SKIP` 是主动跳过，属确定结果，不并入。
+
+    ★ R8（2026-09-21）追加：`MEM_NOEVID`（mem 取到的项 ⇒ 不算证据）**也**计入。
+    这与"mid-hang"同一条道理：`passed == ran` 之所以还能成立，靠的是分母里
+    计入了那些**没有串口证据**的项 —— R8 把它们从分子分母两端同时摘掉，
+    于是"靠 mem 补出来的全 PASS"不再能满足 `passed == ran`，只能落进本函数。
 
     ★ 边界：本函数**只**服务 `truncation_evidence()`（截断接受）。常规路径里
     `NOT_RUN` 的既有语义（不计入 `ran` 分母）不得因此改变。
@@ -371,12 +480,27 @@ RESULT_TEXT = {
     "NOT_RUN": "⬜ NOT_RUN",
     "MISSING": "⬜ MISSING",
     "INCOMPLETE": "⚠️ INCOMPLETE",
+    # R8：mem 取到的项 —— 结果列写"无证据"，取值另在「来源」列（`mem(非证据:PASS)`），
+    # 两列合读一眼就知道"探到了值，但不算数"。
+    "MEM_NOEVID": "⬜ 无证据(mem)",
 }
 
 
 def result_text(res):
     """结果词 → 报告单元格文案（未登记的词保留原词，不静默吞掉）。"""
     return RESULT_TEXT.get(res, f"⬜ {res}")
+
+
+def mem_noevid_cell(status, mem_value=None):
+    """R8：D3 族「核」列的单元格 —— mem 非证据时把**取值**与**非证据**一起写出来。
+
+    双核家族的核列直接渲染逐核状态，没有单独的「来源」列可放取值；本函数保证
+    `MEM_NOEVID` 的那一格仍然人可查（`⬜ 非证据(mem=PASS)`），不因"不算证据"
+    就把 mem 读到的值一并抹掉。非 `MEM_NOEVID` 状态原样返回。
+    """
+    if status != MEM_NOEVID:
+        return status
+    return f"⬜ 非证据(mem={mem_value})" if mem_value else "⬜ 无证据(mem)"
 
 
 def escape_md_table_cell(value):

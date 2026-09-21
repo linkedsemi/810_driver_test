@@ -1,0 +1,21 @@
+{
+  "archive_version": 2,
+  "case": "case_pure_i2c_400k",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 26
+    },
+    "CTRL": {
+      "port": "COM18",
+      "lines": 17
+    }
+  },
+  "timeout": 60,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\i2c_pure_test\\tests\\run_test.py",
+  "script_md5": "475016ee6b7fcf975f2a16335f3436f8",
+  "timestamp": "2026-09-21T11:34:47",
+  "split_from_primary": true,
+  "relay_envelope_stripped": true
+}

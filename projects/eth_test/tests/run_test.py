@@ -42,6 +42,9 @@ from judge import (MEM_ONLY_NOTE, MEM_OK, MEM_UNAVAILABLE, MEM_UNAVAILABLE_NOTE,
                    mem_only_evidence,
                    exec_label, has_evidence, mem_state_line, mem_state_of_payload,
                    missing_evidence, missing_evidence_note, truncation_evidence)
+# ---- R8（2026-09-21）: 批量路径下 mem 取到的项一律不算证据 ----
+from judge import (MEM_NOEVID, MEM_WEAK_ITEM_NOTE, evidence_gaps,  # noqa: E402
+                   mem_noevid_source, mem_noevid_value, mem_weak_note)
 from judge import (REPORT_TABLE_HEADER, REPORT_TABLE_SEP,  # noqa: E402
                    clip_cell, coverage_expected, format_report_header,
                    md_table_row, result_text, source_label)
@@ -109,8 +112,14 @@ def merge_mem(items, payload):
         for name, result in payload.get("TGT", {}).items():
             if name in known or result == "NOT_RUN":
                 continue
-            items.append({"name": name, "result": result,
-                          "reason": reasons.get(name, ""), "source": "mem"})
+            # R8（2026-09-21，用户裁定 2026-09-20）：**mem 取到的项一律不算证据**。
+            # 取值写进「来源」列（`mem(非证据:PASS)`，人可查），逐项结果落
+            # MEM_NOEVID ⇒ 不进 passed/ran、计入 missing_evidence。
+            # 上方 E6 独立性门（无 ZT_BOOT ⇒ 直接剔除）与 R2 哨兵门原样保留，
+            # R8 是在它们**之上**再加的一层。
+            items.append({"name": name, "result": MEM_NOEVID,
+                          "reason": reasons.get(name, ""),
+                          "source": mem_noevid_source(result)})
             added += 1
     log(f"[mem] mem_state={state}"
         + (f" — {note}" if state != MEM_OK else "")
@@ -150,9 +159,12 @@ def evaluate_case(case_name, tgt_lines, mem=None):
     # 交给下面的完整度检查判 FAIL。佐证齐全时兜底照常生效（不误伤正常路径）。
     mem_trusted = (mem_state == MEM_OK) and boot_seen
     if not mem_trusted:
-        _dropped = [it["name"] for it in items if it.get("source") == "mem"]
+        # R8：来源串已改为 `mem(非证据:X)` ⇒ 用前缀判归属（E6 门语义不变）
+        _dropped = [it["name"] for it in items
+                    if str(it.get("source", "")).startswith("mem")]
         if _dropped:
-            items = [it for it in items if it.get("source") != "mem"]
+            items = [it for it in items
+                     if not str(it.get("source", "")).startswith("mem")]
             mem_note = ("；".join(x for x in [
                 mem_note,
                 f"内存兜底结果被拒绝（无 ZT_BOOT 佐证，无法排除 RAM 里是上一轮残留"
@@ -161,7 +173,8 @@ def evaluate_case(case_name, tgt_lines, mem=None):
     # ---- 完整度守卫（★ R5-1，与 F4 族的 R4 规则同源）----
     # 收尾标记齐全但**有已声明项没有确定结果**（token 无 / mem 被拒或跳过）⇒ 不得判 PASS。
     status = {it["name"]: it["result"] for it in items}
-    missing = missing_evidence(declared, status)
+    # R8：无证据项按成因拆开 —— "没测到" 与 "mem 有值但不算证据" 理由串不同
+    missing, _mem_noevid_names = evidence_gaps(declared, status)
     trunc_ok, _m2 = truncation_evidence(execution, declared, status)
     truncated = False
     all_pass = (execution == "SUCCESSFUL" and has_evidence(items) and not missing
@@ -176,6 +189,15 @@ def evaluate_case(case_name, tgt_lines, mem=None):
     if mem_only_evidence([it.get("source") for it in items]):
         all_pass = False
         mem_note = ((mem_note + "；") if mem_note else "") + MEM_ONLY_NOTE
+    # R8（2026-09-21，用户裁定 2026-09-20）：mem 取到的项**一律不算证据**。
+    # 逐项结果已由 merge_mem 落成 MEM_NOEVID ⇒ 判定已堵；这里只把**可区分理由串**
+    # 挂到 mem_note（控制台 / .md / .json 三处同源可见）。
+    _mem_noevid = [it for it in items if it.get("result") == MEM_NOEVID]
+    if _mem_noevid:
+        _weak = mem_weak_note(
+            [f"{it['name']}(mem={mem_noevid_value(it.get('source'))})"
+             for it in _mem_noevid])
+        mem_note = ((mem_note + "；") if mem_note else "") + _weak
     return {"case": case_name, "result": "PASS" if all_pass else "FAIL",
             "execution": exec_label(execution, truncated),
             "mem_state": mem_state, "mem_note": mem_note, "items": items,
@@ -189,7 +211,8 @@ def print_report(results):
         status = r.get("result", "UNKNOWN")
         items = r.get("items", [])
         passed = sum(1 for i in items if i.get("result") == "PASS")
-        total = len(items)
+        # R8：分母不计 mem 非证据项
+        total = sum(1 for i in items if i.get("result") != MEM_NOEVID)
         print(f"## {r['case']}: {status} ({passed}/{total})"
               f"  exec={r.get('execution')}")
         # 控制台与 .md（见下方 write_markdown_report）/其余工程同源：走
@@ -214,7 +237,8 @@ def write_markdown_report(cdir, result):
     base = cdir / f"{REPORT_BASE}.md"
     items = result.get("items", [])
     passed = sum(1 for it in items if it.get("result") == "PASS")
-    total = len(items)
+    # R8：分母不计 mem 非证据项
+    total = sum(1 for it in items if it.get("result") != MEM_NOEVID)
     status = result.get("result") or "FAIL"
     lines = [
         f"# {DRIVER_NAME} 测试报告",
@@ -265,7 +289,9 @@ def l2_spec(facts=None):
         summary=lambda judged: (
             judged[0].get("result") or "FAIL",
             sum(1 for it in judged[0].get("items", []) if it.get("result") == "PASS"),
-            len(judged[0].get("items", []))),
+            # R8：分母不计 mem 非证据项
+            sum(1 for it in judged[0].get("items", [])
+                if it.get("result") != MEM_NOEVID)),
     )
 
 

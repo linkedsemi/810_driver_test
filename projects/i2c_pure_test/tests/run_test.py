@@ -74,6 +74,9 @@ from report_dir import (allocate_session_dir, case_dir_for,  # noqa: E402
 from judge import (MEM_ONLY_NOTE, exec_conflict_note, exec_label, has_evidence,  # noqa: E402
                    mem_only_evidence, mem_state_line, mem_state_of_payload,
                    truncation_evidence)
+# ---- R8（2026-09-21）: 批量路径下 mem 取到的项一律不算证据 ----
+from judge import (MEM_NOEVID, MEM_WEAK_ITEM_NOTE, mem_noevid_cell,  # noqa: E402
+                   mem_noevid_source, mem_weak_note)
 from judge import (REPORT_TABLE_HEADER, REPORT_TABLE_SEP,  # noqa: E402
                    clip_cell, coverage_expected, format_report_header,
                    md_table_row, result_text, source_label)
@@ -133,9 +136,13 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
     tests = []
     case_pass = True
     ev_srcs = []   # 每项×每核的证据来源（R7「批量必须靠 token」判据用）
+    # R8：mem 取值留档（**只在该 case 真有 mem 项时才进报告** —— 非 mem case
+    # 的产物必须逐字节不变，下游 diff 才不会被无关字段噪音淹没）。
+    mem_map: Dict[str, Dict[str, str]] = {}
     for name in test_names:
         statuses: Dict[str, str] = {}
         srcs: Dict[str, str] = {}
+        mem_vals: Dict[str, str] = {}   # R8：mem 取值留档（只供渲染，不参与判定）
         for core in ("CTRL", "TGT"):
             t = per_core[core]["tests"].get(name)
             st = t["result"] if t else "MISSING"
@@ -143,14 +150,21 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
             # §12.3 内存兜底：token 缺失的项用内存值补（来源=mem）
             if st == "MISSING" and mem_data is not None and core in mem_data:
                 if name in mem_data[core]:
-                    st = mem_data[core][name]
-                    src = "mem"
+                    # R8（2026-09-21，用户裁定 2026-09-20）：**mem 一律不算证据**。
+                    # 取值留档进 mem_vals（渲染「核」列，人可查），逐核状态落
+                    # MEM_NOEVID ⇒ 不再满足"双核 PASS"、不计入 passed/ran、
+                    # 且进 NO_EVIDENCE_STATES（截断接受同样不放行）。
+                    mem_vals[core] = mem_data[core][name]
+                    st, src = MEM_NOEVID, "mem"
             if st == "MISSING":
                 src = "missing"
             statuses[core] = st
             srcs[core] = src
             ev_srcs.append(src)
         test_pass = statuses["CTRL"] == "PASS" and statuses["TGT"] == "PASS"
+        # R8：逐核"显式 FAIL"只认 **token**（mem 值已落 MEM_NOEVID ⇒ 不计入）。
+        # 判据与理由串的唯一来源 = common/judge.py；R8 不改"测坏了"的表述。
+        has_explicit_fail = any(statuses[c] == "FAIL" for c in ("CTRL", "TGT"))
         if not test_pass:
             case_pass = False
 
@@ -187,8 +201,15 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
             "src": src,
             "info": "; ".join(info_parts),
             "reason": "; ".join(reason_parts),
-            "result": "PASS" if test_pass else "FAIL",
+            # R8：结果分三路 —— PASS / token 显式 FAIL（= 测坏了）/ 仅 mem（= 没测到）。
+            # mem 值已落 MEM_NOEVID ⇒ has_explicit_fail 天然只认 token FAIL，"驱动
+            # 真失败"必须仍然报 FAIL，不能被"mem 不算证据"抹成"没测到"。
+            "result": ("PASS" if test_pass else
+                       ("FAIL" if has_explicit_fail else
+                        (MEM_NOEVID if mem_vals else "FAIL"))),
         })
+        if mem_vals:
+            mem_map[name] = dict(mem_vals)
 
     ctrl_done = ctrl_p["execution"]
     tgt_done = tgt_p["execution"]
@@ -200,16 +221,22 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
     #      丢行本该由 §12.3 内存兜底补回（兜底给出确定结果 ⇒ 不算零证据，仍可 PASS）。
     # ★ 边界：**只堵整核零证据**；部分项缺失仍走 incomplete 容忍（原设计不变）。
     # ★ 与"测坏了"（显式 FAIL token）**分开表述**：这是"没测到"，理由串不混。
-    _gaps = []
+    _gaps, _gap_parts = [], []
     for _core in ("CTRL", "TGT"):
         _sts = [t[_core.lower()] for t in tests]
         if _sts and not any(s in ("PASS", "FAIL") for s in _sts):
             _gaps.append(_core)
+            # R8：整核都只是 mem 非证据时，"内存兜底无结果"是假话，分开说
+            # （与"串口未捕到"的真缺口同一通道判 FAIL，理由串不混）。
+            _gap_parts.append(
+                f"{_core} 核全部 {len(tests)} 项" + (
+                    "证据仅来自内存兜底（R8：mem 一律不算证据）"
+                    if all(s == MEM_NOEVID for s in _sts) else
+                    "无确定结果（串口未捕到 + 内存兜底无结果）"))
     _gap_note = ""
     if _gaps:
-        _gap_note = ("证据缺失（非驱动失败）：" + "、".join(
-            f"{c} 核全部 {len(tests)} 项无确定结果（串口未捕到 + 内存兜底无结果）"
-            for c in _gaps) + " ⇒ 不得因另一核完好判 PASS")
+        _gap_note = ("证据缺失（非驱动失败）：" + "、".join(_gap_parts)
+                     + " ⇒ 不得因另一核完好判 PASS")
     if (not has_evidence(tests) or _gaps or ctrl_done != "SUCCESSFUL" or tgt_done != "SUCCESSFUL"):
         case_pass = False
     # F1/F2（2026-09-18）：见 common/judge.py。
@@ -221,6 +248,9 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
     for _t in tests:
         if _t["ctrl"] == "MISSING" or _t["tgt"] == "MISSING":
             _status[_t["name"]] = "MISSING"
+        elif _t["ctrl"] == MEM_NOEVID or _t["tgt"] == MEM_NOEVID:
+            # R8：任一核的 PASS 来自内存兜底 ⇒ 该项不算证据（截断接受不放行）
+            _status[_t["name"]] = MEM_NOEVID
         elif _t["ctrl"] == "PASS" and _t["tgt"] == "PASS":
             _status[_t["name"]] = "PASS"
         else:
@@ -245,6 +275,15 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
         case_pass = False
         _mem_note = ((_mem_note + "；") if _mem_note else "") + MEM_ONLY_NOTE
 
+    # R8（2026-09-21，用户裁定 2026-09-20）：mem 取到的项**一律不算证据**。
+    # 逐核状态已落 MEM_NOEVID（上面）⇒ 判定与非预期路径都堵住了；这里只把
+    # **整 case 的可区分理由串**挂到 mem_note（控制台 / .md / .json 三处同源）。
+    _mem_noevid = [(f"{c}:{n}", v)
+                   for n, mv in mem_map.items() for c, v in sorted(mv.items())]
+    if _mem_noevid:
+        _weak = mem_weak_note([f"{n}(mem={v})" for n, v in _mem_noevid])
+        _mem_note = ((_mem_note + "；") if _mem_note else "") + _weak
+
     return {
         "name": case_name,
         "result": "PASS" if case_pass else "FAIL",
@@ -260,6 +299,8 @@ def evaluate_case(case_name: str, ctrl_lines: List[str], tgt_lines: List[str],
         "evidence_gap": _gaps,
         "evidence_note": _gap_note,
         "mem_note": _mem_note,
+        # R8：只在该 case 真有 mem 项时才出现（新增字段，且不污染非 mem case 的产物）
+        **({"mem_map": mem_map} if mem_map else {}),
         "tests": tests,
     }
 
@@ -283,7 +324,9 @@ def print_report(results: List[Dict]) -> None:
         print(f"| Test | Controller | Target | Result | Source | INFO(actual) | Reason |")
         print(f"|------|------------|--------|--------|--------|--------------|--------|")
         for t in case["tests"]:
-            print(f"| {t['name']} | {t['ctrl']} | {t['tgt']} | {t['result']} "
+            _mv = (case.get("mem_map") or {}).get(t["name"]) or {}
+            print(f"| {t['name']} | {mem_noevid_cell(t['ctrl'], _mv.get('CTRL'))} "
+                  f"| {mem_noevid_cell(t['tgt'], _mv.get('TGT'))} | {t['result']} "
                   f"| {t['src']} | {t['info']} | {t['reason']} |")
         print(f"EXECUTION: CTRL={case['ctrl_done']}, TGT={case['tgt_done']}")
         if case["result"] != "PASS":
@@ -305,6 +348,9 @@ def write_markdown_report(results: List[Dict], expected: Dict[str, str],
     all_tests = [t for c in results for t in c["tests"]]
     passed = sum(1 for t in all_tests if t["result"] == "PASS")
     failed = sum(1 for t in all_tests if t["result"] == "FAIL")
+    # R8：分母同样不得计入 mem 非证据项（分子本来就只数 PASS）
+    mem_noevid_n = sum(1 for t in all_tests if t["result"] == MEM_NOEVID)
+    denom = len(all_tests) - mem_noevid_n
     overall = "PASS" if all(r["result"] == "PASS" for r in results) else "FAIL"
     single = len(results) == 1
     names = "、".join(c["name"] for c in results) or "-"
@@ -331,8 +377,9 @@ def write_markdown_report(results: List[Dict], expected: Dict[str, str],
             env="见 810_driver_test/README.md 外设接线记录（涉及外部路径的测试项在"
                 " COVERAGE.md 标注，SPEC_REFERENCE.md §6.6）",
             execution=exec_txt, mem_line=mem_txt,
-            result=f"{overall} ({passed}/{len(all_tests)}"
-                   + (f"；失败 {failed}" if failed else "") + ")"),
+            result=f"{overall} ({passed}/{denom}"
+                   + (f"；失败 {failed}" if failed else "")
+                   + (f"；mem 非证据 {mem_noevid_n}" if mem_noevid_n else "") + ")"),
         "",
     ]
     for case in results:
@@ -350,10 +397,17 @@ def write_markdown_report(results: List[Dict], expected: Dict[str, str],
         lines.append(REPORT_TABLE_HEADER)
         lines.append(REPORT_TABLE_SEP)
         for t in case.get("tests", []):
+            _mv = (case.get("mem_map") or {}).get(t["name"]) or {}
+            # R8：mem 非证据项的**取值**写进「来源」列（人得能查），否则只标"非证据"
+            _src = (mem_noevid_source("/".join(f"{c}={v}" for c, v in sorted(_mv.items())))
+                    if _mv else source_label(t.get("src")))
+            _why = t.get("reason", "")
+            if t["result"] == MEM_NOEVID:
+                _why = MEM_WEAK_ITEM_NOTE + (f"；{_why}" if _why else "")
             lines.append(md_table_row([
-                t["name"], result_text(t["result"]), source_label(t.get("src")),
+                t["name"], result_text(t["result"]), _src,
                 clip_cell(expected.get(t["name"], "") or "-"),
-                t.get("info") or "-", t.get("reason", "")]))
+                t.get("info") or "-", _why]))
         lines.append("")
     lines.append(f"## 汇总\n\nOVERALL: {overall}\n")
 
@@ -408,7 +462,8 @@ def l2_spec(facts=None, test_names=None):
         summary=lambda jl: (
             "PASS" if all(x["result"] == "PASS" for x in jl) else "FAIL",
             sum(1 for c in jl for t in c["tests"] if t["result"] == "PASS"),
-            sum(1 for c in jl for t in c["tests"] if t["result"] != "NOT_RUN")),
+            sum(1 for c in jl for t in c["tests"]
+                if t["result"] not in ("NOT_RUN", MEM_NOEVID))),
         log_archived=lambda jp, mp: print(f"[run] archived -> {mp}"),
     )
 

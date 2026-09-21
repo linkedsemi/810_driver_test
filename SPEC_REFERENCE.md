@@ -222,7 +222,7 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 
 判定语义的**唯一真源**。任何想改判定的人先看此表；表外行为一律视为未定义。
 
-> 轮次代码：**基线**=原有语义；**R1**=F1 截断接受（`TRUNCATED_AFTER_ALL_ITEMS`）；**R2**=F2/F3 哨兵三态 + `mem_state` + 零证据守卫；**R3**=i3c 整核零证据收紧 + `NOT_RUN` 并入"无证据"（截断接受专用）；**R4**=常规路径 `NOT_RUN` 收紧（2026-09-18，离线重放 60 处翻转 / 0 非预期）；**R5**=单工程收紧（eth 兜底证据独立性 + 完整度；spi 的缺项守卫由 R4 覆盖）；**R6**=相反收尾标记并存时 fail-closed（判定链的"矛盾证据不得消解"通则）；**R7**=批量必须靠 token（**整个 case 一条串口逐项 token 都没有** ⇒ 不得判 PASS；2026-09-20 用户裁定）。
+> 轮次代码：**基线**=原有语义；**R1**=F1 截断接受（`TRUNCATED_AFTER_ALL_ITEMS`）；**R2**=F2/F3 哨兵三态 + `mem_state` + 零证据守卫；**R3**=i3c 整核零证据收紧 + `NOT_RUN` 并入"无证据"（截断接受专用）；**R4**=常规路径 `NOT_RUN` 收紧（2026-09-18，离线重放 60 处翻转 / 0 非预期）；**R5**=单工程收紧（eth 兜底证据独立性 + 完整度；spi 的缺项守卫由 R4 覆盖）；**R6**=相反收尾标记并存时 fail-closed（判定链的"矛盾证据不得消解"通则）；**R7**=批量必须靠 token（**整个 case 一条串口逐项 token 都没有** ⇒ 不得判 PASS；2026-09-20 用户裁定）；**R8**=批量路径 **mem 取到的项一律不算证据**（口径由 R7 的"整个 case"**下沉到"逐项"**；触发来源 = **用户裁定 2026-09-20「B 严」**，2026-09-21 落地）。
 >
 > R5 实测校验：eth 校准样本 #1（串口仅 banner+标记、无 ZT_BOOT、5 项全 mem PASS）PASS→**FAIL**，正常兜底（ZT_BOOT 在 + mem 补齐）仍 PASS（未误伤）；spi 前缀截断 R4 起即 FAIL（`missing=24`）；`normal_all_pass` 零翻转。
 
@@ -238,7 +238,8 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 | G6 | 有 MISSING 或 NOT_RUN，**且缺收尾标记** | 缺失 | **FAIL**（红线） | R1+R3 | 截断放宽的前提是"每项都有确定结果" |
 | G7 | `mem_state != ok`（哨兵门） | — | 该核结果清空，按 MISSING/NOT_RUN 走（fail-closed） | R2 | 见 §6.2.2 哨兵三态 |
 | G8 | 同一份采集里**同时出现相反收尾标记**（`PROJECT EXECUTION FAILED` 与 `SUCCESSFUL`） | 矛盾 | **FAIL**（`execution` 归成 `FAILED`）+ 报告显式标注 `CONFLICTING_MARKERS` | **R6** | 矛盾证据**不得按"最后一条"消解**；`parse_ztest` 原为 last-wins，固件自打标记晚于 ztest 收尾行时会翻成假 PASS |
-| G9 | **整个 case 一条串口逐项 token 都没有**（2026-09-20 用户裁定） | 任意 | **FAIL** + 理由串「证据弱（仅内存兜底，非串口逐项）」 | **R7** | `common/judge.py::mem_only_evidence` / `MEM_ONLY_NOTE`；**部分项** mem 兜底不受影响（§6.4.3 仍是正式机制） |
+| G9 | **整个 case 一条串口逐项 token 都没有**（2026-09-20 用户裁定） | 任意 | **FAIL** + 理由串「证据弱（仅内存兜底，非串口逐项）」 | **R7**（R8 起降为 G10 的特例） | `common/judge.py::mem_only_evidence` / `MEM_ONLY_NOTE`。★ **R8 起本行不再是唯一防线**：判据已下沉到逐项（G10）⇒ 本行继续成立，但即使删掉它也拦不住 mem，故 R8 未撤它（`regression/replay.py` 仍以 `mem_only_evidence` 为公开入口） |
+| G10 | **任一项**的逐项值（PASS/FAIL/NOT_RUN）来自 mem 兜底（**B 严**：mem 取到的项一律不算证据） | 任意 | 该项落 `MEM_NOEVID`：**不进 `passed`、不进 `ran`**、计入 `missing_evidence` ⇒ 该 case **不得判 PASS**（有 token 逐项 FAIL 的项除外，那是"测坏了"）；报告仍**给出 mem 取值**并显式标「非证据」 | **R8** | `common/judge.py::MEM_NOEVID` / `evidence_gaps()` / `mem_weak_note()` / `MEM_WEAK_ITEM_NOTE`；`NO_EVIDENCE_STATES` 并入 `MEM_NOEVID` |
 
 > **G8 注**：实现——`common/ztest_report.py::parse_ztest` 新增 `exec_conflict` / `exec_seen`；**只有一条标记时 `execution` 逐字不变**（常规路径零影响）。报告侧由 `common/judge.py::EXEC_CONFLICT` + `exec_conflict_note()` 渲染（控制台 / `.md` / `.json` 三处）。
 >
@@ -276,6 +277,54 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 > 仅限「G9/D6 通则 + O-13 根治（token 宏恢复）+ O-12 修正（summary 未知计数）」三项，
 > 判定语义其余部分**零改动**。R7 落定后**恢复冻结** —— 下一轮判定语义变更须同样由
 > 用户显式裁定触发，不得由 agent 自行发起。
+>
+> **G10 注（R8，2026-09-21 落地；触发来源 = 用户裁定 2026-09-20「B 严」）**：用户原话
+> 「**内存兜底只在调试时候使用，测试结果必须以 token 为判断标准**」；追问"批量测试里，
+> 内存兜底（mem）取到的项该怎么算？"→ 裁定 **"B 严：mem 一律不算证据"**。
+>
+> 口径与 R7 的分工：**R7 只堵"整个 case 一条串口逐项 token 都没有"**；**R8 把它下沉到逐项**——
+> 任一项只要其 PASS/FAIL/NOT_RUN 来自 mem，**该项即非证据**，不再需要"全 case 零 token"
+> 这个前提（旧实现里"14 项 token PASS + 1 项 mem PASS"仍会判 PASS，即 R7 拦不住的形态）。
+>
+> 处置（三处一致，**优先复用既有机制**）：① 逐项结果落 `MEM_NOEVID`（**新状态**，已并入
+> `NO_EVIDENCE_STATES`）⇒ 被 `missing_evidence()` 自动收走，走既有的"零证据 / 证据缺失"
+> 通道；② 该状态**不进 `passed`、不进 `ran`**（分子分母两端同时摘掉 ⇒ `passed == ran` 不再
+> 成立）；③ **报告仍给人看 mem 取值**：结果列 `⬜ 无证据(mem)`、来源列 `mem(非证据:PASS)`、
+> 理由串 `MEM_WEAK_ITEM_NOTE`「证据弱（仅内存兜底，非串口逐项）」—— 与「驱动/测试失败」
+> **严格分开**（`missing_evidence_note` 说"token 与内存兜底都没有值"，对 mem 项是假话，
+> 故 `evidence_gaps()` 把两类拆开各说各的）。
+>
+> **既有门一律保留、R8 在其之上**：R2 的 `mem_state != ok ⇒ dumper 侧清空`照旧（G7）；
+> R5-E6 的「`ok` 但无 `ZT_BOOT` ⇒ mem 项降级剔除」照旧（E6）；`mem_only_evidence` /
+> `MEM_ONLY_NOTE`（R7）照旧（未撤，`regression/replay.py` 仍引用它）。**唯一必要的兼容改动**：
+> `eth_test` 的 E6 门原本按 `source == "mem"` 精确判归属，R8 把来源串改成 `mem(非证据:X)`
+> ⇒ 改成**前缀判**（门语义不变）。
+>
+> **`truncation_evidence()` 不另行处理**：`MEM_NOEVID` 在 `NO_EVIDENCE_STATES` 里 ⇒ 截断接受
+> 自动不放行。**D3 的 `incomplete` 容忍（D3 行）同步收紧**：某一核靠 mem 补出的"没坏"不构成
+> 证据 ⇒ 不再走容忍路径。**但 token 显式 FAIL 仍是"测坏了"**：`has_explicit_fail` 只认 token
+> （mem 值已落 `MEM_NOEVID`），故"CTRL token FAIL + TGT mem"仍报 `FAIL`，不会被抹成"没测到"。
+>
+> **落点（全部在批量判定链）**：`common/judge.py`（新原语）+ **13 份**有 mem 通道的
+> `run_test.py`（F4 族 9：`trng`/`spi`/`spid`/`spif`/`i2cf`/`otbn`/`otbn_selftest`/`mbedtls`/`rtc_ls`
+> + D3 族 3 + `eth_test`）；**Z 族 8 份与 `app_iwdg_cpu2_test` 无 mem 通道 ⇒ 零改动**
+> （`mem_line="内存兜底: 不适用"`，结构上不可达）。**调试路径 `dbg_run.py`（22 份）零引用**
+> 该守卫 ⇒ mem 兜底在调试时照常可用。`.json` 一律**只增字段**：D3 的 `mem_map` **仅在该 case
+> 真有 mem 项时才出现**（否则非 mem case 的产物字节会漂移，下游 diff 被噪音淹没）。
+>
+> **R8 离线证据（不碰板子；脚本 `tmp/brule/`）**：
+> **（a）合成穷举 + 非空转自检**（`tmp/brule/ab.py --part 3`）：6 族 × 9 变体
+> （全 token / 全 mem / 混合 / 无 `ZT_BOOT` / `mem_state != ok` / 截断 / token FAIL），
+> 逐变体比对"改动前 vs 改动后"的**判定签名 + .md/.json 字节**：
+> **非 mem 变体 0 差异**（`alltoken`/`memstate_bad`/`token_fail1`/`dma` 的 `mem_payload_ignored`）；
+> **mem 变体 PASS→FAIL**（`mixed_*_mem` / `mixed_truncated`，各族一致）；
+> `allmem` 本就 FAIL（R7 已堵）⇒ 仅内容变；`ctrl_fail_tgt_mem` 维持 FAIL（"测坏了"未抹掉）；
+> `eth mem_noboot` **FAIL→FAIL 且 0 差异**（E6 门逐字保留）。
+> 非空转自检：每族观测种类 7–8/9，**与 `alltoken` 观测相同者为 0**，无空转嫌疑
+> （`mixed_first3_mem ≡ mem_noboot` 的等价仅出现在 F4 族 —— 该族不消费 `ZT_BOOT`，这本身是
+> "R8 未引入新依赖"的正面证据）。
+> **（b）真归档重放 A/B**（`--part 1`，mem=None，1128 份可重放归档）：__REAL_AB__
+> **（c）真归档 + 反推 mem 载荷**（`--part 2`）：__REAL_MEM__
 
 **F4 族**（`trng`/`spi`/`spid`/`spif`/`i2cf`/`otbn`/`otbn_selftest`/`mbedtls`）—— 有 mem 通道 + `passed == ran` 分母
 
@@ -330,14 +379,18 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 |---|---|---|---|---|
 | D1 | 同名项双核 PASS | 见 D5 | PASS | 基线 |
 | D2 | **某一核整体**无确定结果（既非 PASS 也非 FAIL） | 非 FAILED | **FAIL** + `evidence_gap` | R3 |
-| D3 | **部分**项缺失（另一核完好） | 非 FAILED | **PASS**（`incomplete` 容忍） | **明确不做** |
+| D3 | **部分**项缺失（另一核完好） | 非 FAILED | **PASS**（`incomplete` 容忍） | **明确不做**（★ **R8 起不覆盖 mem 项**：某一核靠 mem 补出的"没坏"不再是证据 ⇒ 该形态走 G10 判 FAIL；容忍只剩"真 MISSING 且无 mem 值"这一支） |
 | D4 | 全 PASS | 缺失 | PASS + TRUNCATED（须全 PASS 才放行） | R1 |
 | D5 | 完成判据 | — | i3c_dualcore：CTRL SUCCESSFUL 且 TGT ≠ FAILED；i2c_pure/i3c_i2c_switch：两核**各自** SUCCESSFUL | 基线 |
-| D6 | **两核都没有**任何逐项 token（整份证据来自 mem 兜底） | 任意 | **FAIL**（=G9）+ 理由串「证据弱（仅内存兜底，非串口逐项）」 | **R7** |
+| D6 | **两核都没有**任何逐项 token（整份证据来自 mem 兜底） | 任意 | **FAIL**（=G9）+ 理由串「证据弱（仅内存兜底，非串口逐项）」 | **R7**（R8 起降为 G10 的特例） |
 
 > **D6 注（R7）**：判据取**逐核**来源（`evaluate_case` 里的 `ev_srcs`）。**不**取聚合后的
 > `tests[i]["src"]` —— 那个"任一核 mem ⇒ 该项 mem"的聚合会把"TGT 整核丢行 + CTRL token
 > 完好 + mem 补齐"（= D2 的例外、基线 `tgt_all_missing_mem_ok`）误判成零 token。
+>
+> **D6 注补（R8，2026-09-21）**：R8 起**逐项**口径生效（G10）⇒ 上句保留的
+> `tgt_all_missing_mem_ok` 路径**不再合法**（凡 mem 补出的核该项即 `MEM_NOEVID`）；
+> D6 的逐核 `ev_srcs` 判据仍在（`mem_only_evidence` 未撤），只是不再是唯一防线。
 
 **`app_iwdg_cpu2_test`**
 
@@ -380,7 +433,7 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 3. **`SKIP` 计入"确定结果"（G3）** —— 主动跳过 ≠ 无证据。
 4. **Z 族的"部分证据"不收紧（Z5）** —— 无 mem 通道，NOT_RUN 结构不可达。
 5. **`eth_test` 的 mem 合并跳过 NOT_RUN（E4）** —— 现状保留，缺项会落成 MISSING；R5 起该路径受 E6 独立性门约束。
-6. **"某一核整核 mem 兜底"不收紧（D6 的反面）** —— `tgt_all_missing_mem_ok` 是 R3 有意保留的合法路径；R7 只堵"**整个 case 零 token**"（G9）。再提此议须先推翻 R7 的判据口径。
+6. ~~**"某一核整核 mem 兜底"不收紧（D6 的反面）** —— `tgt_all_missing_mem_ok` 是 R3 有意保留的合法路径；R7 只堵"**整个 case 零 token**"（G9）。再提此议须先推翻 R7 的判据口径。~~ **【R8（2026-09-21）撤销本条】** —— 用户裁定 2026-09-20「B 严：mem 一律不算证据」⇒ `tgt_all_missing_mem_ok`（某一核整核由 mem 补回）**不再合法**，一律按 G10 判 FAIL。R7 的"只堵整个 case"口径**已被 R8 取代**（R8 下沉到逐项）；本条不再作为"明确不做"项保留，**反向重提须先推翻 R8**（= 推翻用户裁定）。
 
 ### 6.3 问题记录规范
 

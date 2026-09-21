@@ -152,6 +152,12 @@ python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
 - **双核 UART 由 run_all.py 显式注入**（COM15/COM16，`--ctrl-uart/--tgt-uart`）
   ——双核 run 脚本**必须显式 UART，不支持自动发现**（2026-08-29 实测；
   单核脚本可自动发现）
+  - **★ `--no-precheck` 且无 `port_mapping.json` 时角色靠"猜"（G-RUN-1）**：此时 `run_all.py`
+    按**串口枚举顺序**取头两个口当 CTRL/TGT（`CTRL,TGT = _ports[0], _ports[1]`）——**顺序与物理
+    角色无关**。实测猜成 `CTRL=COM17`（应为 COM18/MCP2200）⇒ 双核逐项 token **全丢**（角色错 ⇒
+    采集端口对不上）。跳过预检复跑**必须显式指定** `PRE_CTRL_UART`/`PRE_TGT_UART`（run_all 的
+    env 入口；`--ctrl-uart/--tgt-uart` 只往下游 run 脚本传），**别信默认推断**，也别因"它自己打了
+    一行猜的日志"就以为猜对了。
 - **清理进程纪律（★ KNOWN_ISSUES #62）**：回归中要清残留时**只 `TaskStop` runner 的父任务**；
   清 gdb 用 `netstat -ano | grep :1025` 取对端 PID、清 west/ninja 用
   `tasklist | grep -E "west|ninja"` 取 PID，**一律按精确 PID**。
@@ -202,6 +208,11 @@ python run_test.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
   report_dir.py` 统一分配，禁止自算路径）；`summary.md` 只在会话目录最外层，
   **行粒度 = case**（key `<project>_<case>`）；不带 `--session-dir` 自动分配
   新会话目录
+  - **★ 编程式复用会话目录要 patch「定义模块」（G-RUN-1）**：`run_all._run_all` 内部写的是
+    `from report_dir import allocate_session_dir`（**函数内 import**，调用时按模块属性解析）⇒
+    只 patch `run_all.allocate_session_dir` **不生效**、会另建新会话目录（实测落到 `-3`）。
+    复用同一会话目录须 patch **`report_dir.allocate_session_dir`**（招式见 `debug-knowledge`
+    common 域 `python-from-import-patch-target.md`）。
 - **INFO 约定行解析**：`INFO <test_name>: k=v[,k=v]` 数值型实测（吞吐/占比等）
   进报告"实际"列（`SPEC_REFERENCE.md` §6.5.4）
 - **内存兜底合并**：case 跑完后调 `dump_results.py --case <case> --json`，
