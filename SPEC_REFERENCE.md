@@ -312,6 +312,24 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 > 该守卫 ⇒ mem 兜底在调试时照常可用。`.json` 一律**只增字段**：D3 的 `mem_map` **仅在该 case
 > 真有 mem 项时才出现**（否则非 mem case 的产物字节会漂移，下游 diff 被噪音淹没）。
 >
+> **报告样例（真实渲染）**：F4 族 —— 同一份合成采集，改动前 `PASS (15/15)`（前 3 项
+> `✅ PASS | mem`）；改动后（`tmp/brule/out/sample/after/…/trng_test_report.md`）：
+>
+> ```text
+> - 内存兜底: 有效 — 证据弱（仅内存兜底，非串口逐项）：3 项无串口逐项 token，只有 GDB 内存兜底
+>   读到的值（autocorr_8k(mem=PASS)、basic_16(mem=PASS)、block_freq_8k(mem=PASS)）⇒ 批量路径
+>   **一律不计为证据**，按『无证据』处理（用户裁定 2026-09-20 …）…
+> - 结果: FAIL (12/12)
+> | autocorr_8k  | ⬜ 无证据(mem) | mem(非证据:PASS) | 前 8 个 lag 的 \|R(d)\| < 6/√n = 0.02344 | - | 证据弱（仅内存兜底，非串口逐项）：本项没有串口逐项 token… |
+> ```
+>
+> ★ `(12/12)` 读作"**12 项有 token 证据、全过**"（mem 项已从**分子分母两端**同时摘掉），
+> 须与「内存兜底」行的"3 项证据弱"合读 —— 报告不再允许"看起来全过"。
+> 双核族的**真归档**样例（`i3c_i2c_switch_test/case_switch_core`，`--part 2` 产物）：
+> `broadcast_nack_recovery | ❌ FAIL | mem(非证据:TGT=NOT_RUN) | … | CTRL:rstact_whole_should_nack`
+> —— CTRL 的 **token FAIL** 照旧表达"测坏了"（不被抹成"没测到"），TGT 的 mem 取值照旧人可查
+> 但显式标"非证据"。
+>
 > **R8 离线证据（不碰板子；脚本 `tmp/brule/`）**：
 > **（a）合成穷举 + 非空转自检**（`tmp/brule/ab.py --part 3`）：6 族 × 9 变体
 > （全 token / 全 mem / 混合 / 无 `ZT_BOOT` / `mem_state != ok` / 截断 / token FAIL），
@@ -323,8 +341,25 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 > 非空转自检：每族观测种类 7–8/9，**与 `alltoken` 观测相同者为 0**，无空转嫌疑
 > （`mixed_first3_mem ≡ mem_noboot` 的等价仅出现在 F4 族 —— 该族不消费 `ZT_BOOT`，这本身是
 > "R8 未引入新依赖"的正面证据）。
-> **（b）真归档重放 A/B**（`--part 1`，mem=None，1128 份可重放归档）：__REAL_AB__
-> **（c）真归档 + 反推 mem 载荷**（`--part 2`）：__REAL_MEM__
+> **（b）真归档重放 A/B**（`--part 1`，mem=None，与 `regression/replay.py` 同口径）：
+> 现存活归档 **1125** 份可重放 case（`reports/**` + `tmp/{a1,a2,b1,e2fix,ffix,replay}/**`，含
+> `serial_*.log`），实跑 **1124** 份（1 份因文件 ACL 读失败跳过）⇒ **差异 0**（判定签名 +
+> `.md`/`.json` **逐字节**）。即：**不含 mem 项的 case 零变化**，"零意外翻转"成立。
+> ⚠ 语料快照提示：跑本 A/B 期间另一路 agent 正在重写 `reports/`（`reports/2026-09-21-2` 消失、
+> `-1` 被重建），故上列数字是**当时**语料的结论；脚本可随时复跑。
+> **（c）真归档 + 反推 mem 载荷**（`--part 2`；mem 不进 L0 归档 = D7 缺口，故由归档报告里的
+> `src=mem` 记录反推载荷，串口行仍是**真归档**）：现存活语料里含 mem 项的 case **仅 1 份**
+> —— `i3c_i2c_switch_test/case_switch_core`：`FAIL → FAIL`（CTRL 有 **token** FAIL ⇒ 仍是
+> "测坏了"），2 个产物文件变化（`.md`/`.json`），变化**全部落在 mem 项那一行**。
+> ⚠ 该 case 在改动前的报告里已是 FAIL ⇒ **现存活语料中不存在"带 mem 项且判 PASS"的归档**，
+> 故"PASS→FAIL 预期翻转"由（a）合成穷举给出（R7 时代有 2 份这样的归档
+> `reports/2026-09-17-{1,3}/i3c_i2c_switch_test_case_switch_core`，但**已随语料被清理**
+> 而不复存在 —— 见 `tmp/r7/archive_sources.json`）。
+>
+> **冻结再声明（2026-09-21，R8 收尾）**：本轮同样是**用户直接裁定**触发的例外（裁定 2026-09-20
+> 「B 严：mem 一律不算证据」），范围仅限「G10 通则 + D3/D6/E-table 的同步收紧 + 明确不做第 6 条
+> 撤销」。**R8 未新增任何"用户未裁定"的判定语义**，也未放宽任何既有守卫（R2/R5-E6/R6/R7 全部
+> 保留）。R8 落定后**恢复冻结**。
 
 **F4 族**（`trng`/`spi`/`spid`/`spif`/`i2cf`/`otbn`/`otbn_selftest`/`mbedtls`）—— 有 mem 通道 + `passed == ran` 分母
 
@@ -358,6 +393,11 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 | E4 | NOT_RUN | 任意 | **不可达**（mem 合并跳过 NOT_RUN 项） | R4 分析（保留） |
 | E5 | **有已声明项无确定结果**（token 无 / mem 被拒或跳过） | SUCCESSFUL | **FAIL** + 逐项列出 | **R5（原"待父会话"已转正）** |
 | E6 | mem 证据的**独立性门**：`mem_state == ok` **且** 串口见 `ZT_BOOT`，二者缺一 | — | mem 项**降级剔除**（落回 MISSING），交 E5 判 FAIL | **R5** |
+| E7 | **任一项**的值来自 mem（**B 严**，E6 通过后仍适用） | 任意 | 该项落 `MEM_NOEVID`（=G10）：不进 `passed`/`ran`、计入 `missing_evidence` ⇒ 不得判 PASS；报告仍给取值并标「非证据」 | **R8** |
+
+> **E7 与 E6 的关系**：E6 是"mem 结果**本身可不可信**"（独立性），E7 是"可不可信都**还不算证据**"（B 严）。二者**串联**，E6 在前、E7 在后，**E6 未删**。
+>
+> **E4 与 E7**：E4 的"mem 合并跳过 NOT_RUN"仍在（`merge_mem` 里 `result == "NOT_RUN"` 直接 `continue`）⇒ NOT_RUN 项根本不进 `items`，走 E5 的"无确定结果"通道 —— 与 E7 的落点不同（E7 管 PASS/FAIL 项），故 E4 保留。
 
 > **E6 依据**：mem 是 `SPEC_REFERENCE.md` §6.4.3 正式兜底，**不是**"只认 token"；但 RAM 两次运行之间不清零 ⇒ `mem_state==ok` 只证明"曾有一次跑到 tr_init"，**不证明这一轮**（可能是上一轮残留结果 + 上一轮置位的 0x5A）。`ZT_BOOT` 才证明本轮确实在跑本固件。缺佐证 ⇒ mem 降级，避免"串口只捕到 banner+标记、逐项 token 全丢"时 5 项全 `[mem] PASS` 判过（即校准样本 #1 复活）。
 >
