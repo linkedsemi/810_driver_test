@@ -5,9 +5,13 @@
 
 ## 待处理
 
-（空）
+> 2026-09-22 五条（G-I2CF-1 … G-I2CF-5）已沉淀，见下方索引。G-I2CF-3 连带**降级**了
+> #110/#111 与 `addr-ack-not-device-evidence.md` 的核心推论（作废·待非撞址复验）。
 
-（以下为已处理索引）
+> 2026-09-21 三条 G-O23 的原始证据见 `tmp/ethpc/`：`B2_E.log` 写监视 backtrace、`B4_FINAL.log`、`taskB_run5.out`、`switch_harness/`。
+
+> （以下为已处理索引）
+
 > keeper 处理后**移出待处理**，此处只留一行索引（**不可再作动作项**）。完整沉淀见对应文件。
 > **日期**列 = 本次沉淀日期；条目自带日期见正文（正文已删，事实全在归处文档内）。
 
@@ -112,3 +116,21 @@
 | 2026-09-21 | G-E2-1（= 提示语 G-E2-2）Bash 工具里 `cd <dir> && <cmd> > log 2>&1 &` 后台化的是**整条链**（含 `cd`），父 shell 的 cwd 不变 ⇒ 随后的相对路径 `head log` 报 "No such file"，极易被误读成"启动失败"而**重复启动** ⇒ 两个 `run_all.py` 并发抢板子（实测：两实例、两 session、共写同一日志文件、板子结果互相污染）。**判据/纪律**：① 后台命令一律用**绝对路径**重定向日志；② "日志没出现"先查**进程表**（`Get-CimInstance Win32_Process` 按 `run_all.py` 过滤）再判断死活，**不要凭文件是否存在下结论**。 | debug-knowledge common 域 **`bash-bg-cd-subshell.md`**（+ 域 README 索引）· qsh-test-run **§4.1**（G-E2-2 条 + nohup 条指针）· FRAMEWORK_MAP **§3**（污染会话目录识别/处置） |
 | 2026-09-21 | G-E2-1b **健康路径不得用 `probe_gdb_alive()`**：任何 `gdb 连接→detach→退出` 必留连接残留（KNOWN_ISSUES #17）⇒ 用 gdb 探活会自己制造残留、把"健康"变成"需要重启"。健康判据只用**无副作用** netstat（1025 LISTENING 且无 ESTABLISHED）；抗抖动 = **15s 轮询**等 listen + netstat **重试 3 次**才认定死（防错杀活实例、白重启 ~35s）。健康路径实测 24ms/case。 | qsh-test-run **§4.1**（G-E2-1 条）· 实现 `common/acquire.py::ensure_debugserver_alive()` / `_ds_healthy()` · 关联 `KNOWN_ISSUES.md` #17 |
 | 2026-09-21 | G-RUN-1 复跑绑定会话目录：`run_all.py --no-precheck` 且无 `port_mapping.json` 时**按串口枚举顺序猜 CTRL/TGT** ⇒ 实测猜成 `CTRL=COM17`（应为 COM18/MCP2200），双核 token 会全丢，须显式传 `PRE_CTRL_UART/PRE_TGT_UART`；另 `run_all._run_all` 内部是 `from report_dir import allocate_session_dir`（调用时读**模块属性**）⇒ 只 patch `run_all.allocate_session_dir` **不生效**、会新建会话目录（实测落到 `-3`），复用会话目录须 patch `report_dir` 模块属性 | qsh-test-run **§4.1**（UART 角色靠猜）+ **§4.2**（session-dir 复用须 patch 定义模块）· debug-knowledge common 域 **`python-from-import-patch-target.md`**（新，含 README 索引） |
+| 2026-09-21 | G-O24-1 `set -e` 吃掉命令替换的退出码 ⇒ `raw="$(timeout …)"` 后查 `$?` 是**死写法**（超时时赋值那一步就终止脚本、跳过分支不可达） | KNOWN_ISSUES **#107** · qsh-test-run **§4.2** · debug-knowledge common 域 **`set-e-swallows-command-substitution-rc.md`**（新，含 README 索引） |
+| 2026-09-21 | G-O24-2 验证"某条采集路径"须按 **L1 策略**选 case（shell 侧 `load_and_run*` 只被 `single_cap` 9 工程经 `test.sh -r` 调用；`trng/rtc_ls` 等 ports_dict 族不过该路径）+ 各 `test.sh` `SKIP_LOAD` 守卫形态不统一 | qsh-test-run **§4.2** |
+| 2026-09-21 | G-O24-3 i3c（`style="d3"`）**不回声** `test.sh` stdout ⇒ 加载横幅不落 run 日志（只有 `single_cap` 的 `style="z"` 逐行回声） | qsh-test-run **§4.2** · qsh-test-compare **§1** |
+| 2026-09-21 | G-O23-1 DebugServer 的 **cpu2 调试通道 = 第二个 TCP 端口 `1026`**（`target remote …:1026` → `Thread 2 (CPU#1)`；前提 DS 启动时 cpu2 已脱离复位，否则只监听 1025）；`HWBKPT=3/HWWP=3` ⇒ 硬件写监视可用 | KNOWN_ISSUES **#98**（新增「cpu2 通道」段，"缺手段"消解）· qsh-debug **§6**（新增「cpu2 通道」小节）+ **§7**（新行）· SPEC_REFERENCE **§6.7.3**（多核调试通道） |
+| 2026-09-21 | G-O23-2 **凡碰过 `1026` 必须在下一次批跑前重启 DebugServer**（任何访问含 `detach` 都把 cpu2 留在 halted ⇒ 后续 cpu2 侧全不运行）；读 cpu2 `.bss` 得全 0 / 上轮残留 | qsh-debug **§2.3 + §6 + §7**（新行）· qsh-test-run **§4.1** · KNOWN_ISSUES **#98 后半**（观测口径） |
+| 2026-09-21 | G-O23-3 `KNOWN_ISSUES #98` 后半（"reason 被抹"）**不可复现** ⇒ 改判"观测口径可疑"（最可能读到陈旧/未运行的 cpu2 RAM）；**#98 前半与 `broadcast_nack_recovery` 的 FAIL 照旧成立** | KNOWN_ISSUES **#98 后半**（改写）· qsh-test-compare **§3**（读 cpu2 RAM 前先确认该核跑过）· ⚠ OPEN_ITEMS O-23 后半（可结）**未动 —— 在本次写域外** |
+| 2026-09-21 | N-1 `KNOWN_ISSUES #87` 再次复现（`case_pure_i3c_6m25` prime 首轮零输出、harness 重启 DS 重试仍零输出，后 DS 重启单跑 PASS 35/35）；**与 `O-24` 是两个独立问题、症状同形，排查不得互相引用** | KNOWN_ISSUES **#87 补注 2** |
+| 2026-09-21 | N-2 **"文档记已修 ≠ 代码里有"**（`eth_test/tests/COVERAGE.md:200` 的 `PHY_RT_RTL8211F_RESET_TIMEOUT_MS` 修复与 `O-16` 的 `mdio_dwmac.c` 修复**均不在工作区/任何提交里** ⇒ 未提交改动被 `checkout`/`reset`/`west update` 静默冲掉） | KNOWN_ISSUES **#108**（新）· ⚠ COVERAGE 与 O-16 源文件修正**未做（`projects/`、`OPEN_ITEMS.md` 在写域外）** |
+| 2026-09-21 | N-3 双核"写包提速"**实测无效**：请求包长 16384/2457/1024 → 协商 `2493/1820/875 bytes/write`，**吞吐恒 41 KB/s（链路瓶颈）、墙钟 3~4s 与包长无关** | KNOWN_ISSUES **#23**（实测口径注）· qsh-debug **§3.1 + §7** · `ref-flash-variants.md` **§1** · qsh-test-run **§3 + §6** · SPEC_REFERENCE **§6.4.10**（指针） |
+| 2026-09-22 | G-PCSNAP-1 **DS 的 1025 不支持并发 gdb 客户端**（旧 gdb 仍在 `continue` 时新连接即报 `Remote communication error … No stack.`，拿到的是错误串不是现场；实测 A/B：先 kill ⇒ 真实 `$pc=0x10081574` + 完整栈）。**结论已升级为设计裁定**：批量路径**不做**自动 attach / 抓快照（用户裁定 2026-09-22「批量不为单个失败额外花时间与调试风险去定位」）⇒ 三处"0 输出自动抓 `$pc`"调用点**已全部移除**（**设计上不做，不是修顺序**）；`capture_pc_snapshot()` 保留供人工 / 调试按需调用。 | SPEC_REFERENCE **§6.4.10**（批量路径职责边界 + PC 快照调用范围）· qsh-debug **§2.3 / §6**（含人工抓现场实操）· qsh-test-run **§4.1 / §4.2** · FRAMEWORK_MAP §2（mem 兜底行） |
+| 2026-09-22 | G-PCSNAP-2 **C: 盘写满 ⇒ Bash 工具的命令输出会静默丢失**，表现为 `cat/head: write error: No space left on device` 或命令"莫名无输出/报错"，**极易误判成命令本身的问题**（本轮首次预检即踩，险些按"串口/命令有问题"排查）。判据：任何命令输出形态异常时先 `df -h` 看根分区。本轮元凶 = `AppData/Local/Microsoft/vscode-cpptools` 索引 **61 GB**（两个 workspace 哈希目录 41 G + 20 G），释放后 C: 85%。 | 全局记忆 **`c-drive-cpptools-index-bloat.md`**（补"满盘时输出丢失"这一误判面）|
+| 2026-09-22 | G-REPLAY-1 离线重放**不带 `--l2-direct`** ⇒ 走工程 `main()`（含 DebugServer 前置检查）⇒ **不是离线**、DS 未起时每 case 白等自愈超时（实测 51.7s）且 **0 产出**（"跑很久、目录是空的"） | `qsh-test-compare` **§4** · `FRAMEWORK_MAP` **§3** · `SPEC_REFERENCE` **§6.4.8**（机制真源） |
+| 2026-09-22 | G-REPLAY-2 多工程同进程加载器**只隔离工程脚本、没隔离工程辅助模块** ⇒ 裸名 import 跨工程串味 ⇒ `--l2-direct` 全量重放半路整批断（**看起来像跑完了**；实测 51 个只跑到 38 个） | `KNOWN_ISSUES` **#109**（新）· `SPEC_REFERENCE` §6.4.10（判定中性证据） |
+| 2026-09-22 | G-I2CF-1 单点 ACK **不足以**证明器件在链路上 —— 地址选择性对照**只排除"驱动幻影"，仍不区分"真器件"与"滤波器拦截"**（两者都 ACK）；判"器件在链路"须再取本级证据（本级锁存寄存器 / 数据段内容）。**早期"0x50 是真器件"的推论已被同日两轮实测推翻**（规则保留、推论更正）**；⚠️ 2026-09-22 二次更正（G-I2CF-3）：第二层"拦截也 ACK"取自撞址观测 ⇒ 作废·待非撞址复验，第一层保留** | debug-knowledge `mcu/addr-ack-not-device-evidence.md`（新，含 mcu 域 README 索引）· KNOWN_ISSUES **#110**（更正段）· qsh-debug **§7** · qsh-test-compare **§2** |
+| 2026-09-22 | G-I2CF-2 i2cf4 "滤波器零流量"的真因是**接线接错**（用户更正，非"上游实例选错"）；~~滤波器拦非白名单地址 = ACK(`ret=0`) + 数据 `0xFF`~~（**2026-09-22 二次更正：撞址观测 ⇒ 作废·待非撞址复验**，换址后实测 NACK） | KNOWN_ISSUES **#111**（更正段）· 同 G-I2CF-1 各行 · 交接单 `tmp/i2cf_final/CONCLUSION.md`（跟踪项 `OPEN_ITEMS` O-30，**本次未动**） |
+| 2026-09-22 | G-I2CF-3 片内 target 与**板载器件同址**（`0x50`）⇒ PASS/FAIL 不可归因；**挪址（`0x33`）重扫判别法**（重扫核 `count/addrs` + 读 DUT 地址寄存器 `OAR1`）⇒ 连带**降级** #110/#111"拦截也 ACK"推论。测址须避开惯例地址段 | debug-knowledge mcu 域 **`bus-addr-collision-pass-not-attributable.md`**（新，含 README 索引）· KNOWN_ISSUES **#110 / #111 更正段** · qsh-test-gen §1.6（判据三问 +报告头）· qsh-debug §7 · qsh-test-compare §2 |
+| 2026-09-22 | G-I2CF-4 `filter_blocks_nonwhitelist` 自证步（`i2cf_test.c:916`）稳定 FAIL（filter off 后上游读仍 `-EIO`）—— 两条假设、**结论待定**，归驱动侧定性、**断言不得放宽** | KNOWN_ISSUES **#112**（仅登记，不结论；未入 skill） |
+| 2026-09-22 | G-I2CF-5 换址后陈旧 `0x50` 文案：脚本侧**已修**（`run_test.py:151` / `test.sh:19,94` / `i2cf_test.c:969`，本次核实）；**已生成报告未修**（`reports/2026-09-21-1`、`-22-1`）⇒ 归因前核产物新鲜度 | KNOWN_ISSUES **i2cf_test 域「陈旧文案残留清查」段** · qsh-test-gen **§1.6**（报告头须与实测配置一致）· KNOWN_ISSUES #88 |

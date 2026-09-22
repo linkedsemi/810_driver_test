@@ -355,7 +355,6 @@ def main():
         build_timeout=600, build_conf=False,
         driver_kind="watch", stall_s=60, retry_on_no_boot=True,
         tgt_banners=TGT_BANNERS,
-        mem_dumper=str(SAMPLE_ROOT / "tests" / "scripts" / "dump_results.py"),
         session=lambda: session_dir or (
             Path(args.session_dir) if args.session_dir
             else allocate_session_dir(REPORTS_ROOT, date_str)))

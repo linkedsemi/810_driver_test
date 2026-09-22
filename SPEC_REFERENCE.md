@@ -545,6 +545,11 @@ OVERALL: PASS
 
 #### 6.4.3 内存兜底合并规则（串口缺项自动补）
 
+> **★ 2026-09-22 用户裁定：批量路径不再调用本条**（`run_all.py` / `run_test.py` 稳定优先、只认
+> token；`common/acquire.py` 三个取数点已写死 `mem=None`）。**机制本身保留**，仅供 `dbg_run.py`
+> （调试）/ 人工按需使用；原则与边界见 §6.4.10。以下描述的合并/哨兵门语义对"**显式提供 mem
+> payload**"的场景仍逐字适用（判定侧 R8 早已否掉 mem 的证据资格，见 §6.2.4）。
+
 回归结束（串口已关）后，脚本调用本工程 `dump_results.py --case <case> --json` 读内存结果，**只用于填补串口 ztest 输出缺失的测试项**（来源语义不变：token = 串口 ztest 输出；glue 自动记账，§6.1.5）：
 
 | 串口/内存情况 | 判定 |
@@ -776,6 +781,11 @@ python regression/replay.py --session reports/<会话> --project <p> --l2-direct
 
 两条路径的产出**逐字节相同**（已验，见 §6.4.9）。
 
+> **⚠ 主路径自 E-2 起不再是纯离线（2026-09-22 实测）**：`main()` 现在含 **DebugServer 前置检查**
+> （`ensure_debugserver_alive`，§6.2.3 第 6 条）⇒ 不带 `--l2-direct` 就不是"不碰环境"：DS 未起时
+> **每个 case 白等自愈超时（实测 51.7s）且不产出任何报告**（`tmp/replay/<会话>/` 只建目录、无文件）。
+> **离线重放一律用 `--l2-direct`**（0.0s/case）；用法口径与症状速查见 `qsh-test-compare` §4。
+
 #### 6.4.9 「凭什么抽样就够」——可操作的判据（★ 2026-09-20 A1）
 
 **先说清楚一条**：**逐字节比对只证"输出没变"，不证"输出仍对"** —— 新旧代码若犯同一个
@@ -928,6 +938,9 @@ L2 处理（纯离线）  common/process.py 的 run() / process_archive()（§6.
 `IDLE_S = 10`、`LOAD_WINDOW_S = 20`、`P1_HOLD_S = 5`、单核 hold cpu2 的
 `set {int}0x4002200c = 2`、写包提速 `16384`、优雅中断 `\x03` + `detach`/`quit`、
 以及各处的 `time.sleep`。
+> 写包参数 `16384` 是**逐字搬运值**（单核路径仍设）；但"包长决定吞吐"不成立 —— 设了就恒
+> 41 KB/s（链路瓶颈），判吞吐看 gdb 的 `Transfer rate: N KB/sec`，**别从 `N bytes/write` 反推**
+> （2026-09-21 实测口径见 `qsh-debug` §3.1 / `KNOWN_ISSUES.md` #23）。
 
 **为什么不是"一个通用采集脚本"**：24 份的采集差异分 5 个**真实语义形态**（差异是两遍
 烧录 / 单核 hold cpu2 / mbox 字节块 / iwdg 双 pass / rtc_ls 无 hold 这类**真实差异**，
@@ -981,6 +994,52 @@ A1 的离线重放靠**猴补丁工程模块上的 L1 名字**（`mod.run_case` 
 `acquire.single_cap()`，走的确定是补丁版）。本步**未改** `regression/replay.py`
 （不在 A2 写域内）；**B1 已按 §6.10.1 接线**（补丁目标由 `mod.<名>` 改为 `acquire.<名>`
 + `_guard_acquire()` 隔离网）。
+
+**批量路径职责边界：稳定优先，不为单个失败自动定位（★ 2026-09-22 用户裁定）**
+
+裁定原话：「**批量驱动测试时，需要确保稳定性，不应当因为其中某一个测试失败，而额外花费
+时间以及调试带来的风险去定位问题**」。
+
+- **批量路径（`run_all.py` / `run_test.py`）不自动调 gdb 取任何东西**：gdb 在批量里
+  **只负责烧录**，判定证据**只认串口 token**。
+  - 三处"内存兜底"取数点（`single_cap` 的 `mem_hook`、`_ports_dict_one`、`dual_run` 的
+    `memory_backfill`）**已写死 `mem = None`**（理由与"判定中性"论证见
+    `common/acquire.py`「内存兜底（L1 侧）」段首注释）。
+  - 三处"0 输出自动抓 `$pc`"调用点**已全部移除**（见下"PC 快照调用范围"）。
+- **`memory_backfill()` / `dump_results.py` / `capture_pc_snapshot()` 本体保留**，供
+  **调试路径（`dbg_run.py`）与人工**按需调用。
+- 批量路径**仍保留**的失败证据 = **串口原始行归档**（`_archive_failure`，纯写文件、不起 gdb）；
+  **仍保留**的稳定性机制 = 每 case 前置 DS 存活预检（E-2）、自愈重试 1 次、残留清理 ——
+  这些是"**保稳定**"，不是"定位问题"，**不要动**。
+
+> **与 §6.2.4 R8 同源**：R8（用户裁定 2026-09-20）管"内存兜底取到的项**算不算证据**"
+> （答：不算，落 `MEM_NOEVID`）；本条是它的**实现侧落地**，管"**取不取**"（答：批量不取）。
+> 两条同源于同一句裁定「**内存兜底只在调试时候使用，测试结果必须以 token 为判断标准**」，
+> 分工是**判定侧（R8）vs 采集侧（本条）**。**取与不取，PASS/FAIL 完全相同**（R8 早已否掉
+> mem 的证据资格），故本条不改任何判定结果，只去掉批量路径上无谓的 gdb attach。
+>
+> **"取与不取 PASS/FAIL 完全相同"已实测（2026-09-22，判定中性）**：全文
+> `replay.py --l2-direct --freeze-time` 重放 `reports/2026-09-21-1`（51 case），逐 case 比对
+> `report.json` 的 `cases[*].result` 与 `overall` ⇒ **一致 51 / 不一致 0 / 缺失 0**。
+> 结构性旁证：51 份归档里**只有 1 个 case 含 mem 项**（`i3c_i2c_switch_test_case_switch_core`，
+> 11 项里 1 项）且它本就 FAIL ⇒ 按 §6.2.4 **G10**「mem 项不得判 PASS」，**移除 mem 不可能翻转任何 verdict**。
+
+**PC 快照调用范围（★ 2026-09-22，G-PCSNAP-1）**
+
+`common/acquire.py::capture_pc_snapshot()` **已不在批量路径调用**（2026-09-22 用户裁定，
+见上条原则）—— **是设计上不做，不是修顺序**。函数本体保留，**供人工 / 调试按需调用**
+（怎么人工抓 + 两条约束见 `qsh-debug` §6）。
+
+- **DS 1025 不支持并发 gdb 客户端（实测，2026-09-22）**：旧 gdb（`test.sh -r`，`RUN_TIMEOUT=0`
+  下活到 `case_timeout`）仍在 `continue` 时，新 gdb 连接即报
+  `Remote communication error. Target disconnected: error while writing: No such file or directory.`
+  + `No stack.` ⇒ 拿到的是错误串、**不是现场**。实测 A/B（唯一变量 = 旧 gdb 是否 kill）：
+  先 kill ⇒ 真实 `$pc=0x10081574` + 完整栈（`phy_rt_rtl8211f_reset @ phy_realtek_rtl8211f.c:169`）；
+  不 kill ⇒ 上述错误串。
+- 该事实是"**批量路径为什么不做自动 attach**"的论据之一：自动 attach 要么在旧 gdb 退出前
+  发起（拿错误串）、要么得为它先 kill（拖慢批量）—— 正是裁定要避免的"额外时间 + 调试风险"。
+
+> 单端口单客户端的实操说明见 `qsh-debug` §2.3 / §6。
 
 
 ### 6.5 测试覆盖矩阵与预期数据规范（全面性 + 可判定性）
@@ -1189,6 +1248,11 @@ python common/expect_check.py --audit --json                             # 机�
   （KNOWN_ISSUES #102 / qsh-debug `ref-flash-variants.md` §2）。
 - **1os 只有 cpu1**：1os_xip 固化只烧 `0x08000000`；2os XIP 标准组合才需要 cpu1+cpu2 两个区
 - 固化前确认：本 case 是否涉及 XIP → 涉及则列出**全部核**的构建变体与 flash 地址并一次会话烧录；纯 RAM 则照常 GDB。地址写进 test.sh 头注释与运行记录，避免"以为在跑 flash 镜像其实跑的是 RAM 旧镜像"
+- **多核调试通道（★ 2026-09-21）**：DebugServer 为 **cpu2 另开 GDB 端口 `1026`**（cpu1 = 1025），
+  `target remote 127.0.0.1:1026` 可对 cpu2 下断点 / 看现场（前提：DS 启动时 cpu2 已脱离复位 ——
+  **让 1026 出现 = 先跑起 cpu2 → 重启 DebugServer 让调试器重枚举核（软件动作，可自动化；非物理操作），配方为用户提供，见 `qsh-debug` §6**）。
+  **凡碰过 1026，下一次批跑前必须重启 DebugServer**（该访问把 cpu2 留在 halted ⇒ 后续 cpu2 侧全不运行）。
+  操作与判据见 `qsh-debug` §2.3 / §6「cpu2 通道」；归档见 `KNOWN_ISSUES.md` #98。
 
 #### 6.7.4 构建 XIP 变体（默认标准：cpu1 XIP + cpu2 RAM）
 
@@ -1709,6 +1773,23 @@ controller bin restore）实测 **17～50s** 才落地 ⇒ "烧录正常但慢"�
 > （`read(n)` / `read1` 会攒够 n 字节才返回，同样看不到进度）。
 > 实测：修前端到端 2/3（`i3c_dualcore_test` 假 FAIL），修后 3/3。
 > 实现见 `common/acquire.py` 的 d3 reader。
+
+> ⚠️ **第三条同族陷阱：首条 stdout 之前不得有慢操作**（★ 2026-09-21，O-24）。
+> `_LoadWatch` 的进度信号是 `proc_lines` 增长，而 `load_and_run` 在打出第一行加载横幅
+> **之前**还会跑一次产物新鲜度扫描（`scripts/test_common.sh::warn_if_build_stale`）。
+> 该扫描耗时且**不产出 stdout** ⇒ 窗口自 spawn 起算却始终"零输出" ⇒ 同样判 `load_fail`，
+> 且现象与真环境故障**完全同形**（串口 0 行 + gdb 也 0 行），极难归因。
+> **实测**：`i3c_dualcore_test` 树 56,501 文件（其中 56,353 在 `build/` 下）；
+> 未剪枝写法 `find … -not -path '*/build/*'`（**事后过滤 ≠ 剪枝**，`find` 照样下降进
+> 每个 build 目录 stat 每个文件）单次 **121s** ≫ `LOAD_WINDOW_S=20` ⇒ 该工程全部 case
+> 判 `load_fail`。触发源 = 提交 `43b232e` 引入该扫描，失败回归 11:13 开跑、**仅差 1 分钟**。
+> **两条硬要求**：① 扫描必须 **`-prune` 剪枝**（实测 121s → 3.4s）**并套 `timeout` 硬上限**；
+> ② 任何位于首条 stdout **之前**的步骤都必须**有界**，或**先把横幅打出去**再跑
+> （`warn_if_build_stale` 的两个调用点现已后置到横幅之后）。
+> 另注：`set -e` 下"命令替换 + 事后查 `$?`"是死写法，超时分支会被静默跳过，须写
+> `raw="$(cmd)" || rc=$?`（**`KNOWN_ISSUES #107`**）。
+> 排查提示：本族三条陷阱（drain 未排空 / 按行读漏 `\r` / 首条 stdout 前有慢操作）
+> **症状完全一致**，定位时须逐条验，不能只看串口表现。
 
 #### 6.11.5 单出口适用范围（§6.9.3 补充裁定，2026-09-20）
 

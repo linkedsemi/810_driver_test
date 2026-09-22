@@ -148,7 +148,8 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             env=env_line, execution=execution, mem_line=mem_line,
             result=f"{'PASS' if case_ok else 'FAIL'} ({passed}/{ran})"),
-        '- 接线: 外接 EEPROM@0x50 于 PE02/PB00（I2C4<->I2CF4 同管脚复用）；其余项零接线',
+        '- 接线: **零外部器件** —— 从设备 = 片内 target `eeprom@33`（挂 i2c3）；'
+        '上游主机 i2c2 跳线到 i2cf4 输入、i2c3 跳线到 i2cf4 输出',
         *([""] + ["> " + missing_evidence_note(missing)] if missing else []),
         "",
         "## 测试项结果",
@@ -341,7 +342,6 @@ def main():
         src_dir="cpu1_i2cf_test", build_subdir="target",
         build_progress="auto", build_timeout=900,
         build_conf=False, pre_erase=True, hold_cpu2=True,
-        mem_dumper=str(SAMPLE_ROOT / "tests" / "scripts" / "dump_results.py"),
         session=lambda: session_dir or (
             Path(args.session_dir) if args.session_dir
             else allocate_session_dir(REPORTS_ROOT, date_str)))

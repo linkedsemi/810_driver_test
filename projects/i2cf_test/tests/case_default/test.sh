@@ -16,7 +16,7 @@
 #   read-back mismatch.
 #
 # Hardware IO connections:
-#   外部: I2C 总线 PE02(SCL)/PB00(SDA) 上外接 EEPROM@0x50；板上 I2C4 与 I2CF4 为同管脚复用（非外接线）。其余项零接线。
+#   外部: **零外部器件** —— 从设备 = 片内 target eeprom@33（挂 i2c3）；上游主机 i2c2 跳线到 i2cf4 输入、i2c3 跳线到 i2cf4 输出。
 #
 # Build artifacts:
 #   - tests/case_default/build/target/
@@ -91,7 +91,7 @@ echo -e "${COLOR_YELLOW}Abnormal: FAIL - <name> + zassert reason (file:line, exp
 echo ""
 echo -e "${COLOR_YELLOW}Feedback: cpu1 uart1（COM16/17, CH342）；banner 'CPU1 I2CF' -> TGT.${COLOR_RESET}"
 echo ""
-echo -e "${COLOR_YELLOW}IO: 外部: I2C 总线 PE02(SCL)/PB00(SDA) 上外接 EEPROM@0x50；板上 I2C4 与 I2CF4 为同管脚复用（非外接线）。其余项零接线。${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}IO: 零外部器件 —— 从设备 = 片内 target eeprom@33（挂 i2c3）；i2c2 跳线到 i2cf4 输入、i2c3 跳线到 i2cf4 输出。${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_GREEN}Build OK:${COLOR_RESET}"
 echo "  ${TEST_BUILD_DIR}"

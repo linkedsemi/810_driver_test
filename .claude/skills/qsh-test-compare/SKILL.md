@@ -38,6 +38,14 @@ description: QSH 测试数据对比 skill：ztest 原生输出解析（parse_zte
    `INFO monobit_8k: ones=32931, percent=50.25`），解析后填入报告"实际"列，
    与 COVERAGE.md 的预期对比。
 
+5. **日志可见性：i3c（`style="d3"`）不回声 `test.sh` 的 stdout（★ 2026-09-21，G-O24-3）**：
+   `common/acquire.py::_spawn_test_sh` 只有 `style="z"`（`single_cap` 9 工程）**逐行回声**
+   `test.sh` 的 stdout；`style="d3"`（i3c 双核）**不回声**（`proc_lines` 只进内存列表，仅在
+   `load_fail` 诊断尾部才打印）⇒ i3c 的 `logs/serial_*.log` 里**没有** `Loading images into RAM via GDB...`
+   之类加载横幅（新旧日志都没有）。**判据**：要"从日志核 shell 侧加载段的顺序/行为"（如横幅是否在新鲜度
+   检查之前），**选 `single_cap` 工程**；核 i3c 加载段只能靠"有没有 20s 静默被判 `load_fail`"间接推断
+   （或临时加回声）。执行侧见 `qsh-test-run` §4.2。
+
 ## 2. 判定标准（★ 同名测试项双核双 PASS + 完成标记，i3c 例外见下）
 
 | 情况 | 判定 |
@@ -113,9 +121,23 @@ TGT 失败经逐项 FAIL 行暴露。i2c_pure/i3c_i2c_switch 的 target 正常�
 - **独立预期交叉校验（★ 2026-09-21）**：报告判 PASS **≠** 判定正确。用 `common/expect_check.py` 把归档
   实测 INFO 值拿去核该工程 `tests/COVERAGE.md` 的「独立预期」断言 —— 出现 **`DISAGREE` + 固件判 `PASS`
   = 假 PASS 风险，必须停下报告**（`--case <工程>:<case>` / `--audit`；文法/判定/两条纪律见 `SPEC_REFERENCE.md` §6.5.6）。
+- **传输成功（`ret=0`）≠ 数据有效（★ 2026-09-22）**：`i2c_read/transfer` 返回 `0` 只说明**本层传输完成**，
+  不证明数据来自目标器件 —— **单点 ACK 不证明器件在指定链路上**（应答者可能是**同址邻居**、别的链路
+  或中间器件）。判"器件真应答/数据可信"必须核**数据内容**（并与本级锁存寄存器交叉）；只断言 `ret`
+  的用例会把"被拦"读成 PASS。
+  ⚠️ **2026-09-22 更正**：原"被 I2C 滤波器拦截的地址**照常 ACK**（`ret=0`）"及"断言'被拦 ⇒ `ret<0`'
+  必然 FAIL"取自**同址冲突**（DUT 与板载器件撞址 `0x50`）的观测 ⇒ **作废、待非撞址复验**
+  （换址后被拦地址实测 `-EIO`）；重验前**勿放宽** `ret<0` 类判据（归属待驱动侧裁定）
+  —— KNOWN_ISSUES #110/#111（更正段）· debug-knowledge mcu 域 `addr-ack-not-device-evidence.md` /
+  `bus-addr-collision-pass-not-attributable.md`。
 - **各族 × 各状态的完整判定（冻结总表）见 `SPEC_REFERENCE` §6.2.4**——本节是分析视角速查，判定语义以总表为准（表外行为视为未定义）。
 
 ## 3. 串口不可用时的兜底通道：GDB 读内存取结果（dump_results.py）
+
+> **★ 2026-09-22 用户裁定：批量路径已不走本通道** —— `run_all.py` / `run_test.py` 稳定优先、
+> 只认串口 token（`SPEC_REFERENCE.md` §6.4.10）。本节保留为**调试 / 人工**手段（`dbg_run.py`
+> 与手工读结果）；下文"回归脚本用它做兜底合并"的描述**不再适用于批量**（判定侧 mem 早已不算
+> 证据，见 §2「批量必须靠 token」+ R8）。
 
 固件把每项测试结果记账到公共模块 `common/test_results.{h,c}` 的全局数组
 （`SPEC_REFERENCE.md` §6.1.5：`int8_t test_results[]` -1/0/1 + `char test_reasons[][96]`），
@@ -136,9 +158,15 @@ python dump_results.py --case ... --raw                        # 打印 gdb 原�
 - 判定：**串口可用时仍以串口 ztest 输出为准**（§2）；内存结果用于串口被刷掉/
   无串口时的兜底与交叉验证。双核结果对照同 §2 判定标准。
 - **`x/s` 读空 ≠ 没写**（★ 2026-09-19）：`test_reasons` 是**字节数组**，`x/s` 遇首字节 `0` 即停
-  ⇒ 读到空串不代表没写过。必须看**原始字节**（`x/<n>db`）—— 实测 `case_switch_core` 的
-  `test_reasons[10]` 原始字节 = `00×8` + `"hole_should_nack"`（目标串前 8 字符被抹成 0，而 ELF
-  里字面量完整）⇒ 是"写过又被部分清零"，不是"没写"（KNOWN_ISSUES #98 后半）。
+  ⇒ 读到空串不代表没写过；必须看**原始字节**（`x/<n>db`）再下结论。
+- **★ 但"读空"更常见的成因是「读了一个没跑过的核」（2026-09-21 更正，KNOWN_ISSUES #98 后半）**：
+  在 cpu2 **没跑过**的会话里读它的 `.bss`，读到的就是**全 0（`.bss` 初值）或上一轮残留**。
+  `case_switch_core` 的 `test_reasons[10]` 原始字节 `00×8` + `"hole_should_nack"` 一度被判为
+  "写出后被部分/整体清零"；拿到 cpu2 调试手段（`qsh-debug` §6「cpu2 通道」）后复测**不可复现** ——
+  逐字节 = `rstact_whole_should_nack`、无第三方清零 ⇒ **改判为观测口径可疑（读到了陈旧/未运行的
+  cpu2 RAM）**。**纪律：读对侧核（cpu2）RAM 取结果前，先确认该核本轮真的跑过**（CTRL 串口有流量 /
+  PC 不在 `__start`），否则"没跑"会被读成"被抹"。**碰过 1026 端口后尤其如此**（该访问本身把
+  cpu2 留在 halted，见 `qsh-debug` §2.3 / §6；让 cpu2 真跑起来 / 1026 出现的**配方**（重启 DebugServer，软件动作、非物理操作，可自动化）亦见该 §6）。
 - **例外：`i2c_pure_test` 串口窗口内拿不到测试启动后的逐项输出** —— 根因已定位 =
   `dbg_run.py` capture 轮 gdb stdout 管道未排空（**采集工具缺陷**，该工程已修）；**未修的工程**
   仍以内存兜底为准、串口判 PASS/FAIL 不可用（KNOWN_ISSUES #97 / qsh-test-run §3）。
@@ -160,6 +188,10 @@ agent 手工补报告时按同样规范：
 > 模块级 `l2_spec()`（`ProcessSpec` 五钩子）；**本节是判定/渲染口径，实现在公共层**。改渲染/判定
 > **不必上板** —— `python regression/replay.py --l2-direct` 离线重放即可（`FRAMEWORK_MAP.md` §1-§2 /
 > `SPEC_REFERENCE.md` §6.4.8 / §6.4.10）。
+>
+> **★ 离线重放必加 `--l2-direct`（2026-09-22 实测）**：不加则走工程 `main()`（含 DebugServer
+> 前置检查）⇒ **不是离线、也不产出报告** —— DS 未起时每 case 白等自愈超时（实测 51.7s），
+> 表现为「**跑很久、`tmp/replay/<会话>/` 是空的**」。机制见 `SPEC_REFERENCE.md` §6.4.8。
 
 - **归档位置（会话目录）**：
   `810_driver_test/reports/<YYYY-MM-DD>-<idx>/<project>_<case>/<driver>_test_report.{md,json}`
@@ -194,6 +226,32 @@ agent 手工补报告时按同样规范：
     `run_test.py` 按**工程语义**写（SKIP / observe / guard / `run::timeout` 各有处理）—— 如 `spi_test`
     18/19 = 26 项里 7 项 SKIP 不计分母，直接数 json 会得 18/26；`mbox_invalid` 7/7 = 12 项里 3 项观测项不计、
     `app_iwdg` 18/19 含 1 项 `run::timeout`。`report.json` 只用于取**失败项名与 reason**。
+
+### 4.1 失败归因报告 `failures/`（★ 2026-09-21 起**固定动作**）
+
+**每轮回归跑完，凡有 FAIL case，必须在会话目录下产出 `failures/`，一个失败 case 一个文件。**
+（用户 2026-09-21 裁定；不是可选项。）
+
+- **第一步：跑生成器（零判断、纯机械）**
+  ```bash
+  python 810_driver_test/common/failures_report.py --session reports/<会话>
+  ```
+  从 `summary.md` + 各 case 报告抽取已有信息（工程 / case / 执行标记 / 内存兜底 / 结果 /
+  失败项名 / 来源 / 期望 / 实际 / 失败原因），生成 `failures/<driver>_<case>.md` 骨架。
+  **默认不覆盖已存在文件**（agent 可能已填过），`--force` 才重写。单测：`python common/test_failures_report.py`。
+  —— 确定性的活不重复让 LLM 做：骨架机械生成，agent 只做增量，成本降一个量级。
+- **命名**：**驱动名打头** —— `dma_test`+`case_default` → `dma_test_default.md`；
+  `i3c_dualcore_test`+`case_mixed_1m_6m25` → `i3c_dualcore_test_mixed_1m_6m25.md`。
+- **agent 只补 `⚠️` 标记处**，两件事：① 报告里为 `-` 的**实测值**（去 `serial_CTRL.log` /
+  `serial_TGT.log` 挖原文）；② **归因段**（驱动 / 用例 / 环境 / **无法判定**）。
+- **取数纪律（最重要）**：任何"实际值"必须有 `文件:行号` 证据；**取不到就写「未采集到」，绝不臆造**。
+  报告「实测(INFO)」列大量是 `-` —— 这里最容易顺手编数据。
+- **两个特别提醒**：
+  - `FAIL 0/0` / `未知` 的 case **没有失败项可列** ⇒ 先判"失败发生在 build / load / prime /
+    capture 哪一步"，再判环境还是用例。**优先看报告头部的「内存兜底」字段**：写「哨兵未置位 /
+    invalid」⇒ 固件没跑到 `tr_init`（挂在早期初始化），这本身就是一条定位线索，别只盯串口 0 行。
+  - `执行标记` 不是 `SUCCESSFUL` 时，**可能是采集截断而非真实断言失败**，必须在归因里点明 ——
+    否则会把"没测到"写成"测出来是错的"。
 
 ## 5. 回归差异对比
 

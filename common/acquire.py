@@ -166,7 +166,8 @@ class SingleCapSpec:
     script: str = ""
     bash_style: str = "fixed"        # 'fixed'(Z) | 'filtered'(D3) | 'env_first'(mbox)
     com99_probe: bool = True         # Z 族 _restart_debugserver 里的 COM99 探测（eth 无）
-    mem_hook: object = None          # eth: dump_mem 的偏函数
+    # （曾在此有 `mem_hook`。2026-09-22 用户裁定：批量路径不取内存兜底
+    #   ⇒ 字段已删，见本文件「内存兜底（L1 侧）」段首说明。）
 
 
 @dataclass
@@ -196,10 +197,9 @@ class PortsDictSpec:
     hold_cpu2: bool = True            # 单核 hold cpu2（rtc_ls 不 hold）
     stall_s: int = 60                 # watch: 无 token 卡死提前收尾阈值（mbedtls=300）
     retry_on_no_boot: bool = False    # otbn/otbn_selftest/mbedtls：重启 DS 自愈重试 1 次
-    mem: bool = True                  # 是否做内存兜底
-    mem_dumper: object = None         # 传给 memory_backfill 的 dumper（相对名或绝对路径）
-    mem_cwd: object = None
-    mem_verbose: bool = False
+    # （曾在此有 `mem` / `mem_dumper` / `mem_cwd` / `mem_verbose`。
+    #   2026-09-22 用户裁定：批量路径不取内存兜底 ⇒ 字段已删，
+    #   见本文件「内存兜底（L1 侧）」段首说明。）
     tgt_banners: tuple = ("TGT",)
 
 
@@ -503,6 +503,31 @@ def find_git_bash(style="fixed"):
 
 
 # =============================================================== 内存兜底（L1 侧）
+#
+# ★★ 批量路径**不调用**内存兜底（2026-09-22 用户裁定）★★
+#
+#   裁定原话：「全量测试或者说 run_test.py 进行的测试，**不应当自动去通过 gdb 获取
+#   结果**，全量测试 gdb 只负责烧录」；「所有工程应当都需要 token 输出，**如果 token
+#   已经输出，就没必要通过 gdb 获取测试结果，只有调试阶段能运行 gdb 去获取**」。
+#
+#   ⇒ 三个批量取数点（`single_cap` 的 `mem_hook`、`_ports_dict_one` 与 `dual_run` 的
+#     `memory_backfill`）**一律不调 gdb 读内存**，各自写死 `mem = None`。
+#     `memory_backfill()` 与 `dump_results.py` **本身保留**，供 `dbg_run.py`（调试路径）
+#     与人工排障使用 —— 与用户 2026-09-20 的裁定「**内存兜底只在调试时候使用**」
+#     （`SPEC_REFERENCE` §6.2.4 R8 同源）一致。
+#
+#   ★ **判定中性（改前已论证；改后可用离线重放复核）**：§6.2.4 的 R8/G10 本就规定
+#     "批量路径 mem 取到的项**一律不算证据**"（落 `MEM_NOEVID`，不进 `passed`/`ran`）
+#     ⇒ **取与不取，PASS/FAIL 完全相同**。差别只有两处：
+#       ① 报告少显示 mem 取值（`内存兜底` 行、`来源=mem` 列）；
+#       ② 理由串由「mem 有值但非证据」变为「token 与兜底都没有值」。
+#     复核手段：`regression/replay.py` **本来就拿不到 mem payload**（`FRAMEWORK_MAP`
+#     的「mem 兜底」行：内存 payload 未归档 ⇒ 离线恒 `None`）⇒ **重放跑的正好就是
+#     "无 mem 的判定"**，与线上（有 mem）逐 case 比对即可证中性。
+#
+#   ⚠️ 副作用（已知并接受）：`内存兜底: 无效（哨兵未置位）` 这条诊断随之消失。它原先
+#     用来判断"固件没跑到 `tr_init`"——但**同一信息在 token 侧即可得**（无 `ZT_BOOT`
+#     即没进 `test_main`），故不构成诊断能力损失。
 def memory_backfill(case, *, dumper, cwd=None, timeout=60, verbose=False):
     """`dump_results.py --json` 读内存兜底。失败返回 None → mem-unavailable。
 
@@ -1291,6 +1316,71 @@ def gdb_watch_session(elf, run_secs, *, watch, rom_start="0x10000000",
 
 
 # =============================================================== run_case
+def capture_pc_snapshot(*, elf=None, port=None, timeout_s=25):
+    """挂上 gdb 读一次 `$pc` + 顶层 backtrace —— **只观测，不复位、不改内存**。
+
+    ★★ **调用范围（2026-09-22 用户裁定）：只供调试 / 人工路径按需调用。
+       批量路径（`run_all.py` / `run_test.py`）不得自动调用它。** ★★
+      裁定原话：「批量驱动测试时需要确保稳定性，**不应当因为某一个测试失败，而额外
+      花费时间以及调试带来的风险去定位问题**」。自动 attach 正是"额外时间 + 调试
+      风险"——attach 会 **halt 目标**，且 DS 的 1025 **不支持并发 gdb 客户端**
+      （2026-09-22 实测：旧 gdb 未退出时新连接被踢），对每个失败 case 各做一次会
+      拖慢批量并可能污染后续 case 的 DS 状态。定位属**独立活动**（走 `qsh-debug`），
+      不混进批量路径。批量路径仍保留的失败证据 = 串口原始行归档（`_archive_failure`，
+      纯写文件、不起 gdb）。
+
+    ★ 存在价值（2026-09-21，eth_test 首次上板 O-26 的教训）：CLAUDE.md 速查表写着
+      「load 后串口 0 行 → **先抓 CPU 再查配置**」，但框架过去**不做这件事** ——
+      等满 timeout、拿到 0 字节、就结束了 ⇒ 每个"0 行"的 case 都要**人工重跑
+      一次**才能拿到唯一有用的那条证据（eth 就是因此耗掉整个诊断会话）。本函数把
+      "重跑一次"降成"一次 gdb attach（秒级）"，供**人工/调试**调用。
+      → 实操见 `qsh-debug`（0 行时人工抓现场）。
+
+      代价对比：**调用本函数** ≈ 一次 gdb attach（秒级）；人工重跑 ≈ 整个 case 的
+      构建 + 烧录 + 等待。**这条证据本来就在手边，不该需要第二遍。**
+
+    **绝不改变判定与控制流**：整体 try/except，任何失败只打一行并返回 None。
+    ⚠️ 副作用：attach 会把目标留在 **halted** 态。故只在"**已判失败、即将
+      kill**"的路径上调用（调用方随后本就要收尾：clean_gdb_residue / 下一 case
+      前的 DS 前置检查都会兜住）。**不得**放在正常路径上。
+    ⚠️ 双核的 controller(cpu2) 走独立端口 **1026**（见 OPEN_ITEMS O-28，含
+      "碰过就把 cpu2 留在 halted" 的副作用）；本函数默认只抓 cpu1(1025)。
+
+    返回捕获文本（可能为空串）；失败返回 None。
+    """
+    port = port or GDB_PORT
+    cmd = [GDB, "-batch",
+           "-ex", f"target remote {GDB_HOST}:{port}",
+           "-ex", "set confirm off",
+           "-ex", "set pagination off"]
+    if elf:
+        p = Path(str(elf))
+        if p.exists():
+            # gdb 是 Windows 程序，路径用正斜杠（同 test_common.sh 的 win_path）
+            cmd += ["-ex", f"file {p.as_posix()}"]
+    cmd += ["-ex", "info registers pc", "-ex", "bt", "-ex", "detach"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout_s)
+        return ((r.stdout or "") + (r.stderr or "")).strip()
+    except Exception as exc:              # noqa: BLE001 —— 快照绝不改变判定
+        log(f"[PC-SNAPSHOT] 抓取失败（不影响判定）: {exc}")
+        return None
+
+
+def _log_pc_snapshot(case_name, elf=None, reason=""):
+    """0 输出兜底：抓一次现场并写进日志。返回文本（无则 None）。"""
+    snap = capture_pc_snapshot(elf=elf)
+    if snap:
+        log(f"[PC-SNAPSHOT] {case_name}: {reason or '无固件输出'} "
+            "—— 挂死现场（只观测，已 detach）：")
+        for ln in snap.splitlines():
+            log(f"    {ln}")
+    else:
+        log(f"[PC-SNAPSHOT] {case_name}: 抓取不到现场（gdb 无输出或超时）")
+    return snap
+
+
 def run_case_shell(spec, case_name, tgt_uart, timeout, bash):
     """SINGLE_CAP 9 份逐字同构：单路采集 + `test.sh -r` 干等 timeout。"""
     build_dir = spec.tests_dir / case_name / "build" / "target"
@@ -1317,6 +1407,15 @@ def run_case_shell(spec, case_name, tgt_uart, timeout, bash):
 
     kill_proc_group(proc, style="z")
     thread.join(timeout=3.0)
+
+    # ★ 批量路径**不做** 0 输出自动抓现场（2026-09-22 用户裁定）：
+    #   「批量驱动测试时需要确保稳定性，不应当因为某一个测试失败，而额外花费时间
+    #     以及调试带来的风险去定位问题」。
+    #   自动 attach 读 `$pc` 正是"额外时间 + 调试风险"——attach 会 halt 目标，且
+    #   DS 的 1025 **不支持并发 gdb 客户端**（2026-09-22 实测：旧 gdb 未退出时新连接
+    #   被踢），对每个失败 case 都做一次 ⇒ 拖慢批量、并可能污染后续 case 的 DS 状态。
+    #   ⇒ 现场证据改为**独立按需**获取：`capture_pc_snapshot()` 仍在本文件保留，
+    #     人工 / 调试路径可直接调用（用法见 `qsh-debug`）。
     cap.stop()
 
     return {
@@ -1345,23 +1444,53 @@ class _LoadWatch:
 
     ★ 这个"进度"信号之所以拿得到，正是因为 `spawn_test_run` 用 drain 线程**持续**
       读管道（同族缺陷的标准修法）。不排空的实现连"它到底在不在动"都看不见。
+
+    ★ 2026-09-21 追加**串口**信号（`extra_len`）：gdb 在 `load` 完成后进 `continue`
+      是**设计性静默**（不产出任何 stdout），而固件此时可能已在串口上出字 ⇒ 只看
+      gdb stdout 会把"固件正在跑"误判成"什么都没发生"（pass-2 因此与 pass-1 判活
+      口径不一致；pass-1 用的是串口侧的 `_has_any_output`）。传入串口行数计数器后，
+      判死条件变成"**gdb stdout 与串口双双静默**" —— 这是**追加**信号、不是替代，
+      既不误杀也不削弱真挂死检测（真挂死时两边都不动）。
     """
 
-    def __init__(self, proc_lines, start):
+    def __init__(self, proc_lines, start, extra_len=None):
         self._lines = proc_lines
         self._n = len(proc_lines)
         self._start = start
         self._last = start
+        self._extra_len = extra_len
+        self._n_extra = extra_len() if extra_len else 0
 
     def dead(self, idle_s, hard_cap_s, now=None):
         now = time.time() if now is None else now
         n = len(self._lines)
-        if n != self._n:
+        n_extra = self._extra_len() if self._extra_len else 0
+        if n != self._n or n_extra != self._n_extra:
             self._n = n
+            self._n_extra = n_extra
             self._last = now
         if now - self._last > idle_s:
-            return True                      # 连续 idle_s 无任何输出 ⇒ 环境问题
+            return True                      # gdb 与串口双双 idle_s 无输出 ⇒ 环境问题
         return now - self._start > hard_cap_s   # 硬上限兜底（不无限等）
+
+
+class DualEnvError(RuntimeError):
+    """双核环境失败（如 pass-1 无任何固件输出）。**携带已采集的原始行**。
+
+    ★ 为什么要带数据（2026-09-21，O-24 另案）：原先这里直接 `raise RuntimeError`，
+    已采集的 ctrl/tgt 原始行随异常栈一起丢掉 ⇒ 失败轮**没有任何现场证据落盘**
+    （不生成 per-case 目录、无 `serial_*.log`），每次复测都是盲测 —— 当天
+    i3c_dualcore 排查绕一整天，主因即此。
+
+    归档是"判定的副产品"，不该因为判定走的是异常路径就丢失。本异常把原始行
+    带出来，由 `dual_run` 在终止路径统一归档。
+    """
+
+    def __init__(self, msg, *, ctrl_lines=None, tgt_lines=None, proc_lines=None):
+        super().__init__(msg)
+        self.ctrl_lines = list(ctrl_lines or [])
+        self.tgt_lines = list(tgt_lines or [])
+        self.proc_lines = list(proc_lines or [])
 
 
 def run_case_dual(spec, case_dir, bash):
@@ -1388,6 +1517,10 @@ def run_case_dual(spec, case_dir, bash):
     if tgt_cap.error:
         ctrl_cap.stop()
         raise RuntimeError(tgt_cap.error)
+
+    def _serial_len():
+        """两核串口累计行数 —— 给 `_LoadWatch` 当**追加**进度信号（见其说明）。"""
+        return len(ctrl_cap.lines) + len(tgt_cap.lines)
 
     def _ztest_view(cap):
         return parse_ztest(cap.plain_lines(),
@@ -1421,7 +1554,7 @@ def run_case_dual(spec, case_dir, bash):
     proc, proc_lines = spawn_test_run(case_dir, spec.root, bash, style="d3")
     p1_start = time.time()
     p1_boot = None
-    p1_watch = _LoadWatch(proc_lines, p1_start)
+    p1_watch = _LoadWatch(proc_lines, p1_start, extra_len=_serial_len)
     while True:
         if _has_any_output():
             p1_boot = time.time()
@@ -1434,13 +1567,21 @@ def run_case_dual(spec, case_dir, bash):
     kill_proc_group(proc, style="d3")
     clean_gdb_residue(style="d3")
     if p1_boot is None:
+        # ★ 先取原始行再 stop：DualEnvError 会把它们带到 dual_run 的失败归档
+        #   （见该异常的说明；这是失败轮唯一现场证据）。
+        _ctrl_lines = ctrl_cap.plain_lines()
+        _tgt_lines = tgt_cap.plain_lines()
+        # （此处曾有"0 输出自动抓 `$pc`"——2026-09-22 按用户裁定移除：
+        #   批量路径不为单个失败做额外 attach，见 `run_case_shell` 同款说明。）
         ctrl_cap.stop()
         tgt_cap.stop()
-        raise RuntimeError(
+        raise DualEnvError(
             f"{case_dir.name}: pass-1 烧录后连续 {LOAD_WINDOW_S}s 无任何固件输出"
             f"（ZT_BOOT/ztest 行/{spec.banner_key} token；test.sh/gdb 也没产出任何"
             "行）——测试环境有问题"
-            "（DebugServer 残留/烧录链路/镜像陈旧）")
+            "（DebugServer 残留/烧录链路/镜像陈旧）",
+            ctrl_lines=_ctrl_lines, tgt_lines=_tgt_lines,
+            proc_lines=list(proc_lines))
     # prime 轮再跑 5s，确保 I-cache 冲刷充分（两遍烧录法要点）
     time.sleep(P1_HOLD_S)
 
@@ -1475,7 +1616,7 @@ def run_case_dual(spec, case_dir, bash):
 
     start = time.time()
     proc, proc_lines = spawn_test_run(case_dir, spec.root, bash, style="d3")
-    watch = _LoadWatch(proc_lines, start)
+    watch = _LoadWatch(proc_lines, start, extra_len=_serial_len)
     outcome = "timeout"
     last_activity = start
     prev_len = 0
@@ -1543,6 +1684,9 @@ def run_case_dual(spec, case_dir, bash):
         print(f"[RUN] {case_dir.name} 超过 {spec.case_timeout}s 未完成，强杀", file=sys.stderr)
 
     time.sleep(0.5)
+
+    # （此处曾有 pass-2 的"0 输出自动抓 `$pc`"——2026-09-22 按用户裁定移除：
+    #   批量路径不为单个失败做额外 attach，见 `run_case_shell` 同款说明。）
     ctrl_cap.stop()
     tgt_cap.stop()
     elapsed = time.time() - start
@@ -1814,7 +1958,9 @@ def single_cap(spec):
     if raw is None:
         return Acquired(ok=False, err="capture failed", session=session)
 
-    mem = spec.mem_hook(spec.case) if spec.mem_hook else None
+    # ★ 批量路径不取内存兜底（2026-09-22 用户裁定）—— 理由与"判定中性"论证见
+    #   本文件「内存兜底（L1 侧）」段首说明。调试路径（dbg_run.py）不受影响。
+    mem = None
 
     # L1→L2 边界（L0 归档形状，common/serial_archive.py）：先把采集结果归一成
     # `{核名: [原始行]}`，落档，再把**同一个对象**交给 L2（common/process.py）。
@@ -1884,10 +2030,8 @@ def _ports_dict_one(spec, case):
         cdir = archive(session, spec.driver, case, lines_by_core, board=spec.board,
                        ports={"TGT": spec.tgt_uart}, timeout=spec.timeout,
                        script=spec.script)
+    # ★ 批量路径不取内存兜底（2026-09-22 用户裁定）—— 见「内存兜底（L1 侧）」段首说明。
     mem = None
-    if spec.mem:
-        mem = memory_backfill(case, dumper=spec.mem_dumper, cwd=spec.mem_cwd,
-                              verbose=spec.mem_verbose)
     return Acquired(ok=True, lines=lines_by_core, mem=mem, session=session,
                     case_dir=cdir), session
 
@@ -1921,6 +2065,40 @@ def ports_dict(spec):
     return ports_dict_case(spec, spec.case)
 
 
+def _archive_failure(spec, case_dir, ctrl_lines, tgt_lines):
+    """失败轮也落盘原始行（L0 归档）。★ 见 `DualEnvError` 的说明。
+
+    **绝不改变判定与控制流**（与 `serial_archive` 同一条纪律）：整体 try/except，
+    任何异常只打一行 warning 并返回 None。
+
+    动机：失败轮原本不生成 per-case 目录 ⇒ 采集到的原始行全丢，复测只能盲测。
+    """
+    try:
+        if not spec.archive or not (ctrl_lines or tgt_lines):
+            return None
+        session = _resolve_session(spec.session)
+        if session is None:
+            return None
+        lines_by_core = {"CTRL": list(ctrl_lines or []),
+                         "TGT": list(tgt_lines or [])}
+        lines_by_core = split_relay_lines(lines_by_core, spec.relay_prefixes,
+                                          strip=spec.relay_strip)
+        cdir = archive(session, spec.driver, case_dir.name, lines_by_core,
+                       board=spec.board,
+                       ports={"CTRL": spec.ctrl_uart, "TGT": spec.tgt_uart},
+                       timeout=spec.case_timeout, script=spec.script,
+                       split_from_primary=bool(spec.relay_prefixes),
+                       envelope_stripped=bool(spec.relay_strip))
+        print(f"[ARCHIVE] {case_dir.name}: 失败轮原始行已落盘 → {cdir}"
+              f"（CTRL {len(lines_by_core.get('CTRL') or [])} 行 / "
+              f"TGT {len(lines_by_core.get('TGT') or [])} 行）", file=sys.stderr)
+        return cdir
+    except Exception as exc:                # noqa: BLE001 —— 归档绝不改变判定
+        print(f"[ARCHIVE] {case_dir.name}: 失败轮归档失败（不影响判定）: {exc}",
+              file=sys.stderr)
+        return None
+
+
 def dual_run(spec, case_dir):
     """DUAL_RUN（3 份）：一个 case 的完整 L1（clean → 采集 → 自愈重试 → 归档 → mem）。"""
     bash = find_git_bash("filtered")
@@ -1946,6 +2124,11 @@ def dual_run(spec, case_dir):
                 clean_gdb_residue(style="d3")
                 continue
             print(f"ERROR: {exc}", file=sys.stderr)
+            # ★ 失败轮也归档：异常携带的原始行是本次失败唯一的现场证据。
+            #   （普通 RuntimeError 无该属性 ⇒ getattr 取到 None ⇒ 静默跳过。）
+            _archive_failure(spec, case_dir,
+                             getattr(exc, "ctrl_lines", None),
+                             getattr(exc, "tgt_lines", None))
             return Acquired(ok=False, err=str(exc), rc=1)
         if raw.get("load_failed") and attempt == 0:
             print(f"[RETRY] {case_dir.name}: load_fail（环境问题）→ "
@@ -1959,6 +2142,9 @@ def dual_run(spec, case_dir):
         # 串口/镜像陈旧），继续跑只会批量产出假 FAIL——环境中止。
         print("ERROR: 测试环境异常（重试后仍未收到 ZT_BOOT），中止回归。"
               "请检查 DebugServer/串口/接线后重试", file=sys.stderr)
+        # ★ 同上：这条路径原先直接 return，raw 里已采集的原始行被丢掉。
+        _archive_failure(spec, case_dir,
+                         raw.get("ctrl_lines"), raw.get("tgt_lines"))
         return Acquired(ok=False, err="env abort", rc=2)
     clean_gdb_residue(style="d3")  # 本 case 杀 gdb 的残留不带给 backfill/下一 case
 
@@ -1977,8 +2163,8 @@ def dual_run(spec, case_dir):
                        timeout=spec.case_timeout, script=spec.script,
                        split_from_primary=bool(spec.relay_prefixes),
                        envelope_stripped=bool(spec.relay_strip))
-    mem = memory_backfill(case_dir.name, dumper="dump_results.py",
-                          cwd=str(spec.tests_dir / "scripts"), verbose=True)
+    # ★ 批量路径不取内存兜底（2026-09-22 用户裁定）—— 见「内存兜底（L1 侧）」段首说明。
+    mem = None
     return Acquired(ok=True, lines=lines_by_core, mem=mem, session=session,
                     case_dir=cdir)
 

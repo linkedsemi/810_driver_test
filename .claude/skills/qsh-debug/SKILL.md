@@ -103,6 +103,19 @@ taskkill //F //IM DebugServerConsole.exe && cd C:/uaer_app/debug_server/bin && .
 > 纪律：**任何"超时后写 `\x03`+detach"的脚本都不得依赖 `communicate(timeout=)` 保留 stdin**
 > （KNOWN_ISSUES #101）。
 
+> **★ 同族第二种残留：对 cpu2 的 1026 端口做过任何 gdb 访问（含 `detach`）⇒ cpu2 被留在 halted**：
+> 此后不重启 DS，后续回归的 **cpu2 侧全部不运行**（CTRL 串口 0 字节、cpu2 停在 `__start`）。
+> 判据：cpu2 侧"0 字节 / 值像没跑过"时，先问"本会话有没有碰过 1026"。
+> **纪律：凡碰过 1026，下一次批跑前必须重启 DebugServer。** 细节见 §6「cpu2 通道」
+> （KNOWN_ISSUES #98 / `qsh-test-run` §4.1）。
+
+> **★ 1025 是单端口、不支持并发 gdb 客户端（2026-09-22 实测，G-PCSNAP-1）**：旧 gdb 仍在
+> `continue` 时新 gdb 连接 ⇒ 立即报 `Remote communication error. Target disconnected: … No such
+> file or directory.` + `No stack.`，**拿不到现场**。⇒ **批量路径不做自动 attach / 抓快照**
+> （2026-09-22 用户裁定「批量不为单个失败额外花时间与调试风险去定位」，见 `SPEC_REFERENCE`
+> §6.4.10）；`common/acquire.py::capture_pc_snapshot()` **已不在批量路径调用**，**仅供人工 /
+> 调试按需调用**（怎么人工抓 + 两条约束见 §6）。
+
 ### 2.3a 运行时 DebugServer **自杀**（CKLink 瞬时故障）→ **该批次结果作废**（★）
 
 与 §2.2a「板子物理不在线」**相反**：探针**始终被 PnP 枚举到**（`Get-PnpDevice -PresentOnly`
@@ -167,8 +180,15 @@ riscv64-unknown-elf-gdb \
 ### 3.1 单核工程烧录（otbn_test/otbn_selftest，★ `KNOWN_ISSUES.md` #23/#24）
 
 单核工程用**单遍烧录**（reset 已刷 I-cache，无"慢一拍"），dbg_run.py 已固化；
-写包提速默认开（16384，41x）；`--no-load` 免烧重跑。**会话内禁止二次 load**
+写包提速默认开（16384，真实口径见下注）；`--no-load` 免烧重跑。**会话内禁止二次 load**
 （静默挂死）。命令与完整要点见 [ref-flash-variants.md](ref-flash-variants.md) §1。
+
+> **★ 写包提速的真实口径（2026-09-21 实测）**：请求 `memory-write-packet-size`
+> 16384 / 2457 / 1024 → gdb **协商** `2493 / 1820 / 875 bytes/write`，**但加载总吞吐恒
+> 41 KB/s、墙钟恒 3~4s（与包长无关）** ⇒ **41 KB/s 才是链路瓶颈**。**判据看 gdb 的
+> `Transfer rate: N KB/sec`**（真实吞吐），**不得从 `N bytes/write`（协商包长）反推提速
+> 倍数**（父会话当天据此误读一次）。双核 `load_and_run` 原注释"不设时慢约 6.7 倍 / 单核
+> 41x 提速"**已按实测撤回**（工作区已无 `GDB_WRITE_PKT`）；单核路径的两行 `set` 仍在。
 
 ### 3.2 flash boot 破坏性复位测试（bootrom 引导非 XIP）
 
@@ -222,8 +242,61 @@ QSH/810 语境下的补充线索：
 两者均见 [ref-gdb-breakpoint.md](ref-gdb-breakpoint.md)。
 
 - **单 gdb 会话只控一核**：会话控 cpu1 时，对侧核（cpu2）**只能读内存**（`x/`、`x/s`），
-  **下不了断点** —— 断在 cpu2 地址上永不命中（实测 `BP@0x10000b2a` 75s 未命中）⇒ 要抓对侧核
-  执行现场须切到控该核的会话，或另找 RAM 写监视手段（`KNOWN_ISSUES.md` #98 后半卡点）。
+  **下不了断点** —— 断在 cpu2 地址上永不命中（实测 `BP@0x10000b2a` 75s 未命中）⇒ 抓对侧核
+  执行现场须**切到控该核的会话**（见下「cpu2 通道」）。
+- **1025 单端口 / 单客户端**：同一时刻只容许一个 gdb 连接。抓 `$pc` 快照或事后 attach 前
+  **必须确认旧 gdb 已 kill**（否则新连接立即报 `Remote communication error … No stack.`，
+  拿到的是错误串不是现场；单核 `RUN_TIMEOUT=0` 下必现）。约束见 `SPEC_REFERENCE` §6.4.10。
+- **批量路径已不自动抓快照**（2026-09-22 用户裁定）⇒ 抓 `$pc` 现场**改由人工 / 调试发起**（下条）。
+
+> **人工抓 `$pc` 快照（★ 2026-09-22：批量已不自动抓，这是唯一用法）**：`common/acquire.py::
+> capture_pc_snapshot()` **已不在批量路径调用**（用户裁定「批量不为单个失败自动定位」，
+> `SPEC_REFERENCE` §6.4.10）；0 输出挂死 case 想拿现场时由人工发起：
+>
+> ```python
+> # 在 810_driver_test/common 下执行（cwd 决定 import）
+> import acquire
+> print(acquire.capture_pc_snapshot(elf=r"<用例 build 的 zephyr.elf>"))
+> ```
+>
+> 两条约束（详见函数 docstring，勿照抄）：① **必须先把加载用的 gdb 杀干净** —— DS 1025
+> 不支持并发客户端，否则只拿到 `Remote communication error`；② **碰过之后目标会留在
+> halted 态**，后续要跑 case 前**重启 DebugServer**。
+
+#### cpu2 通道 = 第二个 TCP 端口 `1026`（★ 2026-09-21 实测，消解 #98「缺手段」）
+
+DebugServer 为 cpu2 另开一个 GDB 端口：启动日志并列打
+`GDB connection command for CPUs(CPU0): …:1025` 与 `CPUs(CPU1): …:1026`。
+```bash
+riscv64-unknown-elf-gdb -ex "target remote 127.0.0.1:1026" -ex "info threads"
+# → Thread 2 (CPU#1)，PC 落在 cpu2 地址域
+```
+⇒ 这是**对 cpu2 下断点 / 看 cpu2 现场**的可用手段。要点：
+
+- **前提：DS 启动时 cpu2 必须已脱离复位**。否则启动日志打
+  `ERROR: CPU_1: Fail to enter debug mode … AllUnavail: 1`，且**只监听 1025、不监听 1026**。
+  单核路径 `load_and_run_single` 会写 `APP_CPU_SRST=2` 把 cpu2 按住，**紧接的 DS 重启就会命中此形态**；
+  处置 = 先 `set {int}0x4002200c = 1` 释放 cpu2，再重启 DS。
+- **★ 让 1026 出现的操作配方（2026-09-22，用户提供——用户拥有该硬件，硬件域权威；本次未实测复现）**：
+  ① **先把 cpu2 跑起来**（cpu2 处于运行态；单核路径写 `APP_CPU_SRST=2` 按住 cpu2 时**没有 1026**）；
+  ② **重启 DebugServer**，让调试器**重新枚举核**；③ 之后 **1026 端口才出现**（= cpu2 那个核）。
+  **是软件动作、无任何物理操作、可自动化**（框架已有 `restart_debugserver_stable()`），与
+  "C 需人工物理操作"相反。
+  此式与上条「DS 启动时 cpu2 已脱离复位」是**同一件事的两种说法**：上条说**状态**（已 dereset，否则打
+  `AllUnavail`），本条说**怎么做**（跑起来 + 重启 DS 重枚举）——**唯一路径，不存在"二者其一"**；
+  上条记的实测失败形态（DS 启动时 cpu2 未脱离复位 ⇒ `AllUnavail: 1`、只监听 1025）与本配方**恰好自洽**：
+  都归结为"**DS 重启时 cpu2 必须在运行态**"。
+- **硬件写监视可用**：目标信息报 `HWBKPT number is 3, HWWP number is 3` ⇒ gdb `watch`（HWWP）
+  能用，实测能停在写者处并给出 backtrace（定位"谁写坏了这块 RAM"）。
+- **★ 凡碰过 1026，下一次批跑前必须重启 DebugServer**：任何对 1026 的 gdb 访问（含 `detach`）
+  都把 cpu2 留在 halted —— `detach` 只"恢复连接前状态"，实测 cpu2 停在 `__start`(0x10000000)
+  不再前进。此后不重启 DS，**后续回归的 cpu2 侧全部不运行**（CTRL 串口 0 字节；cpu2 `.bss`
+  是陈旧值或全 0）。操作对照见 §2.3、速查表 §7；批量侧见 `qsh-test-run` §4.1。
+
+> **★ 读 cpu2 RAM 的不变量：先确认 cpu2 本轮真的跑过** —— 在 cpu2 没跑过的会话里读它的
+> `.bss`，得到的是**全 0（`.bss` 初值）或上一轮残留**，不是本轮结果。判"某变量被谁清零"
+> 之前先核 cpu2 是否运行（CTRL 串口有流量 / PC 不在 `__start`），否则会把"没跑"读成"被抹"
+> （`KNOWN_ISSUES.md` #98 后半即此坑；判定侧见 `qsh-test-compare` §3）。
 
 ## 7. 常见问题速查
 
@@ -239,10 +312,12 @@ QSH/810 语境下的补充线索：
 | 单遍烧录行为"慢一拍"（双核） | I-cache 残留 | 两遍烧录法（§3）；单核工程无此问题（reset 已刷 I-cache，§3.1） |
 | 目标停死、异常反复 | 调试期 while(1) 陷阱残留 | 清理探针（§8 / `KNOWN_ISSUES.md` #6） |
 | 断点抓到的是"测试后"状态 | 断点时机太晚（记账处） | 断在状态被破坏之前（embedded-debug §2） |
+| 想对 **cpu2** 下断 / 看 cpu2 现场，但控 cpu1 的会话断不上 | cpu2 走**另一个 GDB 端口** | `target remote 127.0.0.1:1026`（`info threads` 见 `Thread 2 (CPU#1)`）；前提是 DS 启动时 cpu2 已脱离复位 —— **怎么弄：先跑起 cpu2 → 重启 DebugServer 重枚举（软件动作，可自动化），1026 才出现（§6「cpu2 通道」，配方为用户提供）**；否则只监听 1025 |
+| **碰过 1026 端口**后 cpu2 侧全不运行（CTRL 串口 0 字节 / cpu2 `.bss` 陈旧或全 0） | 任何对 1026 的 gdb 访问（含 `detach`）都把 cpu2 留在 halted（PC 停 `__start`） | **下一次批跑前必须重启 DebugServer**；读 cpu2 RAM 前先确认 cpu2 本轮真的跑过（§6 / §2.3） |
 | DebugServer 重启后立即连跑间歇性 load_fail/断连/WDR 异常 | 新实例不稳定期（`KNOWN_ISSUES.md` #20） | 重启后等 ~5s 稳定期再烧录；run_test.py 已自动重试 |
 | 构建报 `ninja: error: failed recompaction: Permission denied` | 同一 build 目录被并发 `west build` 抢（多为**自己上一轮 `nohup west build &` 没退干净**，误判其已死又起前台构建） | 先查进程树（nohup→west→python→cmake）再重跑；按 PID `taskkill //PID <pid> //T` 杀自己那条链，**禁 `//IM python.exe`**（连坐，KNOWN_ISSUES #62）。见 qsh-test-run §6 / qsh-test-validate §2 |
 | 用 dbg_run 链跑判 PASS 但日志有 FAIL token | dbg_run 不做判定（退出码恒 0） | 判 PASS 前 grep `CTRL:FAIL\|TGT:FAIL`；正式判定走 run_i3c_tests 报告（`KNOWN_ISSUES.md` #21） |
-| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set remote memory-write-packet-size 16384` + `set remotewritesize 16384`（41x，§3.1）；单核 dbg_run.py 默认已开 |
+| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | `set remote memory-write-packet-size 16384` + `set remotewritesize 16384`；单核 dbg_run.py 默认已开。**★ 一旦设了就恒 41 KB/s（链路瓶颈），包长再调不更快；判吞吐看 `Transfer rate: N KB/sec`，别看 `N bytes/write`（§3.1）** |
 | `-x xxx.gdbcmd` 中途报 `Error in sourced command file` 后 load/$pc/continue 全没跑（像烧录失败） | `-x` 源文件模式**遇错即中止整脚本**（`-ex` 链只跳过该条继续） | 手写 .gdbcmd 核命令名（如 `set memory-write-packet-size` 无效 → `set remote memory-write-packet-size`）；排障优先 `-ex` 链（KNOWN_ISSUES #61） |
 | `file` 用 MSYS 路径（`/d/...`）→ gdb 只回一行 `No such file` 却不中止；`load` 照常"成功"、断点命中却读到旧镜像 | Windows gdb 不认 `/d/...`，`file` 失败 → `load` 无可加载段静默 no-op，RAM 仍是上次会话旧固件（比 #61 更隐蔽：连报错都没有） | `file` 一律 `D:/...`（`cygpath -m` 亦可）；下断点后 `x/3i $pc` 对照 `objdump -d`，指令对不上 = 镜像不对（KNOWN_ISSUES #28） |
 | 会话内第二个 load 无任何输出（无 "Loading section"）静默挂死 | 二次 load 挂死（`KNOWN_ISSUES.md` #24） | 单核改单遍烧录（§3.1）；免烧迭代用 --no-load；挂死后按 §2.3 重启 DebugServer |
@@ -251,6 +326,7 @@ QSH/810 语境下的补充线索：
 | **烧录成功 + 串口静默**（无 banner、无 `\x00`） | 固件挂在异常入口的 `while(1)`（永久兜底，或调试期临时陷阱 `git diff` 可辨） | ★ **别再查串口**：先用**早标记分界**（embedded-debug §2.2）切开"链路 vs 固件"；判为固件则 gdb attach 读 PC，卡 trap 入口再读 `mcause`/`mepc`/`mtval`（§2.1 / debug-knowledge riscv 域） |
 | 烧 flash 后 bootrom 不引导（无固件输出） | 烧错 bin（zephyr.bin 无引导头）；或 GDB reset/detach halt CPU 阻止 bootrom | 见 §3.2：烧 `zephyr_flash_bram_*.bin` + `--reset-and-run`，别用 GDB（KNOWN_ISSUES #48/#49） |
 | 配 IOPMP 拒绝规则拦 DMA/外设访问：被拒页确实未写，但传输仍报"完成"、无 ERR | 该 SoC 对被拒/未解码访问**一律回 OKAY**，IOPMP 静默丢弃（**不是错误源**） | 别再用 IOPMP/未映射地址注入总线错误；改**代理实验 + 不变量论证**（KNOWN_ISSUES #65 / debug-knowledge mcu 域） |
+| `i2c_read` 某地址返回 `ret=0`（成功）但数据全 `0xFF`；或"被滤波器拦截"用例断言 `ret_blocked<0` 却 FAIL | **单点 ACK 不证明器件在链路上**（应答者可能是**同址邻居**、别的链路或中间器件） | 取**本级证据**：GDB 读滤波器 `INTR_RAW`/`SMBF_NONWHITELIST` 是否锁存该违规地址 + 看数据段内容。**⚠️ 2026-09-22 更正**：原"被拦地址照常 ACK(`ret=0`)+`0xFF` ⇒ 判据别写 `ret<0`"取自**同址冲突**（DUT 与板载器件撞址 `0x50`）的观测 ⇒ **作废、待非撞址复验**（换址后被拦地址实测 NACK）；重验前**不得**放宽/改写 `ret<0` 类断言（裁定权在驱动侧）（KNOWN_ISSUES #110/#111 更正段 · debug-knowledge mcu 域 `addr-ack-not-device-evidence.md` / `bus-addr-collision-pass-not-attributable.md`） |
 | 带 `is_app_cpu_running()` 双核运行态守卫的驱动 API **全部 `-EBUSY`**（通路静默不可用，用例全 FAIL） | **⚠️ 2026-09-18 更正：该因果链未获实测支持。** 实测 `set {int}0x4002200c = 2` 后**回读 = `0x0`**（GDB 与固件自读两路一致），emmc 用例 SKIP=0、`disk_access_init=0`、读写 PASS ⇒ **守卫未生效**；写 1 回读 `0x3` 且触发 bootrom 级重启。"写 2 保持复位 ⇒ `>0` ⇒ 守卫误判"基于 SDK 注释，未获实测支持 | 被测驱动有该守卫时仍**先核 `APP_CPU_SRST` 的实测回读值**（别只按 SDK 注释推断），用例按寄存器值断言/`ztest_test_skip`，别误判硬件（KNOWN_ISSUES #75 更正批注） |
 | 串口只见 boot banner + `START - <name>`、**无后续 PASS/FAIL/INFO**，SUMMARY 恒 `ZT_BOOT seen` | `dbg_run.py` capture 轮 gdb stdout 管道未排空 ⇒ gdb 写阻塞、采集停摆（**工具缺陷，根因已定位**；用例其实已跑完：RAM `TR_PASS` + `test_results_valid=0x5A`） | 先 `dump_results.py --json` 读 RAM 确认跑没跑完，**别按"固件挂死"继续查串口**；修法 = 补 drain 线程 + `proc.wait()`（qsh-test-run §3），`i2c_pure_test` 已修、其余工程待推广（KNOWN_ISSUES #97） |
 | 2os flash 固化后 **cpu1 正常、cpu2 串口全静默（0 行）** | **本板 bootrom 只引导 cpu1**；cpu2 烧进 flash `0x08100000` ≠ 会自动起——镜像需先 staging 进 RAM（GDB `restore` 或 cpu1 boot 搬运代码）；该 build 的 `boot_cpu2()` 只 dereset、不搬运 | 先 GDB 读 `0x10000000` 是否为本 case 的 cpu2 镜像（ELF magic + `e_entry` 对 objdump）⇒ 否即"镜像从未上电"（KNOWN_ISSUES #102 / `ref-flash-variants.md` §2 / SPEC_REFERENCE §6.7.3） |

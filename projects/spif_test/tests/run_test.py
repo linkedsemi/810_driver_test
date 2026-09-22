@@ -342,7 +342,6 @@ def main():
         src_dir="cpu1_spif_test", build_subdir="target",
         build_progress="auto", build_timeout=900,
         build_conf=False, pre_erase=True, hold_cpu2=True,
-        mem_dumper=str(SAMPLE_ROOT / "tests" / "scripts" / "dump_results.py"),
         session=lambda: session_dir or (
             Path(args.session_dir) if args.session_dir
             else allocate_session_dir(REPORTS_ROOT, date_str)))

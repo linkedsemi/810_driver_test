@@ -24,6 +24,11 @@ python scripts/dbg_run.py --wpacket-size 0                   # 关闭写包提�
 - **写包提速（41x）**：load 前 `set remote memory-write-packet-size 16384` +
   `set remotewritesize 16384`，CKLink load 实测 1KB/s → 41KB/s（192KB 镜像
   ~190s → ~5s）；stub 不接受时回 `Remote failure`/`E22` 立即失败
+  - **★ 口径更正（2026-09-21 实测）**：请求包长 16384 / 2457 / 1024 → gdb **协商**
+    `2493 / 1820 / 875 bytes/write`，**但加载吞吐恒 41 KB/s、墙钟恒 3~4s（与包长无关）**
+    ⇒ **41 KB/s 才是链路瓶颈**。判吞吐看 gdb 的 `Transfer rate: N KB/sec`，
+    **别从 `N bytes/write` 反推提速倍数**。双核 `load_and_run` 的"不设时慢 6.7 倍 / 41x"
+    注释已按实测撤回。见 `qsh-debug` SKILL.md §3.1。
 - **交互式流程（★ `KNOWN_ISSUES.md` #25）**：reset+load 后等 "Transfer rate" 再 continue。
   一次性 -ex 链的 continue 在 load 刚完成瞬间发出，DebugServer 状态不佳时
   被静默丢弃 → CPU 停 halt 无 BOOT，detach 恢复运行（回归 3/3 复现）；

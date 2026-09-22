@@ -124,8 +124,37 @@ def split_case_dir(name):
     return None, None
 
 
+def _drop_project_local_modules():
+    """清掉上一工程遗留的**工程本地**模块，避免裸名 import 串味。
+
+    ★ 为什么需要（2026-09-22 实测）：重放在**同一进程**里依次加载多个工程，而工程
+      脚本用**裸名** import 自己的辅助模块（如 `from dump_results import TEST_NAMES`）。
+      首个 import 过的工程会把它缓存进 `sys.modules` ⇒ 之后别的工程再 import 同名
+      模块就**拿到上一个人的**。实测：`mbedtls_test` 先加载并缓存了它自己的
+      `dump_results`（只有 `unit_test_names`），后到的 `otbn_selftest` /
+      `otbn_test` 执行 `from dump_results import TEST_NAMES` 直接抛
+      `ImportError` ⇒ **`--l2-direct` 全量重放在半路整批断掉**，后半程 case
+      完全没被验证（却看起来像"跑完了"）。
+
+    判据：模块 `__file__` 落在 `<repo>/projects/` 之下即为"工程本地"。
+    `common/` 下的共享模块**不动**（本就全局共享、无同名冲突）。
+    工程脚本自身的 `_replay_<project>` 也会被清掉 —— 无妨，下次加载会重建。
+    """
+    root = (Path(__file__).resolve().parents[1] / "projects").resolve()
+    for name, mod in list(sys.modules.items()):
+        f = getattr(mod, "__file__", None)
+        if not f:
+            continue
+        try:
+            if root in Path(f).resolve().parents:
+                del sys.modules[name]
+        except (OSError, ValueError):
+            pass                          # 路径异常不该拖垮重放
+
+
 def load_project_module(project):
     """按路径加载工程 `run_test.py`（模块名唯一，避免 24 份同名互撞）。"""
+    _drop_project_local_modules()         # ★ 先清工程本地模块，防裸名 import 串味
     path = project_script(project)
     name = f"_replay_{project}"
     spec = importlib.util.spec_from_file_location(name, path)
@@ -564,8 +593,10 @@ def main():
     ap.add_argument("--render-from-json", action="store_true",
                     help="校验模式：用归档 .json 反推 .md 并与原报告比对")
     ap.add_argument("--l2-direct", action="store_true",
-                    help="纯 L2 路径：直接调 common/process.process_archive()"
-                         "（不经 main()、不猴补丁硬件层）")
+                    help="★ 真正离线：纯 L2 路径，直接调 common/process.process_archive()"
+                         "（不经 main()、不猴补丁硬件层，实测 0.0s/case）。"
+                         "**不带本开关会走工程 main()（含 DebugServer 前置检查）⇒ 不是离线、"
+                         "DS 未起时每 case 白等 ~52s 且不产出报告**")
     args = ap.parse_args()
 
     session = Path(args.session)
@@ -617,6 +648,12 @@ def main():
     print(f"重放会话 : {session}")
     print(f"输出目录 : {out_root}")
     print(f"模式     : {'报告重渲染（json→md 校验）' if args.render_from_json else '串口重放'}")
+    if not args.l2_direct and not args.render_from_json:
+        print("[WARN] 未加 --l2-direct ⇒ **这不是纯离线重放**：本模式会走工程 main()，"
+              "其中含 DebugServer 前置检查。DS 未起时**每个 case 白等自愈超时"
+              "（实测 51.7s）且不产出任何报告** —— 表现为「跑很久、目录是空的」。\n"
+              "       只改 L1/L2 脚本、不碰板子时请加 --l2-direct（实测 0.0s/case、真离线）。",
+              file=sys.stderr)
     print("-" * 72)
 
     n_ok = n_same = n_fail = 0

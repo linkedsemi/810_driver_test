@@ -51,6 +51,12 @@ run_all.py 加 `cleanup_cklink()`（try/finally），任何退出路径都释放
 **23. GDB 写包提速 41x**
 load 前发 `set remote memory-write-packet-size 16384` + `set remotewritesize 16384`。
 192KB 镜像 ~190s → ~5s。已固化进单核 dbg_run.py/run_test.py。
+> **★ 实测口径更正（2026-09-21，N-3）**：请求 `memory-write-packet-size` 16384 / 2457 / 1024 →
+> gdb **协商** `2493 / 1820 / 875 bytes/write`，**但加载总吞吐恒 41 KB/s、墙钟恒 3~4s（与包长无关）**
+> ⇒ **41 KB/s 才是链路瓶颈**，包长在实测区间内不改变加载耗时。**判据看 gdb 的
+> `Transfer rate: N KB/sec`**（真实吞吐），**不得从 `N bytes/write`（协商包长）反推提速倍数**。
+> 双核 `load_and_run` 原注释"不设时慢约 6.7 倍 / 单核 41x 提速"**已按实测撤回**
+> （工作区已无 `GDB_WRITE_PKT`）；单核路径两行 `set` 仍在。见 `qsh-debug` §3.1。
 
 **24. 单会话内二次 load 静默挂死**
 第一次 load 后 interrupt 再发 load → gdb 无输出。改单遍烧录；免烧用 `--no-load`。
@@ -440,6 +446,61 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
 - 详版（含实测与失败样例）：`debug-knowledge` 知识库 `common/write-text-newline-flip.md`。
 - 关联：`SPEC_REFERENCE.md` §6.4.7。
 
+**107. `set -e` 下"命令替换 + 事后查 `$?`"是死写法 —— 赋值那一步就终止脚本**（2026-09-21 登记；本体属 O-24 工作区改动，**未提交**，勿当已结案）
+- 现象：`scripts/test_common.sh::warn_if_build_stale()` 的外层 `timeout ${STALE_SCAN_TIMEOUT_S}` 触发时，
+  脚本不是"打印 `[WARN] …已跳过` + continue"，而是**整条 `test.sh` 当场退出 rc=124**；WARN 一行打不出来、
+  `if [ "$rc" = "124" ]` 分支**不可达**。
+- 根因：`set -e` 在各 `test.sh` 顶部（行号随工程不同）与 `scripts/test_common.sh:32` 都开着。bash 对"**仅赋值、末位是命令替换**"
+  的简单命令**取命令替换的退出码**为整条命令的退出码 ⇒ `raw="$(timeout … find …)"` 在 find 超时
+  （`timeout` rc=124）时自身即"失败命令" ⇒ `set -e` 在**赋值处**终止脚本，后面的 `rc=$?` 轮不到执行。
+- 实测（真实脚本，非合成）：`cd projects/iopmp_test/tests/case_default && STALE_SCAN_TIMEOUT_S=0.001 bash test.sh -r`
+  → 只输出 2 行加载横幅后 **rc=124**、无 WARN；同函数加 `set +e` 唯一变量对照 → 正常打印 WARN 并 continue。
+  ⇒ "离线已验证超时分支正确跳过"**只在未开 `set -e` 时成立**。
+- 判据：任何 `var=$(外部命令)` 后跟 `$?` 判断的代码，在带 `set -e` 的脚本里都要复核；修法 =
+  `if ! raw="$(cmd)"; then …` 或 `raw="$(cmd)" || rc=$?`（本文件 `test_common.sh:328` 注释即此约定）。
+- 通法（跨硬件）：`debug-knowledge` common 域 `set-e-swallows-command-substitution-rc.md`；
+  执行侧指针 `qsh-test-run` §4.2。
+- 状态：本体属 **O-24 工作区改动（未提交）**；`set -e` 死代码的同批处置属 **O-25（已修 2026-09-21，忠实探针 A/B 验证：修前无 WARN 无标记行 rc=124 → 修后 WARN + 标记行 + rc=0）**。**代码未提交**。两处 `find` 现已改为 `raw="$(…)" || rc=$?`。
+  本条**只沉淀判据，不代表已修 / 已验证结案**。
+
+**108. "文档记已修" ≠ 代码里有 —— 未提交的工作区改动会被 `checkout`/`reset`/`west update` 静默冲掉，文档不跟着变**（2026-09-21 登记）
+- 实例一：`projects/eth_test/tests/COVERAGE.md:200` 记 `phy_realtek_rtl8211f.c` 两处自旋已于
+  2026-09-18 加 `k_timepoint` 超时（`PHY_RT_RTL8211F_RESET_TIMEOUT_MS = 1000`）。**2026-09-21 复核：
+  该修复不在工作区、也不在任何提交里** —— 复核 `phy_realtek_rtl8211f.c:162/:174` 仍是原来的
+  **无超时 `do…while`**；符号 `PHY_RT_RTL8211F_RESET_TIMEOUT_MS` 在全仓**只出现在文档里**
+  （本条目 + `COVERAGE.md` + `DEFECT_ANALYSIS_2026-09-17.md` + `OPEN_ITEMS.md`），**任何 `.c/.h` 里都没有**。
+  （注：任务书原话"全仓只存在于该 COVERAGE 文档中"**不准确** —— 另两份文档也有该符号，但不改变
+  "源码里没有"这一结论。）
+- 实例二：`OPEN_ITEMS O-16` 记的 `mdio_dwmac.c` 返回值修复同样不在树里。
+- 根因：这些改动当时只在工作区、未提交 ⇒ 后续 `git checkout`/`reset`/`west update` **静默丢弃**；
+  而文档（COVERAGE / OPEN_ITEMS）不跟着回退 ⇒ 看文档的人完全无从察觉，误当"已修"。
+- **通法（引用任何"已修"结论前必做两步）**：① `git status --porcelain <file>`；② 在源码里
+  **搜该修复的符号**（如上面那个宏名）—— 符号不存在 = 修复不存在。
+- 现状参考：`zephyr` 仓库当前 `git status` 只有 7 处未提交改动，**驱动相关仅 `wdt_iwdg_ls.c`**
+  （唯一幸存的一处）。
+- 关联：**#88**（`--skip-build` 产物新鲜度）同族 —— 都是"看着像最新的东西其实不是"。
+
+**109. 多工程同进程加载器只隔离了"工程脚本"、没隔离"工程辅助模块" ⇒ 裸名 import 跨工程串味，全量离线重放在半路整批断掉，却看起来像跑完了**（2026-09-22 实测）
+- 现象：`python regression/replay.py --session reports/<会话> --l2-direct --freeze-time` 全量重放时
+  **半路抛一个 `ImportError` 整批中止**，但**看起来像跑完了** —— 前面各 case 的 `[等价]` / `[差异]`
+  行都正常打印，只有一条 Traceback；后半程 case **完全没被验证**（无任何"未跑"标记）。实测
+  `51 个 case 只重放到第 38 个就断`（第 39 个起完全没跑）。
+- 报错：`ImportError: cannot import name 'TEST_NAMES' from 'dump_results'
+  (…/projects/mbedtls_test/tests/scripts/dump_results.py)`。
+- 根因：重放在**同一进程**里依次加载多个工程；工程脚本用**裸名** import 自己的辅助模块
+  （`from dump_results import TEST_NAMES`）。`load_project_module` 已用唯一模块名
+  （`_replay_<project>`）隔离工程脚本**本身**，但**没隔离工程的辅助模块** ⇒ 首个 import 过
+  `dump_results` 的工程（`mbedtls_test`，其模块只有 `unit_test_names`）把它缓存进 `sys.modules`，
+  后到的工程（`otbn_selftest` / `otbn_test`）再 import 同名模块就**拿到上一个人的** ⇒ ImportError。
+  与 `import` 补丁目标同族（G-RUN-1：`from X import Y` 绑定的是定义模块的属性，不是调用模块的）。
+- **教训（可复用通法）**：**多工程同进程加载器必须隔离"工程本地模块"，不只隔离工程脚本本身** ——
+  凡是模块 `__file__` 落在本仓 `projects/` 之下的，加载下一个工程前都要从 `sys.modules` 清掉；
+  `common/` 下的**共享模块不动**（本就全局共享、无同名冲突）。判据按 `__file__` 归属，不按模块名。
+- 已修（2026-09-22）：新增 `regression/replay.py::_drop_project_local_modules()`，在
+  `load_project_module()` 开头调用（清 `sys.modules` 中 `__file__` 位于 `<repo>/projects/` 之下的条目）。
+  **修前后全文重放对比**：修前 `重放 38（半路崩）` → 修后 `完成：重放 51 / 与归档逐字节相同 12 / 跳过 0`。
+- 关联：全量重放的判定中性证据见 `SPEC_REFERENCE.md` §6.4.10；重放入口/用法见 `qsh-test-compare` §4。
+
 ---
 
 ## 环境与并发
@@ -639,7 +700,7 @@ RSTACT whole 预期 NACK → 切回后 RSTACT peripheral / RSTDAA 应正常 → 
   属性**（`drive-push-pull`/`drive-open-drain`/上下拉），否则上一次 apply 的电平配置会泄漏到下一次；
   且 PMU 域 pad 配置模块复位清不掉，只有全芯片复位才还原——排查"切回后失效"优先扫 PMU 域寄存器。
 
-**98. `i3c_i2c_switch_test` 的 CTRL 串口同一轮出现 `PROJECT EXECUTION FAILED` 与 `SUCCESSFUL`（前半已定论）；RAM 侧 `ctrl_failed=1` 而 `ctrl_fail_reason` 为空（后半有痕迹、缺手段）**（2026-09-19）
+**98. `i3c_i2c_switch_test` 的 CTRL 串口同一轮出现 `PROJECT EXECUTION FAILED` 与 `SUCCESSFUL`（前半已定论）；RAM 侧 `ctrl_failed=1` 而 `ctrl_fail_reason` 为空（后半：2026-09-21 拿到 cpu2 手段后**不可复现**，改判"观测口径可疑"）**（2026-09-19）
 `case_switch_core` 的 COM18 原始行里两个相反的完成标记**并存**（`parse_ztest` 取最后一条 ⇒ 报告显示 SUCCESSFUL）；
 同轮 GDB 读 RAM：`ctrl_failed = 1`、`ctrl_fail_reason = ""`（空）、`test_results[10] = TR_FAIL`
 （`broadcast_nack_recovery`），TGT 同槽 = `TR_NOT_RUN`。r1/r2/r3 **三次复现**。
@@ -664,17 +725,42 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   染成 CONFLICTING）。⇒ 二选一：让命令通道工程的自裁决行**不被 `_EXEC_RE` 命中**（异形文案），
   或 **glue 在无注册测试时不调 `ztest_run_all`**（qsh-test-gen §1.4 第 4 条）。
 
-**后半 —— reason 被抹：有确定性痕迹，机制仍分不清（2026-09-19 取证）**：
-`test_results[10]=TR_FAIL`、`ctrl_failed=1`、`test_results_valid=0x5A` 均正常；
-但 `x/s test_reasons[10]` 读**空**，**原始字节** = `00×8` + `"hole_should_nack"`
-（目标串 `rstact_whole_should_nack`(24) 的**前 8 字符被抹成 0**，ELF 里字面量完整）；
-`ctrl_fail_reason`（暂存 `0x100665f0`）**96 字节全 0**。两次独立运行字节级一致 ⇒ **不是"没写"，
-是"写过又被部分/整体清零"**。
-- **静态矛盾仍在**：`ctrl_test_end()` 只有两条路径（FAIL 带 `ctrl_fail_reason` / PASS 带 `""`），
-  而 `ctrl_set_fail()` **必写 reason** ⇒ "FAIL + 空 reason"在纯 switch 编译路径下无法解释。
-  app 记账逻辑与 `tr_init`（T-Head `th.srb` 逐字节写）**都排除不掉**。
-- **卡点 = 缺手段**：控制器(cpu2)无法从当前 gdb 会话下断（会话控 cpu1；`BP@0x10000b2a` 75s 未命中）
-  ⇒ 需"能对 **cpu2** 下断 / RAM 写监视"的手段才能定位（picolibc `vsnprintf` 写偏移？他处清零？加载布局？）。
+**后半 —— "reason 被抹" 2026-09-21 用 cpu2 手段复测：不可复现，改判"观测口径可疑"**：
+拿到 cpu2 调试/写监视手段后（见本节末「cpu2 通道」）复测，**未复现任何清零**：
+- 控制器 ELF 地址：`ctrl_fail_reason`@`0x100665f0` / `test_reasons`@`0x10066658` / slot10@`0x10066a18`。
+- 硬件写监视（`HWWP=3`）只抓到两个写者：`ctrl_set_fail`→`vsnprintk`、`tr_record`→`vsnprintf`，
+  **都写入完整正确串**；4 次不同配置（带/不带 1026 客户端、带断点/带写监视、干净 DS）均无清零。
+- 真实 harness（`run_test.py --case case_switch_core`）跑完后读 cpu2：`ctrl_fail_reason` 与
+  `test_reasons[10]` **逐字节 = `rstact_whole_should_nack`**（`0x72 0x73 0x74 0x61 0x63 0x74 0x5f 0x77 …`），
+  `test_results[10] = 0x01 = TR_FAIL`。
+- ⇒ 原"有确定性痕迹 / 写过又被部分清零"**改判为观测口径可疑**：最可能的成因是按下面
+  「cpu2 通道」的访问纪律读到了**未运行 / 陈旧**的 cpu2 RAM（cpu2 没跑过的会话里其 `.bss`
+  读作全 0 初值或上一轮残留），**不是真被谁清零**。**"缺手段"卡点就此消解**。
+- **不得据此推翻前半与 `broadcast_nack_recovery` 的 FAIL**：双 `PROJECT EXECUTION` 标记（前半，
+  已定论）与 `broadcast_nack_recovery` 的 FAIL **真实且稳定复现**，是固定 `k_sleep(6ms)` 抢窗的
+  **时序脆弱项**，与"reason 被抹"是两件事。
+
+**cpu2 通道（2026-09-21 实测；本项据此消解"缺手段"）**：
+- DebugServer 为 **cpu2 开第二个 TCP 端口 `1026`**（启动日志 `GDB connection command for CPUs(CPU0): …:1025`
+  与 `CPUs(CPU1): …:1026` 并列）；`target remote 127.0.0.1:1026` 后 `info threads` 显示
+  `Thread 2 (CPU#1)`、PC 落在 cpu2 地址域 ⇒ **这是对 cpu2 下断点 / 看 cpu2 现场的手段**。
+  **前提：DS 启动时 cpu2 必须已脱离复位**，否则日志打 `ERROR: CPU_1: Fail to enter debug mode … AllUnavail: 1`
+  且**只监听 1025、不监听 1026**（单核路径 `load_and_run_single` 会写 `APP_CPU_SRST=2` 按住 cpu2，
+  紧接的 DS 重启就会命中此形态）；处置 = 先 `set {int}0x4002200c = 1` 释放 cpu2，再重启 DS。
+- **★ 让 1026 出现的操作配方（2026-09-22，用户提供——用户拥有该硬件，硬件域权威；本次未实测复现）**：
+  ① **先把 cpu2 跑起来**（运行态；单核路径写 `APP_CPU_SRST=2` 按住 cpu2 时**没有 1026**）；② **重启
+  DebugServer**，让调试器**重新枚举核**；③ 之后 **1026 才出现**（= cpu2 那个核）。**软件动作、无物理
+  操作、可自动化**（框架已有 `restart_debugserver_stable()`）。与上条「DS 启动时 cpu2 必须已脱离复位」
+  是**同一件事的两种说法**（一个说状态、一个说怎么做）——**唯一路径，不存在"二者其一"**；与上面记的
+  **实测失败形态恰好自洽**（都归结为"DS 重启时 cpu2 必须在运行态"）。配方细节与判据的单一来源见
+  `qsh-debug` §6「cpu2 通道」。
+- 目标信息报 `HWBKPT number is 3, HWWP number is 3` ⇒ **硬件写监视（gdb `watch`）可用**，
+  实测能停在写者处并给出 backtrace。
+- **★ 凡碰过 1026，下一次批跑前必须重启 DebugServer**：任何对 1026 的 gdb 访问（含 `detach`）
+  都把 cpu2 留在 halted —— `detach` 只"恢复连接前状态"，实测 cpu2 停在 `__start`(0x10000000)
+  不再前进 ⇒ 此后**不重启 DS，后续回归的 cpu2 侧全部不运行**（CTRL 串口 0 字节、cpu2 `.bss`
+  保持陈旧值或全 0）。实测对照：同一条加载流程，DS 重启前 = CTRL 0 字节 / cpu2 PC 停 `__start`；
+  DS 重启后 = CTRL 4954 字节 / 完整 token 流 / cpu2 PC 在 `arch_cpu_idle`。操作侧见 `qsh-debug` §2.3 / §6 / §7。
 - **勿据此判驱动**。关联：#53（mem reason 写入/读取下标口径不一致，同属待证）· #51/#52（本工程恢复域）·
   `COVERAGE.md` 已把 `broadcast_nack_recovery` 记为脆弱项（固定 `k_sleep(6ms)` 抢窗口）。
 - **增补（2026-09-21，归因隔离）**：该脆弱项 2026-09-17 批次 PASS、本轮 FAIL，而同期**框架改造**
@@ -920,6 +1006,8 @@ pfr_tpm 模块把若干控制器标为某滤波器的**配对控制器**，其�
   （引脚重叠），后者是外接跳线到 `i2cfN.SCLI/SDAI` 的**任意**实例，**DT 里没有任何属性描述**。
   两个角色的引脚关系不同、不能互相推断；更不可用后者的假设去否定前者。上游 master 建议做成
   **DT alias**（用例一律 `DEVICE_DT_GET(DT_ALIAS(...))`），接线变更只改 overlay 一行。
+- **与 i2cf 上板另两条独立坑的区别**（本节现象 = **总线无波形/设备静默不就绪**）：#110（单点 ACK 不能定位器件）
+  与 #111（i2cf4 "零流量"真因是**接线错**）现象是 **有 ACK、也有数据段（`0xFF`）**，**不属引脚让渡问题**，勿混为一谈。
 
 **84. 裸 `spi_nor_op` 用例必须适配器件运行态；`spi-ctrl-caps-mask` 是 disable 掩码（更正 INBOX G-C1C2-2 的"上电即进 QPI 4-4-4"）**（2026-09-18）
 - **属性语义**：binding `dts/bindings/spi/linkedsemi,ls-qspi.yaml` 的位表全部写作 **"bit N : disable …"**
@@ -983,6 +1071,14 @@ deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 �
     ⇒ 与用例断言无关，是**环境（DebugServer / 连接）层**的间歇失败。
   - **判据**：这两个 case 的**单次结果不可判**，必须**多次取众数**（多数 PASS 才判 PASS），
     并把 prime 失败 + DS 重启记进报告。与本次 G-E1/G-E2（DS 单点故障级联）同层，见 qsh-test-run §4.1。
+- **补注 2（2026-09-21 晚）：第三种 sub-mode —— 「prime 首轮零输出，且 harness 重启 DS 重试后仍零输出」**。
+  定向复测中 `case_pure_i3c_6m25`：首轮 `pass-1 (prime)` **20s 零输出 → `load_fail`**，harness
+  重启 DS 重试**仍**零输出；随后 DS 重启后单跑复测 **PASS 35/35、零 RETRY**。同批其余 3 个 i3c case
+  （`case_mixed_1m_12m5` / `case_mixed_400k_1m` / `case_pure_i3c_12m5`）一轮即过。
+  原始日志：`810_driver_test/tmp/ethpc/flake_evidence/round1_FAIL_pure_i3c_6m25.log`。
+- **⚠ 与 `OPEN_ITEMS O-24` 是两个独立问题、症状完全同形**：O-24 = `warn_if_build_stale`
+  未剪枝导致 121s 吃掉判活窗口（已修）；**#87 是与它无关的既有 flaky**。
+  **排查时不得互相引用为同一事**（2026-09-21 当天已因此误导过一次父会话）。
 
 **88. per-case 构建粒度：`--skip-build` 复用前必须按该 case 自己的产物校验新鲜度**（2026-09-18）
 - 事实：**每个 case 有自己独立的 `tests/<case>/build/` 目录**，同一工程"首个 case 已构建"**不覆盖**
@@ -1190,4 +1286,83 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   该 case 拿不到尾部证据的真因是 #97 的管道缺陷（与耗时正交），修 `dbg_run.py` 后串口可正常判读。
 - 证据：`tmp/hw4/cap_ts_r1.txt`（逐轮时间戳）· `tmp/hw4/load_timing_nopkt.log`（load 4s）。
 - 关联：qsh-test-run §6 · KNOWN_ISSUES #97。
+
+---
+
+## i2cf_test 域（2026-09-22 登记）
+
+**110. 单点 ACK 不能定位器件 —— 地址选择性对照能排除"驱动幻影"，但不能区分"真器件"与"滤波器拦截"（两者都 ACK）**（2026-09-22 实测；**当日两轮实验推翻了早期推论**；⚠️ **本条"拦截也 ACK"的核心推论已作废·待非撞址复验 —— 见文末更正段**）
+- **早期推论（同日早些时候，已推翻）**：i2cf_test 上游用例以 `i2c_read(up, &v, 1, 0x50)` 的返回判"被拦"；
+  首轮实测 `ret=0`（未拦）而滤波器寄存器全零（`INTR_RAW=0 / SMBF_NONWHITELIST=0 / SMF_FSM=0`），
+  曾据"相邻地址扫描（`0x50→ret=0`、`0x51/0x08→-EIO`）"推出 **"0x50 是真器件"**。
+- **推翻（同日稍晚实测）**：接线更正后，同一 `i2c_transfer` 调用点只改地址做对照 ——
+  读 **`0x33`（无器件）→ `ret=-5(-EIO)`**；读 **`0x50`（被滤波器拦截）→ `ret=0` + 数据 `0xFF`**。
+  ⇒ **被拦下的地址照样 ACK**（但不转发 ⇒ 数据段浮空 `0xFF`）⇒ **地址选择性对照也不能区分二者**
+  —— 两者都表现为"该地址 `ret=0`、邻址 `-EIO`"这同一形态。
+- **判定（要区分"真器件"与"被拦截"，须再取本级证据）**：读本级锁存寄存器 —— `INTR_RAW` 非零且
+  `SMBF_NONWHITELIST` 锁存了该违规地址 ⇒ 是**被拦截**，不是真器件应答；或核**数据段内容**
+  （浮空 `0xFF`/与真实内容不符 = 未转发）。
+- **来源**：`ret` 对照与寄存器值 = **实测**；"接线接错"= **用户更正**（其现象为实测）。
+- 可复用招式（含"地址选择性对照仍不充分"这一层）已入 `debug-knowledge/mcu/addr-ack-not-device-evidence.md`。
+- **与 #83 / #78 的区别（勿混为一谈）**：#83 = 引脚让渡（`pinctrl-noinit`），现象是**总线无波形 / 设备静默不就绪**；
+  本例现象是**有 ACK、也有数据段（`0xFF`）**，是完全不同的根因。#78 = `pfr_tpm` 的 `spif_add_cmd()` 表外野写
+  （另一个模块的 P0 缺陷）。
+- **⚠️ 更正（2026-09-22 本轮实测；上述"拦截也 ACK"的核心推论作废、待非撞址复验）**：本条核心观测
+  "被拦地址 `0x50` → `ret=0` + 数据 `0xFF`"是在**片内 target 与板载器件同址（二者都是 `0x50`）**的
+  配置下取得的 ⇒ **同一地址上有两个应答者，观测不可归因**。把片内 target 改到 `0x33`（避开 EEPROM
+  惯例地址、改址前两侧实测空闲）后复测：**被拦地址 `0x33` 返回 `ret=-5`(NACK)**（`SMBF_NONWHITELIST`
+  锁存 `nw_addr=0x33`、ISR 触发 1 次）⇒ 旧的 `ret=0` 极可能是**主机自己总线上的 `0x50` 器件先应答**，
+  **不是滤波器行为**。⇒ 本条"地址选择性对照也不能区分真器件与拦截（两者都 ACK）"**作废、待非撞址复验**；
+  重验完成前**不得**据此写"被拦 ⇒ ACK + `0xFF`"的断言，或据此改 `ret<0` 类判据。
+  **仍然成立（与撞址无关）**：单点 ACK 不足以证明器件在**指定的那条链路**上 —— 本轮正是它的实例
+  （同址邻居替 DUT 应答，骗过了基于单点 ACK 的归因）。判别法已入
+  `debug-knowledge/mcu/bus-addr-collision-pass-not-attributable.md`。
+  **连带纠正**：早期推论"`0x50` 上有真器件"**方向是对的**（板上确有器件）—— 被否掉的只是它的**归因理由**
+  （把它当成片内 target / 或当成滤波器假 ACK）；而"推翻段"里"`0x50` 是被滤波器拦截"的**归因**才是撞址产物。
+- **来源标注**：`ret` / 寄存器值 / 扫描值 = **实测**；"板上确实挂了 `0x50`/`0x51` 器件（EEPROM 惯例地址）"
+  = **用户告知**（其导致的现象为实测）。
+
+**111. i2cf4 "滤波器零流量"的真因是接线接错（非"上游 master 实例选错"）；滤波器拦非白名单地址时主机看到 ACK(`ret=0`)+数据 `0xFF`，不是 NACK**（2026-09-22 实测；"接线错"为用户更正；⚠️ **后半"被拦 = ACK"已作废·待非撞址复验 —— 见文末更正段；前半"接线错"仍成立**）
+- **纠偏（四要素）**：上一轮把 `i2cf4` 寄存器全零（`INTR_RAW=0`）归因为"**上游 master 实例选错**
+  （`i2c2`/`i2c5` 都不是接在 i2cf4 SCLI/SDAI 上的那个）"，准备改 overlay 的 `i2cfupstream` alias ——
+  **用户更正："刚 IO 接错了"**，链路本就是 `i2c2(主机)→i2cf4 输入(SCLI/SDAI)→i2cf4→i2c3(从机)`，
+  **配置一行都不改，只改物理接线**；overlay alias 保持 `i2cfupstream = &i2c2`。
+- **实测（接线更正后）**：GDB 读 `i2cf4@0x40091800` ISR 进入前 `INTR_RAW=0x2`(ADDRESS_BEYOND_WHITELIST)、
+  `SMBF_NONWHITELIST=0x5000`(锁存地址 0x50)、`SMBUS_FILTER_SET=0x0` ⇒ **流量确实进了滤波器**；
+  串口新出现 `i2c_pfr_filter: ... address beyond whitelist: i2c@0x50` ⇒ "上游实例错"归因**被证伪**，
+  **"接线错"才是正解**。结果 `FAIL 14/18` → **`15/18`**（`master_eeprom_rw` FAIL→PASS）。
+- **新技术事实**：滤波器拦下非白名单地址时，上游 `i2c_read` 返回 **`ret=0`（成功）**但数据字节 `0xFF`
+  （无器件驱动），**不是 NACK** ⇒ `filter_blocks_nonwhitelist` / `isr_addr_beyond_whitelist` 的
+  `ret_blocked < 0`（"被拦必须 NACK"）判据在本 HW 上**不成立**（详见 #110）。
+  **⚠️ 2026-09-22 更正：以上"新技术事实"与由其推出的判据结论均已作废、待非撞址复验**（见文末更正段）。
+- **残项（交驱动侧裁定，勿擅自放宽判据）**：① 上述 A 类判据归属；② `filter_passthrough_whitelist`
+  授权 0x50 透传读回**尾部 2 字节错**（pattern `5a..5f 60 61`，实读 `5a..5f 40 40`），而**旁路同址
+  16B 读回完全正确** ⇒ 指向**滤波器数据通路**（非从设备/非总线）。完整交接单 `tmp/i2cf_final/CONCLUSION.md`，
+  跟踪项 `OPEN_ITEMS.md` O-30。
+- 关联：#110 · `debug-knowledge/mcu/addr-ack-not-device-evidence.md` · qsh-debug §7 · qsh-test-compare §2。
+- **⚠️ 更正（2026-09-22 本轮实测；后半作废、待非撞址复验）**：上条"新技术事实"（被拦 ⇒ `ret=0` + `0xFF`、
+  不是 NACK）取自**同址（`0x50`）**配置 ⇒ **该技术事实作废**；换址（`0x33`）后实测**被拦地址 `ret=-5`(NACK)**
+  （见 #110 更正段）⇒ 由它推出的"`ret_blocked < 0` 判据在本 HW 上不成立"亦**待重验**。重验前
+  **不得放宽** `ret_blocked` / `ret_free` 类断言（两种可能处置相反，**裁定权在驱动侧**，跟踪项 `OPEN_ITEMS` O-30）。
+  **本条前半不受影响、仍成立**：`i2cf4` "滤波器零流量"的真因是**接线接错**（非"上游实例选错"），
+  `SMBF_NONWHITELIST=0x5000` 锁存证明流量确实进了滤波器。
+- 关联（新增）：`debug-knowledge/mcu/bus-addr-collision-pass-not-attributable.md`（同址判别法）。
+
+**112. `i2cf_test` 的 `filter_blocks_nonwhitelist` 自证步稳定 FAIL（**仅登记现象与假设，结论待定**）**（2026-09-22 实测，归**驱动侧**定性）
+- **现象（两轮复现，非 flake）**：`filter off` 后上游读 `0x33` 仍 `ret=-5`；而 **filter on + 白名单授权
+  `0x33`** 时同一条上游读**成功**（即 `filter_passthrough_whitelist` PASS）。
+- **领先假设（未证实，勿当结论）**：违规事务后滤波器停在 blocking/stuck 态，直到 `INTR_CLR`
+  （`isr_addr_beyond_whitelist` 每笔事务前都清，故该用例过）或 `cold_reset`（`i2c_filter.c` 的 cold_reset
+  走 `reset_line_toggle` 硬复位）才恢复 —— 本用例的自证步**不清中断**。**次选假设**：本 HW 的
+  `en(false,false,·)`（monitor 态）本身就不转发。
+- **纪律**：**只登记、不结论**（两条假设处置相反）；`ret_free` 断言**不得放宽**。驱动侧定性前
+  **不入任何 skill**（假设未证实）。
+- 关联：#110 更正段 · `filter_passthrough_whitelist`（同 case 内 PASS）· `projects/i2cf_test/tests/COVERAGE.md`。
+
+**换址后的陈旧文案（残留清查，2026-09-22）**：脚本侧**已同步**（`run_test.py:151` / `test.sh:19,94` /
+`i2cf_test.c:969` 均已改为"零外部器件 + 片内 target `eeprom@33`"，本次核实）；**已生成的报告未修** ——
+`reports/2026-09-21-1/` 与 `reports/2026-09-22-1/` 的 `i2cf_test_report.md` 头部"接线: 外接 EEPROM@0x50…"
+及 `serial_*.log` 内 `0x50` 断言文案仍是旧配置 ⇒ **归因前先核产物新鲜度**（#88 / G-CLEAN-2），
+旧报告**不得**用于归因。
+- 关联：`qsh-test-gen` §1.6（报告头"接线"行须与实测配置一致）· KNOWN_ISSUES #88。
 

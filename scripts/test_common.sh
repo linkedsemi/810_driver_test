@@ -162,7 +162,15 @@ _detect_board() {
             echo "${TARGET_BOARD}"
             ;;
         *)
+            # ★ 2026-09-22：报错时点出兜底开关。判据本身保留"关键词 + 猜不中即
+            #   fail-loud"——SPEC_REFERENCE §6.1.10 的理想判据是"工程根下是否存在
+            #   cpu1 之外的固件目录"，但改判据会影响全部工程的板级选型，而选错是
+            #   **静默烧错板级**（不是构建失败），风险大于收益。故改用显式覆盖：
+            #   调用方（生成器 / 人）知道分型时直接给 BOARD_OVERRIDE，比让脚本猜安全。
             echo "ERROR: cannot detect board for ${src_dir}" >&2
+            echo "       （目录名不含 controller/master/host 也不含 target/slave/device）" >&2
+            echo "       处置：设环境变量 BOARD_OVERRIDE=<board> 显式指定，跳过本判据。" >&2
+            echo "       分型判据见 SPEC_REFERENCE.md §6.1.10。" >&2
             return 1
             ;;
     esac
@@ -306,22 +314,62 @@ _common_build_inputs() {
     done
 }
 
+# 新鲜度扫描的硬上限（秒）。★ 存在的理由（2026-09-21）：
+#   本函数的 find 遍历整个工程树，而调用点紧挨着 load_and_run 的**第一条
+#   stdout**。未剪枝时实测 i3c_dualcore 树（56,501 文件，其中 56,353 在 build
+#   下）单次耗时 **121s**，远超 harness 的判活窗口（common/acquire.py 的
+#   LOAD_WINDOW_S=20）⇒ 被判 load_fail。现象与"真环境故障"完全同形
+#   （prime 20s 零输出 + gdb 也无输出），极难归因 —— 2026-09-21 那轮 i3c
+#   case 集体失败即此（由 43b232e 引入本函数触发）。
+#   剪枝后实测 ~3s；此上限是第二道保险：无论树多大、IO 多慢，本函数都
+#   不可能吃掉判活窗口（它是 WARN，从不定判定，超时跳过无副作用）。
+STALE_SCAN_TIMEOUT_S="${STALE_SCAN_TIMEOUT_S:-8}"
+
 warn_if_build_stale() {
-    local ref newer common_inputs
+    local ref newer common_inputs raw rc extra rc2
     common_inputs="$(_common_build_inputs)"
     for ref in "$@"; do
         [ -f "${ref}" ] || continue
-        newer="$( { find "${I3C_TEST_ROOT}" -type f \
+        # ★ 用 -prune 剪枝，而不是事后 -not -path 过滤：后者仍会下降进每个
+        #   build/ 目录并 stat 其中每个文件 —— 实测 121s vs 剪枝 ~3s（40 倍）。
+        #   语义等价：build/ 与 tmp/ 下不会有被链入的源文件。
+        # ★★ `|| rc=$?` 不可省（OPEN_ITEMS O-25）：`raw="$(cmd)"` 是"仅赋值 +
+        #    末位命令替换"的简单命令，bash 取命令替换的退出码 ⇒ 命令替换失败时
+        #    整条赋值即"失败命令"，**set -e 会在赋值那一步终止脚本**，后面的
+        #    `rc=$?` / 超时分支根本轮不到执行。实测：超时触发时脚本直接退出
+        #    rc=124，[WARN]…已跳过 打不出来。用 `||` 接住才使该分支可达。
+        rc=0
+        raw="$(timeout "${STALE_SCAN_TIMEOUT_S}" find "${I3C_TEST_ROOT}" \
+            \( -name build -o -name tmp -o -name .git \) -prune -o \
+            -type f \
             \( -name '*.c' -o -name '*.h' -o -name '*.cc' -o -name '*.hpp' \
                -o -name '*.S' -o -name '*.s' -o -name '*.ld' -o -name '*.lds' \
                -o -name '*.overlay' -o -name '*.conf' -o -name '*.dtsi' \
                -o -name '*.dts' -o -name '*.inc' -o -name '*.cmake' \
                -o -name 'CMakeLists.txt' -o -name '*.sh' \) \
-            -newer "${ref}" -not -path '*/build/*' -not -path '*/tmp/*' \
-            2>/dev/null
-          if [ -n "${common_inputs}" ]; then
-            find ${common_inputs} -newer "${ref}" 2>/dev/null
-          fi ; } | head -5)"
+            -newer "${ref}" -print 2>/dev/null)" || rc=$?
+        if [ "${rc}" = "124" ]; then
+            echo -e "${COLOR_YELLOW}[WARN] 产物新鲜度检查超时" \
+                "(>${STALE_SCAN_TIMEOUT_S}s)，已跳过（不影响判定）${COLOR_RESET}" >&2
+            continue
+        fi
+        if [ -n "${common_inputs}" ]; then
+            # 同上的 set -e 写法（这一条查的是显式小文件表，正常不会超时，
+            # 但写法必须一致，否则将来列表变大时又是一颗雷）。
+            extra=""
+            rc2=0
+            extra="$(timeout "${STALE_SCAN_TIMEOUT_S}" find ${common_inputs} \
+                -newer "${ref}" 2>/dev/null)" || rc2=$?
+            if [ "${rc2}" = "124" ]; then
+                echo -e "${COLOR_YELLOW}[WARN] 产物新鲜度检查超时" \
+                    "(>${STALE_SCAN_TIMEOUT_S}s)，已跳过（不影响判定）${COLOR_RESET}" >&2
+                continue
+            fi
+            raw="${raw:+${raw}
+}${extra}"
+        fi
+        # 滤空行：raw 为空串时前面会带出一个空行，否则会被误判成"有新文件"。
+        newer="$(printf '%s\n' "${raw}" | grep -v '^[[:space:]]*$' | head -5)"
         if [ -n "${newer}" ]; then
             echo -e "${COLOR_YELLOW}[WARN] 产物 $(basename "${ref}") 早于下列输入源码，" \
                 "可能在烧旧断言（假 FAIL / 假 PASS）：${COLOR_RESET}" >&2
@@ -348,11 +396,15 @@ load_and_run() {
         return 1
     fi
 
-    warn_if_build_stale "${target_elf}" "${controller_bin}"
-
+    # ★ 顺序有意：先打加载横幅，再做新鲜度检查。检查含一次工程树遍历，
+    #   若排在横幅**之前**，harness 的判活窗口（LOAD_WINDOW_S）会在"还没
+    #   有任何 stdout"时就开始计时 ⇒ 检查一慢就被判 load_fail（2026-09-21
+    #   的 i3c case 集体失败即此形态）。横幅先出 ⇒ 窗口从"已见到输出"起算。
     echo "[${test_name}] Loading images into RAM via GDB..."
     echo "    target ELF:   ${target_elf}"
     echo "    controller BIN: ${controller_bin}"
+
+    warn_if_build_stale "${target_elf}" "${controller_bin}"
 
     # gdb 是 Windows 程序，只认 D:/... 形式；test.sh 经 pwd 推导的
     # MSYS 绝对路径（/d/...）会报 "No such file or directory" 并停在
@@ -536,10 +588,11 @@ load_and_run_single() {
         return 1
     fi
 
-    warn_if_build_stale "${elf}"
-
     echo "[${test_name}] Loading cpu1 image into RAM via GDB..."
     echo "    ELF: ${elf}"
+
+    # ★ 同 load_and_run：横幅先出、新鲜度检查后置（理由见那里）。
+    warn_if_build_stale "${elf}"
 
     # gdb.exe 是 Windows 原生进程，不吃 MSYS 的 /d/... 路径；转成 D:/...
     # （win_path 与脚本内 FP_EXE 等同款处理）

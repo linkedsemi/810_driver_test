@@ -77,7 +77,7 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 | L0 归档格式 `common/serial_archive.py` | 可离线证 | 往返契约 `read(write(x)) == x` | §6.4.9 ① |
 | **L1 采集**：`common/acquire.py`（命令序列 / 参数 / 等待时长 / 自愈 / 两遍烧录） | **必须全量上板** | 静态等价比对先做离线筛查（E1/E1b + 负对照 E3），再抽样 A/B 上板 | §6.4.10 末表 + A2 自证 |
 | `AcquireSpec` 字段**值**（端口 / 超时 / banner / src_dir） | 抽样可证 | 字面量集合离线比对 | §6.4.10 末表 |
-| **mem 兜底**（`dump_mem` / `memory_backfill`） | **必须上板**（或先扩 L0 契约） | 内存 payload 未归档 ⇒ 离线恒 `None` | §6.4.8 边界 1 / §6.4.9 ① |
+| **mem 兜底**（`dump_mem` / `memory_backfill`） | **必须上板**（或先扩 L0 契约） | 内存 payload 未归档 ⇒ 离线恒 `None`；**批量路径已不调用**（2026-09-22 用户裁定：批量稳定优先、只认 token；仅 `dbg_run.py` / 人工用，§6.4.10） | §6.4.8 边界 1 / §6.4.9 ① |
 | **固件 `.c/.h`**（含 token / RLOG 出口） | **必须全量重跑** | 输出会变 | §6.4.9 ①⑦ |
 | 环境预检 / 擦除 / DebugServer | 必须上板 | — | §6.4.9 ① |
 
@@ -100,13 +100,18 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 > **不可作为证据引用**，重跑取干净会话。实例：`reports/2026-09-21-7` / `-8`
 > （有效替代 = 同批 `-9` / `-10` / `-11` / `-12`，E-2 A/B 实测证据）。
 
+> **★ 离线重放必加 `--l2-direct`**（仅 `--list` / `--render-from-json` 可不加）：不加即走工程
+> `main()`（含 DebugServer 前置检查）⇒ **不是离线**、DS 未起时每 case 白等自愈超时（实测 51.7s）
+> 且 **0 产出**（表现为「跑很久、目录是空的」）。真源 `SPEC_REFERENCE.md` §6.4.8 ·
+> `qsh-test-compare` §4。
+
 | 目的 | 命令 | 真源 |
 |---|---|---|
 | **跑全量回归** | `python regression/run_all.py`（`--no-precheck` / `--no-erase` / `--dry-run` / `--cases-file X`） | §6.4.5 · `qsh-test-run` §4.1 |
 | 链路级预检 | `python regression/precheck/run_precheck.py [--session-dir d] [--timeout 40]` | §6.4.6 |
 | 跑单工程 | `cd projects/<p>/tests && python run_test.py [--case case_x]` | §6.4.8 · `qsh-test-run` §4.2 |
 | 跑单 case（调试） | `cd projects/<p>/tests && python scripts/dbg_run.py --case case_x --timeout 35` | `qsh-test-run` §3 |
-| **离线重放**（不碰板子） | `python regression/replay.py --session reports/<d> [--list] [--case X] [--project P --limit N] [--l2-direct] [--render-from-json] [--freeze-time]` | §6.4.7 · §6.4.8 · §6.10.1 |
+| **离线重放**（不碰板子） | `python regression/replay.py --session reports/<d> [--list] [--case X] [--project P --limit N] --l2-direct★ [--render-from-json] [--freeze-time]` | §6.4.7 · §6.4.8 · §6.10.1 · `qsh-test-compare` §4 |
 | **查/审独立预期** | `python common/expect_check.py --session reports/<d>`（`--audit` 全库覆盖率，`--json`） | §6.5.6 |
 | 查某工程预期 | `projects/<p>/tests/COVERAGE.md` 的 `## 独立预期（机器可读）` 段 | §6.5 |
 | **查坑** | `KNOWN_ISSUES.md`（按域分节） | — |
@@ -123,7 +128,7 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 | 板卡 / 接线 / COM / DebugServer | `HARDWARE_SETUP.md`；`CLAUDE.md` §1；`README.md` §1 |
 | 工程清单与启用 case 数 | `CLAUDE.md` §2（`(N)` 的唯一来源 = `regression/cases.yaml`） |
 | 固件编写规范 / ztest 契约 | `SPEC_REFERENCE.md` §6.1；`qsh-test-gen` §1.4 |
-| 判定标准（各族 / 各状态） | `SPEC_REFERENCE.md` §6.2.4（**唯一真源**，G1-G9 + R1-R7）；速查 → `qsh-test-compare` §2 / `qsh-test-run` §5 |
+| 判定标准（各族 / 各状态） | `SPEC_REFERENCE.md` §6.2.4（**唯一真源**，G1-G10 + R1-R8）；速查 → `qsh-test-compare` §2 / `qsh-test-run` §5 |
 | 串口无输出兜底（GDB 读内存） | `SPEC_REFERENCE.md` §6.2.2 / §6.4.3；`qsh-test-compare` §3 |
 | 报告归档 / 会话目录 / summary | `SPEC_REFERENCE.md` §6.4.1-§6.4.4 |
 | **分层 / L1-L2 契约 / 重放** | `SPEC_REFERENCE.md` §6.4.7 / §6.4.8 / §6.4.10 / §6.10.1 |

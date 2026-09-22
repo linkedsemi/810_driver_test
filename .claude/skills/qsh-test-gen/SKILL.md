@@ -373,6 +373,9 @@ set(EXTRA_DTC_OVERLAY_FILE
    - summary.md 只在会话目录最外层，**行粒度 = case**（key
      `<project>_<case>`，`SPEC_REFERENCE.md` §6.4.4）
    - 解析 `INFO <name>: k=v[,k=v]` 约定行填报告"实际"列（`SPEC_REFERENCE.md` §6.5.4）
+   - **报告头的"接线/器件"描述行必须与实测配置一致**（换址/换接线/换从设备后同步更新）——
+     实测：换址后报告头仍写"外接 EEPROM@0x50"，与实测（片内 target `eeprom@33`）不符，报告**误导归因**；
+     已生成的旧报告即**陈旧产物**，归因前先核新鲜度（`KNOWN_ISSUES.md` #88）。
    - 串口缺项用 `dump_results.py --json` 内存兜底合并（`SPEC_REFERENCE.md` §6.4.3；TEST_NAMES
      按链接序对齐 `KNOWN_ISSUES.md` #27）
 4. **判据有效性 ——"判据三问"（★ 写任何断言前自问）**：(a) 驱动**正确**时这条一定过吗？
@@ -390,6 +393,12 @@ set(EXTRA_DTC_OVERLAY_FILE
    **破坏性/跨复位 case 再追加一问**：(e) 判据是否依赖"采集窗口内看到现象"？窗口若按**标称超时**
    设（如 WDT 2s），延迟远大于标称的真事件会被误判成"没发生"（sec_iwdg 标称 2s、实测可达 ~34s）
    ⇒ 判据取**跨复位 `__noinit` 终态**（如 `test_phase==2`），或窗口 ≥60s（KNOWN_ISSUES #100）。
+   **地址类用例（总线寻址/扫描/回环/EEPROM）再追加一问**：(f) 被测地址上**是否只有 DUT 一个应答者**？
+   器件与板上既有器件**同址**时读写由"并联体"应答 ⇒ **任何 PASS/FAIL 都不可归因**（PASS 也可能来自邻居）。
+   选地址**主动避开该总线的惯例地址段**（I2C EEPROM `0x50`~`0x57`），并在改址前**实测确认该地址无人应答**；
+   怀疑撞址时把 DUT **挪到"改址前扫描不到"的地址再复测**（重扫看 `count`/`addrs` 两个量，辅助证据 =
+   DUT 自身地址寄存器，如 target `OAR1`）。招式见 `debug-knowledge` mcu 域
+   `bus-addr-collision-pass-not-attributable.md`；实例 KNOWN_ISSUES #110/#111。
 5. **用例自包含（硬规则）**：任何依赖"前一项留下的状态"的用例，必须改为**在自身内部构造该状态**
    （反例：`emmc` 的 `request_mutex_not_leaked` 靠前一项已泄漏锁才会阻塞 ⇒ 单独跑即假 PASS）。
 6. **分组准则：按"是否需要外部条件"切 case，不是按被测对象切**：case 是**屏蔽/启用的最小粒度**

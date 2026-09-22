@@ -16,3 +16,5 @@
 | [探测/扫描式测量的自检不变量](probe-scan-selfcheck-invariants.md) | 扫描矩阵"完美下三角"/超上限/全空，或"一根脚没还原"被放大成"全网连通" | 状态改写必须**读回验证**（失败即剔出可驱动集、视为无证据）；四条不变量硬闸 = 上限 `N*(N-1)/2` + 对称 + 形状 + **基线门**（基线为低的脚不产生证据）；阳性对照**不能替代**不变量自检 |
 | [`write_text()` 把 LF 整份翻成 CRLF](write-text-newline-flip.md) | 批量改仓内文件后 diff 从几行炸到几百行（内容"看起来没变"） | `read_text` 归一 + `write_text` 按平台写回 = 单向翻转；须 `open(..., newline="")` 读写 + **逐文件探测原行尾** + 改后 diff 行数自检（应为常量） |
 | [`from B import f` 后 patch `A.f` 不生效](python-from-import-patch-target.md) | 猴补丁"像没执行"、调用方仍走原实现，反复在调用方模块加打印 | `from X import f`（含函数体内 import）把名字绑成独立槽 ⇒ patch 目标必是**定义模块 X**；patch 后读回属性自检 |
+| [多单元同进程加载：裸名 import 的本地模块串味](python-inprocess-loader-module-isolation.md) | 同一进程依次加载多单元，中途 `ImportError` 却指向**别的单元**的文件 / 后半程静默没跑 | 单元本地模块按 **`__file__` 归属**清 `sys.modules`（共享层如 `common/` 不动）；**禁按模块名硬编码清理清单** |
+| [`set -e` 吃掉命令替换的退出码](set-e-swallows-command-substitution-rc.md) | `var=$(timeout …)` 超时后本应"跳过"，实际整条脚本退出（rc=124）、`$?` 分支不可达 | "仅赋值 + 末位命令替换"的简单命令取命令替换退出码 ⇒ `set -e` 在赋值处终止脚本；须 `if ! raw="$(cmd)"; then …` 或 `raw="$(cmd)" \|\| rc=$?` |

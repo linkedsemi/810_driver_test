@@ -24,7 +24,7 @@
 
 | 策略 | 主用 skill 链（Read 路径） |
 |------|---------------------------|
-| `STRATEGY_TEST` | `.claude/skills/qsh-test-run/SKILL.md` → `.claude/skills/qsh-test-compare/SKILL.md` |
+| `STRATEGY_TEST` | `.claude/skills/qsh-test-run/SKILL.md` → `.claude/skills/qsh-test-compare/SKILL.md`（**§4.1 `failures/` 失败归因为固定收尾动作**，有 FAIL 就必做） |
 | `STRATEGY_DEBUG` | `.claude/skills/qsh-debug/SKILL.md` → `.claude/skills/embedded-debug/SKILL.md` |
 | `STRATEGY_DEV` | 按领域 Read 对应 skill → qsh-test-gen → qsh-test-validate → qsh-driver-review → qsh-test-run |
 | `STRATEGY_DEV`（审核） | `.claude/skills/qsh-driver-review/SKILL.md` |
@@ -33,7 +33,7 @@
 
 ### 策略执行概要（★ 含闭环链，按 skill-orchestrator §2 执行）
 
-**STRATEGY_TEST**：读 cases.yaml → 过滤已完成 → 环境预检 → 逐 case 执行（退出码 0=PASS）→ 失败分类恢复或跳过 → 更新 state → **→ qsh-test-compare（★ 自动转）→ 坑沉淀决策** → 汇总
+**STRATEGY_TEST**：读 cases.yaml → 过滤已完成 → 环境预检 → 逐 case 执行（退出码 0=PASS）→ 失败分类恢复或跳过 → 更新 state → **→ qsh-test-compare（★ 自动转）→ ★ qsh-test-compare §4.1 失败归因 `failures/`（有 FAIL 则必做：先 `python common/failures_report.py --session <会话>` 出骨架，再让 agent 只补 `⚠️` 处）→ 坑沉淀决策** → 汇总
 
 **STRATEGY_DEBUG**：匹配速查表 → qsh-debug §0 总流程（环境→复现→分层定位→断点）→ 每步查已知坑 → 3 轮未闭环则升级 → **→ 坑沉淀决策（领域招式→debug-knowledge §写入；通用坑/模板缺陷→写 INBOX，沉淀归 keeper）**
 

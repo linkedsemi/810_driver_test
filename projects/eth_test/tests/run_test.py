@@ -316,8 +316,7 @@ def main():
         case_timeout=args.case_timeout, skip_build=args.skip_build,
         archive=not args.no_archive, session=session, script=__file__,
         bash_style="fixed", com99_probe=False,
-        mem_hook=lambda c: acquire.dump_mem(
-            c, Path(__file__).resolve().parent / "scripts" / "dump_results.py")))
+        ))
     if not acq.ok:
         return 1
 

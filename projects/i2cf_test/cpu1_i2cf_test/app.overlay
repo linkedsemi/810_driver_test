@@ -22,16 +22,21 @@
  *   挂的是外接 EEPROM 还是另一路被跳线过来的控制器 —— 这些只有硬件接线能定。
  *
  *   本工程把上游 master 做成 **DT alias `i2cfupstream`**（见下），
- *   当前取值 = 用户最新口述链路「I2C2 > I2CF4 > I2C3」的左端。
+ *   取值 = 用户确认的链路「**I2C2(主机) → I2CF4(被测) → I2C3(从机)**」左端。
+ *   （2026-09-22 确认；此前记的「I2C2 > I2CF4 > I2C3」措辞含糊曾被误读为
+ *     三个实例都是滤波器相关，实际是"主机/被测/从机"。）
  *   ⚠️ **若实测发现上游 master 实际是别的实例，只改这一行 alias + 对应
  *      `status="okay"` / `/delete-property/ pinctrl-noinit;` 即可**，
  *      用例代码无需改动（全部通过 alias 取设备）。
  *
  * 外部条件（SPEC_REFERENCE §6.6）：
- *   - `外部: 上游 master（alias i2cfupstream）跳线到 i2cf4.SCLI/SDAI(PE03/PB02)`
- *   - `外部: i2cf4.SCLO/SDAO(PE02/PB00) 侧的外接从设备（地址 0x51 或 0x52，
- *            **未经实测**）；仅 `filter_blocks_*` / `filter_passthrough_*` /
- *            `master_eeprom_rw` 三项依赖它，其余用例零外部器件。
+ *   - `外部: 上游 master（alias i2cfupstream = i2c2）跳线到 i2cf4.SCLI/SDAI`
+ *   - `外部: i2cf4.SCLO/SDAO 侧跳线到 i2c3（从机）`
+ *   - **从设备 = 片内 target**（`&i2c3 / eeprom@33`，2026-09-22 起）——
+ *     用户裁定「**不管 EEPROM 的存在**，只测芯片自己的两路 I2C + I2CF」
+ *     ⇒ **零外部器件**（原先"外接 EEPROM @0x51/0x52"的假设已作废）。
+ *   ⚠️ 地址**不得用 0x50~0x57 等 EEPROM 惯例值** —— 用户板上确实挂了这类器件，
+ *      会撞址（详见 `&i2c3` 处的说明）。
  */
 
 #include "lsqsh_pinctrl_pfr_tpm.dtsi"
@@ -43,6 +48,8 @@
 		i2cmaster = &i2c4;
 		/* ↓ 上游 master：外部跳线决定，**唯一可换的一行**（见文件头注释） */
 		i2cfupstream = &i2c2;
+		/* ↓ 片内 target（从机侧）：取代"外接 EEPROM"假设，见 &i2c3 处说明 */
+		i2ctargeteeprom = &target_eeprom;
 	};
 
 	chosen {
@@ -50,24 +57,44 @@
 	};
 };
 
+/*
+ * ★ 2026-09-22 拓扑确认（用户 2026-09-22 再次确认，**与上一版配置一致**）
+ *
+ *   链路 = **i2c2(主机) → i2cf4 输入(SCLI/SDAI) ──〔I2CF4 被测〕── i2cf4 输出
+ *          (SCLO/SDAO) → i2c3(从机)**
+ *   即：`i2c2` 接**输入**侧、`i2c3` 接**输出**侧、`i2cf4` 是被测滤波器。
+ *
+ *   ⚠️ **归因更正**：本轮早先测到"`i2c2` 的访问进不了 `i2cf4`、滤波器寄存器
+ *      零流量"（`INTR_RAW=0` / `SMF_FSM=0`）—— 当时主会话曾误归因为
+ *      "`i2c2` 不是上游 master"。**实际原因是接线接错**（用户已更正）。
+ *      故 alias 取值 `i2cfupstream = &i2c2` 是**对的**，无需改。
+ *
+ *   ⚠️ **引脚冲突假设已被证伪**：GDB 实测 `IO_FUNC` 矩阵 —— `i2c2` **独占**
+ *      PB04/PB01、`i2cf4` **独占** PB00/PB02/PE02/PE03(FUNC3)，**二者本来就没有
+ *      冲突**。故下面把 `i2cf1/2/3` 关掉的**真实理由是"缩小使能面、让 DT 与实际
+ *      参与本链路的实例一致"**，**不是**为了避免争引脚（实测关与不关结果逐字节相同）。
+ *
+ *   - `i2cf4` + `i2c4`：被测那一对 ⇒ 两个都留（运行时可切换）
+ *   - `i2cf1/2/3` / `i2c1`：不在本链路 ⇒ 关（**仅为缩小面**）
+ */
 &i2cf1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &i2cf2 {
-	status = "okay";
+	status = "disabled";          /* 与纯主机 i2c2 争 PB04/PB01 */
 };
 
 &i2cf3 {
-	status = "okay";
+	status = "disabled";          /* 与纯从机 i2c3 争 PB15/PB14 */
 };
 
 &i2cf4 {
-	status = "okay";
+	status = "okay";              /* ★ 被测滤波器 */
 };
 
 &i2c1 {
-	status = "okay";
+	status = "disabled";          /* 本链路用不到 */
 };
 
 /*
@@ -87,8 +114,38 @@
 	/delete-property/ pinctrl-noinit;
 };
 
+/*
+ * i2c3 ── **纯从机**（被跳线到 i2cf4 的 SCLO/SDAO 输出侧）。
+ *
+ * 同 i2c2：模块 dtsi 给 i2c1..i2c4 标了 `pinctrl-noinit`（引脚默认归配对滤波器
+ * 所有）；本工程把 i2c3 当**纯从机**用 ⇒ 必须删掉该标记，否则它的引脚不挂 I2C
+ * 功能、根本收不到总线波形。
+ *
+ * ★ 片内 target（2026-09-22，用户裁定）：挂 `zephyr,i2c-target-eeprom` 作**片内
+ *   从设备**，取代原先"外接 EEPROM"的假设 —— 用户明确「**不管 EEPROM 的存在**，
+ *   只测芯片自己的两路 I2C + I2CF」。要点（照 `samples/i2c_filter_loopback`）：
+ *   - 驱动 init **不自注册** ⇒ 应用需调 `i2c_target_driver_register()`（见 i2cf_test.c）
+ *   - 需 `CONFIG_I2C_TARGET=y` + `CONFIG_I2C_EEPROM_TARGET=y`（见 prj.conf）
+ *   - ⚠️ **不得把 target 挂在 master 同一实例上** —— 会自应答、绕过整个滤波器、
+ *     制造假 PASS。本工程挂在**从机 i2c3**，与主机 i2c2 分离 ✓
+ *   - 地址取 **0x33**（★ 2026-09-22 用户提醒后更改）：
+ *     **不得用 `0x50`/`0x51`/`0x52` 这类 EEPROM 惯例地址** —— 用户板上**确实挂了**
+ *     这类器件（dts 接线参考注释块记着 `i2c5`~`i2c14` 各挂 at24 @0x50），
+ *     用惯例地址会与板上器件**撞址**，结果无法归因（早先 `0x50` 那次
+ *     "`master_eeprom_rw` 转 PASS" 就**可能是在跟板载 EEPROM 说话**）。
+ *     `0x33` 是本轮**两侧都实测空闲**的地址：i2c2 侧读它 → `-EIO`（无器件）；
+ *     i2c4 旁路侧全段扫描只报 0x50 ⇒ 0x33 在输出侧同样空。
+ */
 &i2c3 {
 	status = "okay";
+	/delete-property/ pinctrl-noinit;
+
+	target_eeprom: eeprom@33 {
+		compatible = "zephyr,i2c-target-eeprom";
+		reg = <0x33>;
+		size = <256>;
+		status = "okay";
+	};
 };
 
 &i2c4 {

@@ -74,7 +74,9 @@ python scripts/dbg_run.py --case case_pure_i3c_12m5 --timeout 35
 - **写包提速默认开**：load 前发 `set remote memory-write-packet-size 16384` +
   `set remotewritesize 16384`，CKLink load 实测 **1KB/s → 41KB/s（41x）**
   （192KB 镜像 ~190s → ~5s）；`--wpacket-size 0` 关闭。stub 不接受时回
-  E22 且立即失败，不会静默卡死
+  E22 且立即失败，不会静默卡死。**★ 口径（2026-09-21 实测）：设了就是 41 KB/s —— 41 KB/s
+  才是链路瓶颈，包长请求值再变（16384/2457/1024 → 协商 2493/1820/875 bytes/write）吞吐不变、
+  墙钟恒 3~4s；判吞吐看 gdb 的 `Transfer rate: N KB/sec`，别看 `N bytes/write`（qsh-debug §3.1）**
 - **交互式流程（★ `KNOWN_ISSUES.md` #25）**：reset+load 后**等 gdb 打出 "Transfer rate"**
   再 set $pc+continue。一次性 `-ex` 链在 load 刚完成的瞬间发 continue，
   DebugServer 状态不佳时会被**静默丢弃**（CPU 停 halt 无 BOOT，detach 才
@@ -105,6 +107,12 @@ python regression/run_all.py --no-precheck  # 跳过预检（调试用）
 python regression/run_all.py --no-erase     # 跳过全量前 flash 全片擦除
 python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
 ```
+- **★ 批量路径职责边界（2026-09-22 用户裁定）**：批量**稳定优先** —— **不为单个 case 的失败
+  额外花时间与调试风险去自动定位**。gdb 在批量里**只负责烧录**，判定证据**只认串口 token**；
+  批量**不自动**调内存兜底 / 抓 `$pc` 快照（`acquire.py` 已写死 `mem = None`、移除自动快照调用）。
+  批量跑完**就出报告**（§4.3 / `qsh-test-compare`），**定位是独立活动**（走 `qsh-debug`），不混进
+  批量路径。保留的失败证据 = 串口原始行归档；保留的稳定性机制 = E-2 前置 DS 预检 + 自愈重试
+  （见下条）。原则本体见 `SPEC_REFERENCE` §6.4.10。
 - **cases.yaml**：YAML list（`cases:` 下每行一个 case 目录，相对
   810_driver_test），`#` 注释 = 屏蔽。VS Code YAML 模式下 `Ctrl+/` 可直接
   toggle 注释。
@@ -143,6 +151,13 @@ python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
   `run_all.py` 并发抢板子、结果互相污染。纪律：后台命令用**绝对路径**重定向
   （或 `(cd X && cmd) > /abs/log &` 明确分组）；"日志没出现"先查**进程表**再判断死活
   （`debug-knowledge` common 域 `bash-bg-cd-subshell.md`）。
+- **★ 碰过 cpu2 调试端口 `1026` ⇒ 下一次批跑前必须重启 DebugServer（2026-09-21）**：DebugServer
+  为 cpu2 另开第二个 GDB 端口 **1026**（`qsh-debug` §6「cpu2 通道」）。**任何对 1026 的 gdb
+  访问（含 `detach`）都把 cpu2 留在 halted**（PC 停 `__start`@0x10000000）⇒ 不重启 DS，
+  **本批后续 case 的 cpu2 侧全部不运行**：CTRL 串口 0 字节、cpu2 `.bss` 保持上一轮陈旧值或全 0
+  （会被误读成"结果为空/被抹"）。识别信号：cpu2 侧 0 字节且 `.bss` 像没跑过 ⇒ 先问"本会话有没有
+  碰过 1026"。处置 = 重启 DS 后整批重跑（`KNOWN_ISSUES.md` #98 / `qsh-debug` §2.3 / §6）。
+  （要让 1026 **出现**：先跑起 cpu2 → **重启 DebugServer** 让调试器重枚举核（软件动作，可自动化）；配方为用户提供，见 `qsh-debug` §6。）
 - **识别"放大"的判据（不随修法过期）**：24 份 `run_test.py` 中**只有 6 份**定义
   `DEBUGSERVER_EXE`（`i2c_pure` / `i3c_dualcore` / `i3c_i2c_switch` / `mbedtls` / `otbn_test` /
   `otbn_selftest`，其余 18 份自身无 DS 自愈）⇒ **绕过上面的入口、裸跑**那些
@@ -203,6 +218,33 @@ python run_test.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
     （实测 `i3c_dualcore_test case_mixed_400k_6m25` 假 FAIL、`case_pure_i3c_6m25` 假 PASS）。
     动过固件源码后必须按该 case 自己的 build 目录重构建，**别信"含哨兵即新鲜"**
     （G-FAMFILL-1，`KNOWN_ISSUES.md` #88 姊妹形态）
+  - **⚠ shell 侧新鲜度门 `warn_if_build_stale()` 的"超时跳过"须用 `|| rc=$?` 接住（★ 2026-09-21，G-O24-1）**：
+    脚本开 `set -e`（各 `test.sh` 顶部 / `scripts/test_common.sh:32`）时，"仅赋值 + 末位命令替换"的简单命令
+    **取命令替换的退出码** ⇒ `raw="$(timeout … find …)"` 在 `find` 超时（`timeout` rc=124）时**赋值那一步**
+    就终止整条 `test.sh`（实测 rc=124、`[WARN]…已跳过` 打不出、`rc=124` 分支不可达），而非注释声称的"跳过"。
+    **判据**：凡 `var=$(外部命令)` 后跟 `$?` 判断的代码，在带 `set -e` 的脚本里都要复核；修法 =
+    `if ! raw="$(cmd)"; then …` 或 `raw="$(cmd)" || rc=$?`。通法见 `debug-knowledge` common 域
+    `set-e-swallows-command-substitution-rc.md`（`KNOWN_ISSUES.md` #107）。
+  - **⚠ 验证"某条采集路径"必须按它属于哪个 L1 策略选 case，别按"单核/双核"选（★ 2026-09-21，G-O24-2）**：
+    shell 侧加载段 `load_and_run` / `load_and_run_single` **只被 `single_cap` 的 9 个工程**
+    （`adc_temper / dma / emmc / eth / flash / iopmp / pwm / qspi_flash / wdt`）经 `test.sh -r` 的
+    `AGENT_RUN` 分支调用；`trng_test` / `rtc_ls_test`（及 mbedtls/otbn 等）走 `ports_dict`（**Python 直驱
+    gdb**）⇒ **根本不经过该路径**，选错对象 = 冒烟跑了寂寞、改坏了也测不出来。另：各 `test.sh` 的
+    `SKIP_LOAD` 守卫形态不统一 —— `single_cap` 9 工程与 mbedtls 属 `if [ "${AUTO_GDB}" != "y" ]`
+    （**只判 AUTO_GDB**），而 `i2c_pure` / `i3c_dualcore` / `i3c_i2c_switch` 写 `… && [ "${AGENT_RUN}" != "y" ]`；
+    前者靠 agent 分支**绕过**守卫（agent 分支独立调 `load_and_run*`、不经 `SKIP_LOAD`）才没出事
+    ⇒ **改守卫或 agent 分支时按 L1 策略核，别照抄**。
+  - **⚠ 想从 run 日志核"shell 侧加载段的行为"，必须选 `single_cap` 工程（★ 2026-09-21，G-O24-3）**：
+    `common/acquire.py::_spawn_test_sh` 分两式 —— `style="z"`（`single_cap` 9 工程）**逐行回声** `test.sh`
+    的 stdout（加载横幅落日志）；`style="d3"`（i3c 双核）**不回声**（`proc_lines` 只进内存列表，仅
+    `load_fail` 诊断尾部才打印）⇒ i3c 的 `logs/serial_*.log` 里**看不到** `Loading images into RAM via GDB...`。
+    核 i3c 加载段只能靠"有没有 20s 静默被判 `load_fail`"间接推断（详见 qsh-test-compare §1）。
+  - **批量路径不自动抓 `$pc` 快照（★ 2026-09-22 用户裁定，G-PCSNAP-1）**：批量（`run_all.py` /
+    `run_test.py`）**不为单个 case 的失败额外花时间与调试风险去自动定位**（见 `SPEC_REFERENCE`
+    §6.4.10）；`common/acquire.py::capture_pc_snapshot()` **已不在批量路径调用**（**设计上不做，
+    不是修顺序**），函数本体保留供**人工 / 调试**按需调用（实操见 `qsh-debug` §6）。DS 1025
+    单端口单客户端（旧 gdb 未退出时新连接即报 `Remote communication error … No stack.`）是
+    该裁定的论据之一。
 - **报告归档（会话目录）**：Markdown + JSON 写到
   `810_driver_test/reports/<YYYY-MM-DD>-<idx>/<project>_<case>/`（`common/
   report_dir.py` 统一分配，禁止自算路径）；`summary.md` 只在会话目录最外层，
@@ -215,9 +257,11 @@ python run_test.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
     common 域 `python-from-import-patch-target.md`）。
 - **INFO 约定行解析**：`INFO <test_name>: k=v[,k=v]` 数值型实测（吞吐/占比等）
   进报告"实际"列（`SPEC_REFERENCE.md` §6.5.4）
-- **内存兜底合并**：case 跑完后调 `dump_results.py --case <case> --json`，
-  串口缺项用内存值补，来源标 `mem`；数组全 -1 的项算 NOT_RUN 且 case 判 FAIL；
-  GDB 读不到内存（连接残留等）标记 `mem-unavailable` 不阻断回归（`SPEC_REFERENCE.md` §6.4.3）
+- **内存兜底合并**（★ 2026-09-22：**批量路径已不调用**，见 §4.1 / `SPEC_REFERENCE.md` §6.4.10；
+  机制保留，仅供 `dbg_run.py` / 人工按需）：**批量**不再于 case 跑完后调
+  `dump_results.py --case <case> --json`（`acquire.py` 已写死 `mem=None`）。机制细节仍适用：
+  串口缺项用内存值补、来源标 `mem`；数组全 -1 的项算 NOT_RUN 且 case 判 FAIL；GDB 读不到内存
+  标记 `mem-unavailable` 不阻断（`SPEC_REFERENCE.md` §6.4.3）。
 - **`mem_state` 要读要写（★ 2026-09-18）**：兜底 payload 带 `mem_state` 三态 ——
   `no_sentinel_symbol` = **旧构建，先重建再跑**（复跑无意义）/ `invalid` = 未跑到
   `tr_init`，内存不可信 / `ok`。非 `ok` 时兜底对该核 fail-closed；状态与原因必须
@@ -235,9 +279,12 @@ python run_test.py [--case case_pure_i3c_12m5] [--session-dir <dir>]
 ```bash
 cd 810_driver_test
 python regression/replay.py --session reports/<date>-<idx> --list    # 列可重放 case
-python regression/replay.py --session reports/<date>-<idx> --case <proj>_<case>
+python regression/replay.py --session reports/<date>-<idx> --case <proj>_<case> --l2-direct★
 python regression/replay.py --session reports/<date>-<idx> --project <p> --l2-direct --freeze-time
 ```
+- **★ `--l2-direct` 必加**（仅 `--list` / `--render-from-json` 可不加）：不加即走工程 `main()`
+  ⇒ **非离线、且不产出报告**（表现为「**跑很久、`tmp/replay/` 是空的**」）。判据与机制真源：
+  `qsh-test-compare` §4 / `FRAMEWORK_MAP.md` §3。
 - 输出默认落 `tmp/replay/<会话>/`，**绝不覆盖 `reports/`**；`--render-from-json` 用于校验渲染接线。
 - **不可重放**（必须上板）：L1 采集段（时序）、mem 兜底（内存未归档）、固件 `.c/.h`。
 - 分层全景 + 「改哪层要验什么」速查：`FRAMEWORK_MAP.md`。
@@ -292,7 +339,7 @@ PROJECT EXECUTION SUCCESSFUL|FAILED       # ztest 原生，本核套件完成标
 | 某测试 ~6.5s 停摆无 PROJECT EXECUTION | 目标侧死窗/停摆 | 查目标日志，必要时加 GDB 断点验证 |
 | 构建缓存旧地址 | overlay/源码改动后缓存未失效 | rm -rf build 全量重建 |
 | 构建报 `ninja: error: failed recompaction: Permission denied` | 同一 build 目录被并发 `west build` 抢——**多数是自己上一轮的 `nohup west build &` 没退干净**（误判为已死又起前台构建，后台那次其实还活着） | 怀疑"后台构建死了"**先查进程树**（`Get-CimInstance Win32_Process` 看 nohup→west→python→cmake 链）再重跑；确认残留后**按 PID** `taskkill //PID <pid> //T` 杀自己那条链，**禁 `//IM python.exe`**（连坐，KNOWN_ISSUES #62）。见 qsh-test-validate §2 |
-| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | 单核 dbg_run.py 默认已开 16384（41x，§3）；手动 gdb 照 §3 发两条 `set`；E22 = stub 不接受，立即失败不卡死 |
+| load 极慢（~1KB/s，192KB 镜像要 ~190s） | 没设写包参数 | 单核 dbg_run.py 默认已开 16384；手动 gdb 照 §3 发两条 `set`；**设了就恒 41 KB/s（链路瓶颈），包长再调不更快（§3）**；E22 = stub 不接受，立即失败不卡死 |
 | 单核工程 interrupt 后二次 load 无输出挂死 | 会话内二次 load 静默挂死（`KNOWN_ISSUES.md` #24） | 改单遍烧录（§3）；同镜像迭代用 `--no-load` 免烧重跑 |
 | flash_program.py 卡死 80s（`ConnectType=0`） | DebugServer 会话后芯片处于调试 halt 状态，普通连接无法重连 | **flash_program.py 已改为 `ConnectType: 1`（硬复位连接）**，实测解决（2026-09-02） |
 | 回归结束后下次 erase 卡死 | DebugServer 回归期间常驻，结束后未释放 CKLink | **run_all.py 已加 `cleanup_cklink()`（try/finally）**，回归结束必杀 DebugServer |

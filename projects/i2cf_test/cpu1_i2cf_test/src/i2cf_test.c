@@ -78,18 +78,32 @@ static uint8_t i2cf_first_slave_bypass(const struct device *dev);
 /* 设备 / 寄存器定位                                                           */
 /* -------------------------------------------------------------------------- */
 
+/*
+ * ★ 2026-09-22：按确认的拓扑（i2c2 主机 → i2cf4 被测 → i2c3 从机），
+ *   `i2cf1/2/3` 已**关掉**（纯主/从实例的配对滤波器会争引脚，见 app.overlay）。
+ *   ⚠️ `DEVICE_DT_GET()` / `DT_REG_ADDR()` 对 **disabled 节点是编译期错误**，
+ *   故必须条件化：未使能的槽位填 NULL/0，由调用方判空跳过（见下方各用例）。
+ */
+#define I2CF_DEV_OR_NULL(lbl)							\
+	COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(lbl), okay),		\
+		    (DEVICE_DT_GET(DT_NODELABEL(lbl))), (NULL))
+
+#define I2CF_BASE_OR_ZERO(lbl)							\
+	COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(lbl), okay),		\
+		    (DT_REG_ADDR(DT_NODELABEL(lbl))), (0))
+
 static const struct device *const i2cf_devs[I2CF_INST_NUM] = {
-	DEVICE_DT_GET(DT_NODELABEL(i2cf1)),
-	DEVICE_DT_GET(DT_NODELABEL(i2cf2)),
-	DEVICE_DT_GET(DT_NODELABEL(i2cf3)),
-	DEVICE_DT_GET(DT_NODELABEL(i2cf4)),
+	I2CF_DEV_OR_NULL(i2cf1),
+	I2CF_DEV_OR_NULL(i2cf2),
+	I2CF_DEV_OR_NULL(i2cf3),
+	I2CF_DEV_OR_NULL(i2cf4),      /* ★ 被测（idx 3） */
 };
 
 static const uintptr_t i2cf_bases[I2CF_INST_NUM] = {
-	DT_REG_ADDR(DT_NODELABEL(i2cf1)),
-	DT_REG_ADDR(DT_NODELABEL(i2cf2)),
-	DT_REG_ADDR(DT_NODELABEL(i2cf3)),
-	DT_REG_ADDR(DT_NODELABEL(i2cf4)),
+	I2CF_BASE_OR_ZERO(i2cf1),
+	I2CF_BASE_OR_ZERO(i2cf2),
+	I2CF_BASE_OR_ZERO(i2cf3),
+	I2CF_BASE_OR_ZERO(i2cf4),     /* ★ 被测（idx 3） */
 };
 
 const struct device *i2cf_dev(int idx)
@@ -134,16 +148,25 @@ static void fill_pattern(uint32_t bitmap[LINKEDSEMI_I2C_F_REMAP_SIZE_U32], uint8
 
 ZTEST(i2cf, device_ready)
 {
+	/* ★ 2026-09-22：按拓扑只使能 i2cf4（见 app.overlay）⇒ 未使能槽位为 NULL，
+	 *   **跳过不判失败**；同时要求**被测那一个必须在**。 */
 	for (int i = 0; i < I2CF_INST_NUM; i++) {
-		zassert_not_null(i2cf_dev(i), "i2cf%d device pointer is NULL", i + 1);
-		zassert_true(device_is_ready(i2cf_dev(i)), "i2cf%d not ready", i + 1);
+		const struct device *d = i2cf_dev(i);
+
+		if (d == NULL) {
+			continue;          /* 该实例按拓扑未使能 */
+		}
+		zassert_true(device_is_ready(d), "i2cf%d not ready", i + 1);
 
 		/* i2c 属性指向配对的 master；i2cf4 绑定 i2c4（板上同管脚复用） */
-		const struct device *bound = i2cf_i2c_dev(i2cf_dev(i));
+		const struct device *bound = i2cf_i2c_dev(d);
 
 		zassert_not_null(bound, "i2cf%d bound i2c is NULL", i + 1);
 		zassert_true(device_is_ready(bound), "i2cf%d bound i2c not ready", i + 1);
 	}
+
+	/* 被测那一个必须存在，否则本 case 无意义 */
+	zassert_not_null(i2cf_dev(3), "i2cf4 (DUT) is not enabled");
 
 	zassert_equal(i2cf_i2c_dev(i2cf_dev(3)), DEVICE_DT_GET(DT_NODELABEL(i2c4)),
 		      "i2cf4 must bind i2c4");
@@ -503,6 +526,10 @@ ZTEST(i2cf, callback_register)
 	 * 逐个实例验证回调字段真的落在**各自的** dev->data 上 */
 	for (int i = 0; i < I2CF_INST_NUM; i++) {
 		const struct device *d = i2cf_dev(i);
+
+		if (d == NULL) {
+			continue;      /* 该实例按拓扑未使能（见 app.overlay） */
+		}
 		struct i2cf_data_view *v = (struct i2cf_data_view *)d->data;
 
 		zassert_ok(linkedsemi_i2c_filter_register_callback(d, 0, i2cf_precise_cb,
@@ -589,7 +616,7 @@ ZTEST(i2cf, master_eeprom_rw)
 {
 	/*
 	 * 外部: I2C 总线 PE02(SCL)/PB00(SDA)（板上 I2C4 ↔ I2CF4 SCLO/SDAO 同管脚复用）
-	 *       上挂外接 EEPROM@0x50。
+	 *       上挂片内 target（@0x33，见 app.overlay）。
 	 * 破坏性：改写 EEPROM 偏移 0x00..0x0f —— 用例内先备份、后恢复。
 	 */
 	const struct device *dev = i2cf_dev(3);
@@ -784,8 +811,10 @@ ZTEST(i2cf, isr_addr_beyond_whitelist)
 	const struct device *dev = i2cf_dev(3);            /* i2cf4 */
 	const uintptr_t base = i2cf_reg_base(3);
 	const struct device *up = i2cf_upstream();
-	/* 白名单为空 ⇒ 任意地址皆越界；取一个常见 EEPROM 地址当靶子即可 */
-	const uint8_t target = 0x50;
+	/* 白名单为空 ⇒ 任意地址皆越界；**取片内 target 的地址**（链路里的真实从设备）。
+	 * ★ 2026-09-22：**不得用 0x50/0x51 这类 EEPROM 惯例地址** —— 用户板上确实挂了
+	 *   这类器件，会撞址（详见 app.overlay 的说明）。0x33 为两侧实测空闲地址。 */
+	const uint8_t target = 0x33;
 	uint8_t val = 0;
 	int ret_blocked;
 	smbf_nonwhitelist_t nw;
@@ -836,9 +865,9 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	/*
 	 * 外部: 同 isr_addr_beyond_whitelist。
 	 *
-	 * 场景：白名单**非空但只授权另一地址**（0x51）⇒ 访问 EEPROM 的 0x50
+	 * 场景：白名单**非空但只授权另一地址**（0x2A）⇒ 访问从设备的 0x33
 	 *       属"黑名单"（未授权）⇒ 被拦住 + 主机 NACK。
-	 * 判据：① 0x50 访问失败；② 自证：关 filter 后同一访问成功。
+	 * 判据：① 0x33 访问失败；② 自证：关 filter 后同一访问成功。
 	 * 与 `isr_addr_beyond_whitelist` 的区别：那项验 ISR 路径（空白名单），
 	 * 本项验"白名单存在时的选择性拦截"语义。
 	 */
@@ -860,8 +889,11 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	if (slave == 0) {
 		ztest_test_skip();
 	}
-	/* 授权"另一个"地址（取扫描段内与 slave 不同的固定值），使 slave 成为未授权地址 */
-	authorized = (slave == 0x51) ? 0x52 : 0x51;
+	/* 授权"另一个"地址（取扫描段内与 slave 不同的固定值），使 slave 成为未授权地址。
+	 * ★ 2026-09-22：**避开 EEPROM 惯例地址（0x50~0x57）** —— 本值只写进白名单表、
+	 *   **不过总线**，故无需关心是否有器件占用；避开惯例地址纯粹是为了不与板上
+	 *   真实器件混同、便于阅读。 */
+	authorized = (slave == 0x2A) ? 0x2B : 0x2A;
 
 	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "switch to filter");
 
@@ -904,12 +936,12 @@ ZTEST(i2cf, filter_passthrough_whitelist)
 	 * 判据：上游经滤波器读回的数据 == 预先经旁路通路（i2c4 master 模式）写入的 pattern。
 	 *
 	 * 破坏性受控：写前备份偏移 0x00..0x0f，用例末尾恢复。
-	 * ⚠️ EEPROM 地址 0x50 **未经实测**（取自模块 samples/i2c_filter/src/main.c:25）；
+	 * ⚠️ 从设备地址 0x33 = 片内 target（见 app.overlay）；
 	 *    偏移与容量同样未实测 —— 失败信息里带实际读回字节以便归因。
 	 */
 	const struct device *dev = i2cf_dev(3);
 	const struct device *down = i2cf_i2c_dev(dev);     /* i2c4：旁路 master */
-	const struct device *up = i2cf_upstream();         /* i2c3：上游 master */
+	const struct device *up = i2cf_upstream();         /* = i2c2：上游主机（见 app.overlay alias） */
 	uint32_t bm[LINKEDSEMI_I2C_F_REMAP_SIZE_U32];
 	uint8_t orig[8];
 	uint8_t pattern[8];
@@ -934,8 +966,8 @@ ZTEST(i2cf, filter_passthrough_whitelist)
 	zassert_ok(linkedsemi_i2c_filter_switch_to_master(dev), "switch to master (bypass)");
 	ret = i2c_burst_read(down, slave, 0x00, orig, sizeof(orig));
 	zassert_ok(ret,
-		   "EEPROM@%#x backup read failed (ret=%d) —— 器件未在位或地址非 0x50"
-		   "（地址取自模块 sample，未经实测）",
+		   "从设备@%#x 备份读失败 (ret=%d) —— 片内 target 未注册/未就位"
+		   "（地址 0x33 = overlay 的 eeprom@33，见 app.overlay）",
 		   slave, ret);
 
 	/* 2) 写入已知 pattern（旁路通路；EEPROM 写周期需等待） */
