@@ -1,0 +1,4 @@
+[submodule "skill-lib"]
+	path = .claude
+	url = http://10.10.20.8:8000/jcshi/my_skill.git
+	ignore = untracked
