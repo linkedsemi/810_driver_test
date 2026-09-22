@@ -2,7 +2,7 @@
 
 - 工程: i3c_dualcore_test
 - case: case_mixed_400k_1m
-- 日期: 2026-09-21 11:58:17
+- 日期: 2026-09-21 20:36:37
 - 板级: lsqsh_evb@2os
 - 环境: 见 810_driver_test/README.md 外设接线记录（涉及外部路径的测试项在 COVERAGE.md 标注，SPEC_REFERENCE.md §6.6）
 - 执行标记: CTRL=SUCCESSFUL, TGT=None

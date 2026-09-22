@@ -2,7 +2,7 @@
 
 - 工程: i3c_dualcore_test
 - case: case_pure_i3c_12m5
-- 日期: 2026-09-21 12:06:04
+- 日期: 2026-09-21 20:37:25
 - 板级: lsqsh_evb@2os
 - 环境: 见 810_driver_test/README.md 外设接线记录（涉及外部路径的测试项在 COVERAGE.md 标注，SPEC_REFERENCE.md §6.6）
 - 执行标记: CTRL=SUCCESSFUL, TGT=None
@@ -36,8 +36,8 @@
 | short_read_then_nack | ✅ PASS | token | 每轮短读 actual==8、恢复读 ret==0/actual==8/pattern 对 | - |  |
 | write_100 | ✅ PASS | token | 100B 全部写入无 NACK | - |  |
 | write_8 | ✅ PASS | token | 8B 写入无 NACK（SERRWARN 无） | - |  |
-| write_delay_read_16 | ✅ PASS | token | 25M 源窗口 6000-7100ns 漂移（±9%，5 轮）；NACK 边界 = 窗口+~0.1µs（stop 122… | CTRL:critical_delay_ns=6000, first_short_step=121, master_stop_step=243, nack_recover_ok=1 |  |
-| write_delay_read_len | ✅ PASS | token | 临界档：len32≈115-124、len64≈107-123（互差 ≤3 档常态，偶发 6-7 档）；len17（1… | CTRL:critical17_step=255, critical32_step=132, critical_ns=6600, first_short_step=-1, len=64, stop_step=133 |  |
+| write_delay_read_16 | ✅ PASS | token | 25M 源窗口 6000-7100ns 漂移（±9%，5 轮）；NACK 边界 = 窗口+~0.1µs（stop 122… | CTRL:critical_delay_ns=6400, first_short_step=129, master_stop_step=-1, nack_recover_ok=skip(no-nack) |  |
+| write_delay_read_len | ✅ PASS | token | 临界档：len32≈115-124、len64≈107-123（互差 ≤3 档常态，偶发 6-7 档）；len17（1… | CTRL:critical17_step=255, critical32_step=118, critical_ns=6100, first_short_step=-1, len=64, stop_step=123 |  |
 | write_indexed_read_16 | ✅ PASS | token | 3 索引（0x00/0x10/0x20）读回 tgt_tx_buf[idx..idx+15] 全部匹配 pattern | - |  |
 | write_read_15 | ✅ PASS | token | 读回 15B == 写入值；target 侧校验写段占位字节 0xA5 | - |  |
 | write_read_16 | ✅ PASS | token | 读回 16B == 写入值；target 侧校验写段占位字节 0xA5 | - |  |

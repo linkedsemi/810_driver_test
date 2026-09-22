@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-21T12:07:36.771595",
+  "timestamp": "2026-09-21T20:46:51.765151",
   "board": "lsqsh_evb@2os",
   "overall": "PASS",
   "cases": [
@@ -221,7 +221,7 @@
           "ctrl": "PASS",
           "tgt": "PASS",
           "src": "token",
-          "info": "CTRL:critical_delay_ns=7200, first_short_step=137, master_stop_step=-1, nack_recover_ok=skip(no-nack)",
+          "info": "CTRL:critical_delay_ns=7000, first_short_step=137, master_stop_step=-1, nack_recover_ok=skip(no-nack)",
           "reason": "",
           "result": "PASS"
         },
@@ -230,7 +230,7 @@
           "ctrl": "PASS",
           "tgt": "PASS",
           "src": "token",
-          "info": "CTRL:critical17_step=255, critical32_step=255, critical_ns=7800, first_short_step=157, len=64, stop_step=-1",
+          "info": "CTRL:critical17_step=255, critical32_step=255, critical_ns=7850, first_short_step=158, len=64, stop_step=-1",
           "reason": "",
           "result": "PASS"
         },

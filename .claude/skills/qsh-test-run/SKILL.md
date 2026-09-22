@@ -173,6 +173,14 @@ python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
     采集端口对不上）。跳过预检复跑**必须显式指定** `PRE_CTRL_UART`/`PRE_TGT_UART`（run_all 的
     env 入口；`--ctrl-uart/--tgt-uart` 只往下游 run 脚本传），**别信默认推断**，也别因"它自己打了
     一行猜的日志"就以为猜对了。
+  - **★ 预检"自动发现"分支要求「全部非 CKLink 口都能打开」（G-ENV-COM5，2026-09-22）**：此模式下一个
+    **无关口**（桌面新插入、被别的进程占用的 CP210x 等）打不开（`PermissionError`）就能让**整个预检
+    FAIL、批量直接中止** —— **不是**被测板串口坏。**判据**：`precheck_report.md` 写 `不可开: ['COM5']`
+    而其余口正常 ⇒ 无关口在拖后腿（**先确认被占的不是本板 CTRL/TGT 口**；是则属真缺串口，另按缺串口处置）。
+    **处置**：显式指定 `PRE_CTRL_UART`/`PRE_TGT_UART`（显式分支**只校验这两个口**、不再要求全体可开，
+    也是 `run_all.py` 注释推荐的模式）。**运行期不受影响**：`common/acquire.py::discover_ports()`
+    对打不开的口只 `log WARNING` 继续（不中止），单核对侧 `find_tgt_uart()`（显式 CH342）亦然
+    ⇒ **只有预检这一关是严格的**。
 - **清理进程纪律（★ KNOWN_ISSUES #62）**：回归中要清残留时**只 `TaskStop` runner 的父任务**；
   清 gdb 用 `netstat -ano | grep :1025` 取对端 PID、清 west/ninja 用
   `tasklist | grep -E "west|ninja"` 取 PID，**一律按精确 PID**。

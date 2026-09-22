@@ -2,7 +2,7 @@
   "driver": "rtc_ls_test",
   "board": "lsqsh_evb@1os/lsqsh/cpu1",
   "env": "tgt_uart=COM16, timeout=150s",
-  "timestamp": "2026-09-21T11:22:36",
+  "timestamp": "2026-09-21T17:40:22",
   "execution": "PASS",
   "mem_state": "ok",
   "mem_note": "",

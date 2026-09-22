@@ -3,7 +3,7 @@
   "case": "case_default",
   "board": "lsqsh_evb@1os/lsqsh/cpu1",
   "env": "tgt_uart=COM16, timeout=30s",
-  "timestamp": "2026-09-21T11:17:30",
+  "timestamp": "2026-09-21T17:27:47",
   "execution": "SUCCESSFUL",
   "mem_state": "ok",
   "mem_note": "",
@@ -27,13 +27,13 @@
   },
   "infos": {
     "autocorr_8k": {
-      "max_abs_r": "0.00337",
-      "lag": "5",
+      "max_abs_r": "0.00562",
+      "lag": "6",
       "gate": "0.02344"
     },
     "block_freq_8k": {
       "blocks": "128",
-      "chi_square": "123.55",
+      "chi_square": "131.85",
       "lo": "32.0",
       "hi": "224.0"
     },
@@ -48,22 +48,22 @@
     },
     "long_seq_1m": {
       "bytes": "1048576",
-      "us": "369875",
-      "ones_pct": "50.013"
+      "us": "301352",
+      "ones_pct": "49.996"
     },
     "monobit_8k": {
-      "ones": "32469",
-      "percent": "49.54"
+      "ones": "32989",
+      "percent": "50.34"
     },
     "runs_8k": {
-      "runs": "32811",
-      "pi": "0.49969",
-      "z": "0.238"
+      "runs": "32838",
+      "pi": "0.50272",
+      "z": "0.392"
     },
     "throughput_64k": {
       "bytes": "65536",
-      "us": "17641",
-      "mbps": "29.72"
+      "us": "13736",
+      "mbps": "38.17"
     }
   },
   "reasons": {},

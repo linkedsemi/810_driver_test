@@ -28,6 +28,13 @@ runner 必须逐项手动验证**（不得委托 run_all.py 内置预检——�
 4. 串口数量够（排除 CKLink）？
    python -c "from serial.tools.list_ports import comports; ps=[p.device for p in comports() if '32bf' not in (p.hwid or '').lower() and 'cklink' not in (p.description or '').lower()]; print(f'{len(ps)} ports: {ps}')"
    → 双核需 ≥2，单核需 ≥1 → 不够则报告缺串口
+   → ★ 实际判据比字面更严（G-ENV-COM5，2026-09-22）：预检的**自动发现**分支要求
+     "**全部**非 CKLink 口都能打开" —— 任意一个**无关口**（桌面新插入、被别的进程占用的
+     CP210x 等）`PermissionError` 即**整轮预检 FAIL、批量中止**（**不是**被测板串口坏）。
+     判据：`precheck_report.md` 写 `不可开: ['COMxx']` 而其余口正常 ⇒ 无关口拖后腿
+     （**先确认被占的不是本板 CTRL/TGT 口**；是则属真缺串口，另按缺串口处置）。
+     处置：显式指定 `PRE_CTRL_UART`/`PRE_TGT_UART`（该分支**只校验这两个口**）。运行期
+     `common/acquire.py::discover_ports()` 对打不开的口只 WARN 不中止 ⇒ **只此一关严格**。
 
 5. 无 FlashProgrammer 冲突？
    tasklist | grep -i csky

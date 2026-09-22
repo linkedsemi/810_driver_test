@@ -1,0 +1,139 @@
+{
+  "case": "case_default",
+  "result": "FAIL",
+  "execution": "FAILED",
+  "items": [
+    {
+      "name": "calib_status_expected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "calib_status_null",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_above_max_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_below_min_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_boundary_6m25_accepted",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 682: qspi_flash_calib_set_freq_boundary_6m25_accepted: (ret_init is non-zero)"
+    },
+    {
+      "name": "set_freq_zero_silent",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 698: qspi_flash_calib_set_freq_zero_silent: (ret_init is non-zero)"
+    },
+    {
+      "name": "erase_non_sector_multiple_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "erase_sector_all_ff",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 271: qspi_flash_rw_erase_sector_all_ff: (offender not equal to -1)"
+    },
+    {
+      "name": "erase_unaligned_addr_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "read_past_end_rejected",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 397: qspi_flash_rw_read_past_end_rejected: (ret not equal to -EINVAL)"
+    },
+    {
+      "name": "write_past_end_rejected",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 405: qspi_flash_rw_write_past_end_rejected: (ret not equal to -EINVAL)"
+    },
+    {
+      "name": "write_read_len1",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 289: qspi_flash_rw_write_read_len1: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "write_read_len255",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 306: qspi_flash_rw_write_read_len255: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "write_read_len256",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 324: qspi_flash_rw_write_read_len256: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "write_read_len4096",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 343: qspi_flash_rw_write_read_len4096: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "write_read_len8192",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 370: qspi_flash_rw_write_read_len8192: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "mode_222_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "raw_read_1_1_1_ok",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 455: qspi_flash_stg_raw_read_1_1_1_ok: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "raw_read_1_1_4_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "raw_read_1_4_4_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "spi_transceive_notsup",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_cmd_wren_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_read_chunked_over_4096",
+      "result": "FAIL",
+      "reason": "WEST_TOPDIR/810_driver_test/projects/qspi_flash_test/cpu1_qspi_flash_test/src/qspi_flash_test.c: 574: qspi_flash_stg_stg_read_chunked_over_4096: (rbuf not equal to wbuf)"
+    },
+    {
+      "name": "stg_reg_read_len_4097_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_write_len_4096_accepted",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_write_len_4097_rejected",
+      "result": "PASS",
+      "reason": ""
+    }
+  ],
+  "zero_evidence": false,
+  "items_note": ""
+}

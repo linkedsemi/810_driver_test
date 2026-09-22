@@ -2,7 +2,7 @@
 
 - 工程: rtc_ls_test
 - case: case_default
-- 日期: 2026-09-21 11:22:36
+- 日期: 2026-09-21 17:40:22
 - 板级: lsqsh_evb@1os/lsqsh/cpu1
 - 环境: tgt_uart=COM16, timeout=150s
 - 执行标记: PASS

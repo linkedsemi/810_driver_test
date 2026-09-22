@@ -470,13 +470,25 @@ def check_serial() -> bool:
                 ok = False
                 detail += f" open: CTRL={ok_ctrl}({e_ctrl}) TGT={ok_tgt}({e_tgt})"
     else:
-        ok = len(ports) >= 2
-        detail = f"ports={ports} (auto-discover, need >= 2)"
-        if ok:
-            bad = [n for n in ports if not _serial_openable(n)[0]]
-            if bad:
-                ok = False
-                detail += f" 不可开: {bad}"
+        # ★ 2026-09-22 用户裁定**放宽**（原规则见下）。
+        #
+        # 原规则 = 「**全部**非 CKLink 口都必须可开」⇒ 桌面上只要有**一个无关串口**
+        # 被别的进程占用就整批拦下（实测：CP210x `COM5` 被占 ⇒ `PermissionError`
+        # ⇒ 回归根本跑不起来，只能改走显式端口绕）。
+        #
+        # 新判据 = 「**可开的口够 2 个**」—— 保住原规则的**本意**：
+        #   · 「板子串口根本没枚举出来 / 被占」⇒ 可开口 < 2 ⇒ **仍然 FAIL** ✓
+        #   · 多余的无关口被占 ⇒ 只记一行 note，**不再阻断** ✓
+        # 至于"开出来的口是不是真的 CTRL/TGT"，由下游的 banner 角色识别兜住
+        #（`check_dual_boot` 按 banner 分角色并各自报到 `CHECKS`），
+        # 不靠这里"全都可开"来保证。
+        openable = [n for n in ports if _serial_openable(n)[0]]
+        bad = [n for n in ports if n not in openable]
+        ok = len(openable) >= 2
+        detail = (f"ports={ports} openable={openable} "
+                  f"(auto-discover, need >= 2 openable)")
+        if bad:
+            detail += f" 不可开(已忽略、不阻断): {bad}"
     CHECKS.append(("串口枚举", ok, detail))
     return ok
 

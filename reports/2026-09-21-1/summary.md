@@ -16,10 +16,10 @@
 | [i2c_pure_test_case_pure_i2c_400k](i2c_pure_test_case_pure_i2c_400k/i2c_pure_test_report.md) | PASS | 1/1 |
 | [i2cf_test_case_default](i2cf_test_case_default/i2cf_test_report.md) | FAIL | 14/18 |
 | [i3c_dualcore_test_case_mixed_1m_12m5](i3c_dualcore_test_case_mixed_1m_12m5/i3c_dualcore_test_report.md) | PASS | 35/35 |
-| [i3c_dualcore_test_case_mixed_1m_6m25](logs/i3c_dualcore_test_case_mixed_1m_6m25.log) | FAIL | 未知 |
-| [i3c_dualcore_test_case_mixed_400k_12m5](logs/i3c_dualcore_test_case_mixed_400k_12m5.log) | FAIL | 未知 |
+| [i3c_dualcore_test_case_mixed_1m_6m25](i3c_dualcore_test_case_mixed_1m_6m25/i3c_dualcore_test_report.md) | PASS | 35/35 |
+| [i3c_dualcore_test_case_mixed_400k_12m5](i3c_dualcore_test_case_mixed_400k_12m5/i3c_dualcore_test_report.md) | PASS | 35/35 |
 | [i3c_dualcore_test_case_mixed_400k_1m](i3c_dualcore_test_case_mixed_400k_1m/i3c_dualcore_test_report.md) | PASS | 35/35 |
-| [i3c_dualcore_test_case_mixed_400k_6m25](logs/i3c_dualcore_test_case_mixed_400k_6m25.log) | FAIL | 未知 |
+| [i3c_dualcore_test_case_mixed_400k_6m25](i3c_dualcore_test_case_mixed_400k_6m25/i3c_dualcore_test_report.md) | PASS | 35/35 |
 | [i3c_dualcore_test_case_pure_i3c_12m5](i3c_dualcore_test_case_pure_i3c_12m5/i3c_dualcore_test_report.md) | PASS | 35/35 |
 | [i3c_dualcore_test_case_pure_i3c_6m25](i3c_dualcore_test_case_pure_i3c_6m25/i3c_dualcore_test_report.md) | PASS | 35/35 |
 | [i3c_i2c_switch_test_case_switch_core](i3c_i2c_switch_test_case_switch_core/i3c_i2c_switch_test_report.md) | FAIL | 10/11 |
@@ -54,4 +54,6 @@
 | [wdt_test_case_boundary](wdt_test_case_boundary/wdt_test_report.md) | FAIL | 17/19 |
 | [wdt_test_case_non_destructive](wdt_test_case_non_destructive/wdt_test_report.md) | PASS | 5/5 |
 
-**共 51 个测试，通过 34 个，失败 17 个**
+**共 51 个测试，通过 37 个，失败 14 个**
+
+> 失败归因：见 [`failures/`](failures/)（14 个 FAIL case，每个一个文件；`⚠️` 标记处待补）

@@ -1,0 +1,15 @@
+{
+  "archive_version": 1,
+  "case": "case_mdio",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 0
+    }
+  },
+  "timeout": 60,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\eth_test\\tests\\run_test.py",
+  "script_md5": "0c747bd056acd9cd95d5a4977dd037bf",
+  "timestamp": "2026-09-22T17:50:33"
+}

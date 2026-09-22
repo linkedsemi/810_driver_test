@@ -1366,3 +1366,20 @@ gdb `load` 仅 **4s**（写包提速已生效）。
 旧报告**不得**用于归因。
 - 关联：`qsh-test-gen` §1.6（报告头"接线"行须与实测配置一致）· KNOWN_ISSUES #88。
 
+---
+
+## i3c_dualcore_test 域（2026-09-22 登记）
+
+**113. `i3c_dualcore_test case_mixed_1m_12m5` 的 `multi_msg_4` 瞬态 FAIL（flaky 观测，非驱动回归）**（2026-09-22 实测）
+- 现象：全量回归（`reports/2026-09-22-2`）中该 case 的 **`multi_msg_4` 首次观测 FAIL**，
+  reason = `msg3 num_xfer 0 != 8`（`i3c_controller_test.c:201`）。
+- **瞬态证据（四条）**：① 同批次其余 **6 个 i3c case 的同名项 `multi_msg_4` 全 PASS**；
+  ② 基线（`reports/2026-09-21-1`）该 case **PASS 35/35**；③ `reports/` 全库历史**无此前
+  `FAIL - multi_msg_4`**；④ **单 case 复跑 = PASS 35/35**。⇒ 记 **flaky 观测**，**不是**驱动回归
+  （本轮改动 `acquire.py` / `test_common.sh` / `run_test.py` 均不碰 i3c 固件）。
+- 失效形态 = **用例内部单项瞬态数据错**（`num_xfer` 读到 0）。
+- **⚠ 与 #87 是不同项，不得互相引用为同一事**：#87 = 该工程 `case_mixed_400k_6m25` / `case_pure_i3c_6m25`
+  的 **prime 首轮零输出 / 套件中后段停摆**（环境 / DebugServer 层）；本条 = **用例内部单项瞬态数据错**
+  （断言层）。同工程、**症状不同源**，排查时**不得并案**。
+- 处置：单次 FAIL 先**重跑排除瞬态**（`qsh-test-compare` §5 第 4 条）；跨轮对比须**同 timeout**（#63）。
+

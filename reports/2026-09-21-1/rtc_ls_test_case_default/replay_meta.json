@@ -10,6 +10,6 @@
   },
   "timeout": 150,
   "script": "D:\\zephyr4_0\\810_driver_test\\projects\\rtc_ls_test\\tests\\run_test.py",
-  "script_md5": "84327a7ed92fc4321155c29b2483070b",
-  "timestamp": "2026-09-21T11:22:36"
+  "script_md5": "e7992f9a31e6bbc0642371d25edc7604",
+  "timestamp": "2026-09-21T17:40:22"
 }
