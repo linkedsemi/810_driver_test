@@ -31,7 +31,7 @@
 | jedec_id_null_arg | `spi_nor_read_jedec_id` / `spi_nor_get_jedec_id` 的 `id == NULL` 分支 | 异常参数 | `-EINVAL` | `spi_nor_multi_dev.c:1795-1797,1926-1928` | ⬜ |
 | get_parameters | `flash_nor_get_parameters` | 功能通路 | `erase_value==0xff`、`write_block_size==4096` | `spi_nor_multi_dev.c:3015`（DT `write-block-size` 缺省 0x1000） | ⬜ |
 | sfdp_header | `spi_nor_sfdp_read` → `read_sfdp` → `stg_mem_read`(RDSFDP) | 功能通路 | ret==0 且前 4 字节 == ASCII `"SFDP"` | JESD216 规范（SFDP 头签名） | ⬜ |
-| size_is_32mib | `flash_get_page_info_by_offs` + `dev_flash_size()`（SFDP 运行时容量） | 功能通路/边界长度 | 偏移 32 MiB-1 命中；偏移 32 MiB 越界 | roadmap §5.1（32 MiB 板载 NOR） | ⬜ |
+| size_runtime | `flash_get_parameters()->flash_size` + `flash_get_page_info_by_offs` | 功能通路/边界长度 | 末字节命中；size 偏移越界（容量运行时探测） | `flash_parameters.flash_size` | ⬜ |
 | line_width_set | `spi_nor_set_line_width` 的 `buswidth > 4` 分支 / 正常分支 | 异常参数 | 8 → `-EINVAL`；1 → 0 | `spi_nor_multi_dev.c:1904-1913` | ⬜ |
 | four_byte_mode_unknown_mfr | `spi_nor_get_4byte_mode` 的 `switch (id[0])` default 分支 | 异常参数 | `-ENXIO`（Puya 0x85 不在白名单） | `spi_nor_multi_dev.c:1953-1990` **钉住驱动缺口** | ⚠ |
 | erase_sector_all_ff | `flash_erase` → `spi_nor_erase`（SE 循环 + WIP 等待） | 功能通路 | ret==0；读出全 `0xFF` | API 契约 + `erase_value=0xff` | ⬜ |
@@ -71,7 +71,7 @@
 | `QSPI_FREQ_MIN_OK` | 6 250 000 | `bus/32`，`clk_cyc = bus/spi - 1 = 31`，恰好不超 31 |
 | `QSPI_FREQ_BELOW_MIN` | 6 000 000 | `bus/33`（整除），`clk_cyc = 32 > 31` → `-EINVAL` |
 | `QSPI_FREQ_ABOVE_MAX` | 200 000 001 | `> bus_hz` 分支 |
-| `QSPI_FLASH_EXPECT_SIZE` | 0x2000000 | roadmap §5.1（板载 32 MiB Puya NOR） |
+| `flash_parameters.flash_size` | 运行时 | SFDP/`dev_flash_size()`，勿写死 32 MiB |
 
 ## 钉住缺陷清单（⚠ 项，断言的是当前实现行为，不是"正确性通过"）
 
@@ -135,7 +135,7 @@ set_freq_zero_silent | re_init == 0 | contract:0 频率按现状"静默不改时
 jedec_id_null_arg | !none | !none:-EINVAL，键名未在 INFO 中固定 ⇒ 不硬凑
 get_parameters | !none | !none:erase_value/write_block_size 两值合取
 sfdp_header | !none | !none:前 4 字节 == ASCII "SFDP"（多字节比对），非单标量
-size_is_32mib | !none | !none:边界命中/越界的合取
+size_runtime | !none | !none:边界命中/越界的合取（容量运行时）
 line_width_set | !none | !none:两个返回码的合取
 four_byte_mode_unknown_mfr | !none | !none:-ENXIO（钉住驱动缺口），键名未固定
 erase_sector_all_ff | !none | !none:读出全 0xFF，非标量

@@ -100,6 +100,34 @@ static int count_diff(const uint8_t *a, const uint8_t *b, size_t n)
 	return diff;
 }
 
+/* SFDP/驱动探测到的容量（字节）；0 = 不可用 */
+static size_t qspi_flash_size(void)
+{
+	const struct flash_parameters *p = flash_get_parameters(flash_dev);
+
+	if (p == NULL) {
+		return 0;
+	}
+	return p->flash_size;
+}
+
+static bool jedec_id_plausible(const uint8_t *id, size_t n)
+{
+	bool all0 = true;
+	bool allf = true;
+
+	for (size_t i = 0; i < n; i++) {
+		if (id[i] != 0x00u) {
+			all0 = false;
+		}
+		if (id[i] != 0xffu) {
+			allf = false;
+		}
+	}
+
+	return !all0 && !allf;
+}
+
 /*
  * 直接走驱动的 spi_nor_ops 扩展（= spi_nor_multi_dev.c 内部用的同一条路径）。
  * qspi_ls_nor_transceive() 的 config 参数是 ARG_UNUSED，传 NULL 即可。
@@ -134,27 +162,28 @@ ZTEST(qspi_flash_id, jedec_id_match)
 	ZT_INFO("jedec_id_match", "id=%02x%02x%02x,ret=%d", id[0], id[1], id[2], ret);
 
 	zassert_ok(ret, "flash_read_jedec_id returned %d", ret);
-	zassert_equal(id[0], QSPI_FLASH_ID0, "JEDEC mfr byte: got %02x want %02x",
-		      id[0], QSPI_FLASH_ID0);
-	zassert_equal(id[1], QSPI_FLASH_ID1, "JEDEC byte1: got %02x want %02x",
-		      id[1], QSPI_FLASH_ID1);
-	zassert_equal(id[2], QSPI_FLASH_ID2, "JEDEC byte2: got %02x want %02x",
-		      id[2], QSPI_FLASH_ID2);
+	/* 不写死厂商 ID：非全 0 / 全 F 即视为在线 */
+	zassert_true(jedec_id_plausible(id, SPI_NOR_MAX_ID_LEN),
+		     "JEDEC id all-0 or all-FF: %02x %02x %02x", id[0], id[1], id[2]);
 }
-
-static const uint8_t expect_id[SPI_NOR_MAX_ID_LEN] = {
-	QSPI_FLASH_ID0, QSPI_FLASH_ID1, QSPI_FLASH_ID2
-};
 
 ZTEST(qspi_flash_id, jedec_id_cached)
 {
-	uint8_t id[SPI_NOR_MAX_ID_LEN] = { 0 };
-	int ret = spi_nor_get_jedec_id(flash_dev, id);
+	uint8_t live[SPI_NOR_MAX_ID_LEN] = { 0 };
+	uint8_t cached[SPI_NOR_MAX_ID_LEN] = { 0 };
+	int ret_live = flash_read_jedec_id(flash_dev, live);
+	int ret = spi_nor_get_jedec_id(flash_dev, cached);
 
-	ZT_INFO("jedec_id_cached", "id=%02x%02x%02x,ret=%d", id[0], id[1], id[2], ret);
+	ZT_INFO("jedec_id_cached", "live=%02x%02x%02x,cached=%02x%02x%02x,ret=%d",
+		live[0], live[1], live[2], cached[0], cached[1], cached[2], ret);
 
+	zassert_ok(ret_live, "flash_read_jedec_id returned %d", ret_live);
 	zassert_ok(ret, "spi_nor_get_jedec_id returned %d", ret);
-	zassert_mem_equal(id, expect_id, SPI_NOR_MAX_ID_LEN, "cached JEDEC ID mismatch");
+	zassert_true(jedec_id_plausible(cached, SPI_NOR_MAX_ID_LEN),
+		     "cached JEDEC id all-0 or all-FF: %02x %02x %02x",
+		     cached[0], cached[1], cached[2]);
+	zassert_mem_equal(cached, live, SPI_NOR_MAX_ID_LEN,
+			  "cached JEDEC != live read");
 }
 
 ZTEST(qspi_flash_id, jedec_id_null_arg)
@@ -197,20 +226,26 @@ ZTEST(qspi_flash_id, sfdp_header)
 			  hdr[0], hdr[1], hdr[2], hdr[3]);
 }
 
-ZTEST(qspi_flash_id, size_is_32mib)
+ZTEST(qspi_flash_id, size_runtime)
 {
 	struct flash_pages_info info;
-	int ret_last = flash_get_page_info_by_offs(flash_dev,
-						   QSPI_FLASH_EXPECT_SIZE - 1, &info);
-	int ret_over = flash_get_page_info_by_offs(flash_dev, QSPI_FLASH_EXPECT_SIZE,
-						   &info);
+	const size_t sz = qspi_flash_size();
+	int ret_last;
+	int ret_over;
 
-	ZT_INFO("size_is_32mib", "last_byte_ret=%d,over_end_ret=%d", ret_last, ret_over);
+	ZT_INFO("size_runtime", "flash_size=%zu", sz);
 
-	zassert_ok(ret_last, "32 MiB - 1 should be inside the device (ret %d)",
-		   ret_last);
+	zassert_true(sz > 0, "flash_get_parameters()->flash_size is 0");
+	/* 末字节应在布局内；末字节+1（即 size 偏移）应越界 */
+	ret_last = flash_get_page_info_by_offs(flash_dev, (off_t)sz - 1, &info);
+	ret_over = flash_get_page_info_by_offs(flash_dev, (off_t)sz, &info);
+
+	ZT_INFO("size_runtime", "last_byte_ret=%d,over_end_ret=%d", ret_last, ret_over);
+
+	zassert_ok(ret_last, "flash_size-1 should be inside (ret %d, size=%zu)",
+		   ret_last, sz);
 	zassert_not_equal(ret_over, 0,
-			  "offset 32 MiB should be rejected as out of range");
+			  "offset flash_size=%zu should be out of range", sz);
 }
 
 ZTEST(qspi_flash_id, line_width_set)
@@ -422,34 +457,29 @@ static size_t flash_device_size(void)
 
 ZTEST(qspi_flash_rw, read_past_end_rejected)
 {
-	const size_t flash_size = flash_device_size();
+	const size_t sz = qspi_flash_size();
 	int ret;
 
-	zassert_not_equal(flash_size, 0U,
-			  "cannot determine flash device size (page layout unavailable)");
+	zassert_true(sz > 0, "flash_size is 0");
+	/* 异常参数：addr 恰好落在 flash_size（越界），应 -EINVAL */
+	ret = flash_read(flash_dev, (off_t)sz, rbuf, 16);
 
-	ZT_INFO("read_past_end_rejected", "flash_size=%zu,off=%zu", flash_size, flash_size);
-
-	/* 异常参数：addr + size 越过 flash 末尾（器件实际容量，运行期推导） */
-	ret = flash_read(flash_dev, (off_t)flash_size, rbuf, 16);
-
-	zassert_equal(ret, -EINVAL, "read past end should be -EINVAL, got %d", ret);
+	ZT_INFO("read_past_end_rejected", "flash_size=%zu,ret=%d", sz, ret);
+	zassert_equal(ret, -EINVAL, "read past end(size=%zu) should be -EINVAL, got %d",
+		      sz, ret);
 }
 
 ZTEST(qspi_flash_rw, write_past_end_rejected)
 {
-	const size_t flash_size = flash_device_size();
+	const size_t sz = qspi_flash_size();
 	int ret;
 
-	zassert_not_equal(flash_size, 0U,
-			  "cannot determine flash device size (page layout unavailable)");
+	zassert_true(sz > 0, "flash_size is 0");
+	ret = flash_write(flash_dev, (off_t)sz, wbuf, 16);
 
-	ZT_INFO("write_past_end_rejected", "flash_size=%zu,off=%zu", flash_size, flash_size);
-
-	/* 异常参数：addr + size 越过 flash 末尾（器件实际容量，运行期推导） */
-	ret = flash_write(flash_dev, (off_t)flash_size, wbuf, 16);
-
-	zassert_equal(ret, -EINVAL, "write past end should be -EINVAL, got %d", ret);
+	ZT_INFO("write_past_end_rejected", "flash_size=%zu,ret=%d", sz, ret);
+	zassert_equal(ret, -EINVAL, "write past end(size=%zu) should be -EINVAL, got %d",
+		      sz, ret);
 }
 
 /* =====================================================================

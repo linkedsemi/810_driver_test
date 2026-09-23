@@ -61,7 +61,7 @@ TEST_NAMES = [
     "four_byte_mode_unknown_mfr", "get_parameters",
     "jedec_id_cached", "jedec_id_match",
     "jedec_id_null_arg", "line_width_set",
-    "sfdp_header", "size_is_32mib",
+    "sfdp_header", "size_runtime",
     "erase_non_sector_multiple_rejected", "erase_sector_all_ff",
     "erase_unaligned_addr_rejected", "read_past_end_rejected",
     "write_past_end_rejected", "write_read_len1",
