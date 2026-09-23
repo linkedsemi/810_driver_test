@@ -1,0 +1,15 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * 使能软件 RTC（BSTIM+PIS+GPTIMA），保持 PMU 硬件 rtc 关闭。
+ */
+
+&rtc {
+	status = "disabled";
+};
+
+&rtc_timer {
+	status = "okay";
+};
+
+#include "../../../common/gpio_toggle.dtsi"
