@@ -48,7 +48,8 @@ TGT_BANNERS = ("CPU1 I2CF", "i2cf_test")
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
-def reader(ser, lines, stop):
+def reader(ser, lines, stop, times=None):
+    """读串口。times 非 None 时**平行**记录每行到达时刻（诊断用，不影响既有 lines）。"""
     buf = b""
     while not stop.is_set():
         try:
@@ -62,6 +63,8 @@ def reader(ser, lines, stop):
             line, buf = buf.split(b"\n", 1)
             line = ANSI_RE.sub("", line.decode("utf-8", "replace").rstrip("\r"))
             lines.append(line)
+            if times is not None:
+                times.append(time.time())
 
 
 def discover_ports(explicit=None):
@@ -101,7 +104,7 @@ def main():
 
     dbg_run_preflight()   # F1：DS 不健康先自愈，起不来则明确中止（不退化 error 138）
     names = discover_ports([p for p in (args.tgt_uart,) if p])
-    ports = {name: {"lines": [], "stop": threading.Event()} for name in names}
+    ports = {name: {"lines": [], "times": [], "stop": threading.Event()} for name in names}
 
     def start_capture():
         """Open ports and start reader threads (capture pass only, so the log
@@ -116,7 +119,7 @@ def main():
             sys.exit("ERROR opening serial: no port could be opened")
         threads = []
         for name, ser in sers.items():
-            t = threading.Thread(target=reader, args=(ser, ports[name]["lines"], ports[name]["stop"]), daemon=True)
+            t = threading.Thread(target=reader, args=(ser, ports[name]["lines"], ports[name]["stop"], ports[name]["times"]), daemon=True)
             t.start()
             threads.append(t)
         return sers, threads
@@ -272,8 +275,13 @@ def main():
     if args.raw:
         for name, p in ports.items():
             print(f"\n===== RAW {name} ({role[name]}) =====")
-            for ln in p["lines"]:
-                print(ln)
+            ts = p.get("times") or []
+            t0 = ts[0] if ts else None
+            for i, ln in enumerate(p["lines"]):
+                if t0 is not None and i < len(ts):
+                    print(f"+{ts[i] - t0:8.3f}  {ln}", flush=True)
+                else:
+                    print(ln, flush=True)
 
 
 if __name__ == "__main__":

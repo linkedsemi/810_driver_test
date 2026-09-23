@@ -1,0 +1,200 @@
+{
+  "driver": "mbedtls_test",
+  "case": "case_otbn_hash",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=600s",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "timestamp": "2026-09-22T21:53:31",
+  "results": {
+    "aes128_cbc": "PASS",
+    "aes128_ctr": "PASS",
+    "aes128_gcm": "PASS",
+    "p256_kat": "PASS",
+    "p256_keygen": "PASS",
+    "p384_keygen": "PASS",
+    "sha224_kat": "PASS",
+    "sha256_kat": "PASS",
+    "sha384_kat": "PASS",
+    "sha512_kat": "PASS",
+    "sm3_kat": "PASS",
+    "concurrent_hash_ecdsa": "PASS",
+    "base_mult": "PASS",
+    "field_bytes": "PASS",
+    "point_add": "PASS",
+    "scalar_mult": "PASS",
+    "stress_reentry": "PASS",
+    "aes_bad_params": "PASS",
+    "ecdsa_tamper_verify": "PASS",
+    "heap_stress_keygen": "PASS",
+    "pointops_base_mult_bad": "PASS",
+    "pointops_field_bytes_bad": "PASS",
+    "pointops_point_add_bad": "PASS",
+    "pointops_scalar_mult_bad": "PASS",
+    "rsa_key_mismatch": "PASS",
+    "rsa_keygen_non_f4_fallback": "PASS",
+    "sha256_bad_params": "PASS",
+    "sha384_bad_params": "PASS",
+    "rsa2048_keygen": "PASS",
+    "rsa2048_modexp": "PASS",
+    "rsa3072_modexp": "PASS",
+    "rsa4096_modexp": "PASS"
+  },
+  "infos": {
+    "aes128_cbc": {
+      "algo": "aes-128-cbc",
+      "bytes": "64",
+      "us": "55"
+    },
+    "aes128_ctr": {
+      "algo": "aes-128-ctr",
+      "bytes": "64",
+      "us": "38"
+    },
+    "aes128_gcm": {
+      "algo": "aes-128-gcm",
+      "bytes": "32",
+      "us": "157"
+    },
+    "p256_kat": {
+      "curve": "p256",
+      "mode": "fixed_k_kat",
+      "us": "87879"
+    },
+    "p256_keygen": {
+      "curve": "p256",
+      "mode": "keygen_sign_verify",
+      "keygen_us": "17623",
+      "sign_us": "19668",
+      "verify_us": "68190"
+    },
+    "p384_keygen": {
+      "curve": "p384",
+      "mode": "keygen_sign_verify",
+      "keygen_us": "28354",
+      "sign_us": "31701",
+      "verify_us": "117593"
+    },
+    "sha224_kat": {
+      "algo": "sha224",
+      "vecs": "5",
+      "long_bytes": "1000000",
+      "us": "214801"
+    },
+    "sha256_kat": {
+      "algo": "sha256",
+      "vecs": "5",
+      "long_bytes": "1000000",
+      "us": "214633"
+    },
+    "sha384_kat": {
+      "algo": "sha384",
+      "vecs": "5",
+      "long_bytes": "1000000",
+      "us": "152417"
+    },
+    "sha512_kat": {
+      "algo": "sha512",
+      "vecs": "5",
+      "long_bytes": "1000000",
+      "us": "152506"
+    },
+    "sm3_kat": {
+      "algo": "sm3",
+      "vecs": "5",
+      "long_bytes": "1000000",
+      "us": "517845"
+    },
+    "concurrent_hash_ecdsa": {
+      "loops": "5",
+      "sha_ret": "0",
+      "ecdsa_ret": "0"
+    },
+    "pointops_base_mult": {
+      "curves": "3",
+      "us": "149267"
+    },
+    "pointops_point_add": {
+      "curves": "3",
+      "us": "86450"
+    },
+    "pointops_scalar_mult": {
+      "curves": "3",
+      "us": "149309"
+    },
+    "pointops_stress_reentry": {
+      "rounds": "3",
+      "curves": "3",
+      "us": "1154922"
+    },
+    "heap_stress_keygen": {
+      "loops": "16",
+      "pre_used": "432",
+      "base_used": "432",
+      "first_after": "432",
+      "max_after": "432",
+      "post_used": "432",
+      "peak_used": "5188",
+      "peak_blocks": "65",
+      "heap": "65536"
+    },
+    "rsa2048_keygen": {
+      "algo": "rsa2048",
+      "keylen": "2048",
+      "exponent": "65537",
+      "time_ms": "5755"
+    },
+    "rsa2048_modexp": {
+      "algo": "rsa2048",
+      "stage": "signverify",
+      "us": "432773"
+    },
+    "rsa3072_modexp": {
+      "algo": "rsa3072",
+      "stage": "signverify",
+      "us": "1271678"
+    },
+    "rsa4096_modexp": {
+      "algo": "rsa4096",
+      "stage": "signverify",
+      "us": "4406898"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "aes128_cbc": "src=token",
+    "aes128_ctr": "src=token",
+    "aes128_gcm": "src=token",
+    "p256_kat": "src=token",
+    "p256_keygen": "src=token",
+    "p384_keygen": "src=token",
+    "sha224_kat": "src=token",
+    "sha256_kat": "src=token",
+    "sha384_kat": "src=token",
+    "sha512_kat": "src=token",
+    "sm3_kat": "src=token",
+    "concurrent_hash_ecdsa": "src=token",
+    "base_mult": "src=token",
+    "field_bytes": "src=token",
+    "point_add": "src=token",
+    "scalar_mult": "src=token",
+    "stress_reentry": "src=token",
+    "aes_bad_params": "src=token",
+    "ecdsa_tamper_verify": "src=token",
+    "heap_stress_keygen": "src=token",
+    "pointops_base_mult_bad": "src=token",
+    "pointops_field_bytes_bad": "src=token",
+    "pointops_point_add_bad": "src=token",
+    "pointops_scalar_mult_bad": "src=token",
+    "rsa_key_mismatch": "src=token",
+    "rsa_keygen_non_f4_fallback": "src=token",
+    "sha256_bad_params": "src=token",
+    "sha384_bad_params": "src=token",
+    "rsa2048_keygen": "src=token",
+    "rsa2048_modexp": "src=token",
+    "rsa3072_modexp": "src=token",
+    "rsa4096_modexp": "src=token"
+  }
+}

@@ -1,69 +1,42 @@
-# 810_driver_test 回归 case 清单
+# 810_driver_test 回归工程清单
 #
-# 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略。
+# 只有 `cases:` 之后、以 `- ` 开头的行才是工程；`#` 开头一律忽略
+# （`#` 屏蔽 = 跳过该工程）。
+#
+# ⚠️ 本文件**只路由到工程**。每个工程跑哪些 case 由
+#    `projects/<工程>/tests/cases.yaml` 自己声明（**缺该文件即报错**）。
 # ⚠️ 路径行上不能写行内注释 —— 会被当成路径的一部分（已踩过）。
+#
+# 新增工程四步：① `projects/` 下建工程 ② 写 `tests/run_test.py`
+#              ③ 写 `tests/cases.yaml` 声明 case ④ 在本文件登记工程
 #
 # 失败项的归因（A 驱动 / B 用例 / C 环境 / D 分不清）见 tmp/final/triage.md。
 
 cases:
-  - projects\trng_test\tests\case_default
-  - projects\rtc_ls_test\tests\case_default
-  - projects\otbn_test\tests\case_default
-  - projects\otbn_selftest\tests\case_default
-  - projects\i2c_pure_test\tests\case_pure_i2c_400k
-  - projects\i3c_i2c_switch_test\tests\case_switch_core
-  - projects\i3c_dualcore_test\tests\case_mixed_1m_12m5
-  - projects\i3c_dualcore_test\tests\case_mixed_1m_6m25
-  - projects\i3c_dualcore_test\tests\case_mixed_400k_12m5
-  - projects\i3c_dualcore_test\tests\case_mixed_400k_1m
-  - projects\i3c_dualcore_test\tests\case_mixed_400k_6m25
-  - projects\i3c_dualcore_test\tests\case_pure_i3c_12m5
-  - projects\i3c_dualcore_test\tests\case_pure_i3c_6m25
-  - projects\mbedtls_test\tests\case_sw_baseline
-  - projects\mbedtls_test\tests\case_otbn_ecc
-  - projects\mbedtls_test\tests\case_hw_otbn_mix
-  - projects\mbedtls_test\tests\case_hw_all
-  - projects\mbedtls_test\tests\case_otbn_hash
-  - projects\mbedtls_test\tests\case_otbn_rsa
-  - projects\mbedtls_test\tests\case_otbn_all
-  - projects\mbedtls_test\tests\case_otbn_sha256_hw_sm3
-  - projects\mbedtls_test\tests\case_sw_hw_mix
-  - projects\mbedtls_test\tests\case_all_on_max
-  - projects\adc_temper_test\tests\case_default
-  - projects\dma_test\tests\case_default
-  - projects\dma_test\tests\case_destructive
-  - projects\flash_test\tests\case_default
-  - projects\mbox_test\tests\case_mbox_basic
-  - projects\wdt_test\tests\case_non_destructive
-  - projects\iopmp_test\tests\case_default
-  - projects\spi_test\tests\case_default
-  - projects\spif_test\tests\case_default
-  - projects\spid_test\tests\case_default
-  - projects\i2cf_test\tests\case_default
-  - projects\eth_test\tests\case_mdio
-  - projects\eth_test\tests\case_phy_reset
-  - projects\qspi_flash_test\tests\case_default
-  - projects\qspi_flash_test\tests\case_no_calib
-  - projects\emmc_test\tests\case_block_driver
-  - projects\emmc_test\tests\case_block_pio
-  - projects\pwm_test\tests\case_default
-  - projects\app_iwdg_cpu2_test\tests\case_non_destructive
-  - projects\app_iwdg_cpu2_test\tests\case_quick_enable
-  - projects\app_iwdg_cpu2_test\tests\case_quick_invalid
-  - projects\wdt_test\tests\case_boundary
-  - projects\mbox_test\tests\case_mbox_big_crc
-  - projects\mbox_test\tests\case_mbox_consumers
-  - projects\mbox_test\tests\case_mbox_invalid
-  - projects\mbox_test\tests\case_mbox_rtc_sync
-  - projects\mbox_test\tests\case_mbox_stress
-  - projects\mbox_test\tests\case_mbox_fifo_full
+  - projects\trng_test
+  - projects\rtc_ls_test
+  - projects\otbn_test
+  - projects\otbn_selftest
+  - projects\i2c_pure_test
+  - projects\i3c_i2c_switch_test
+  - projects\i3c_dualcore_test
+  - projects\mbedtls_test
+  - projects\adc_temper_test
+  - projects\dma_test
+  - projects\flash_test
+  - projects\mbox_test
+  - projects\wdt_test
+  - projects\iopmp_test
+  - projects\spi_test
+  - projects\spif_test
+  - projects\spid_test
+  - projects\i2cf_test
+  - projects\qspi_flash_test
+  - projects\emmc_test
+  - projects\pwm_test
+  - projects\app_iwdg_cpu2_test
 
-# ---- 不能跑的（保持屏蔽）----
-#  - projects\eth_test\tests\case_link                  # 依赖 PC 对端
-#  - projects\eth_test\tests\case_arp_icmp               # 依赖 PC 对端
-#  - projects\eth_test\tests\case_udp_echo               # 依赖 PC 对端
-#  - projects\emmc_test\tests\case_fat_fs_api            # 上游 test，不链 810 公共结果模块
-#  - projects\emmc_test\tests\case_fs_sample             # 控制台 sample，非 ztest
-#  - projects\app_iwdg_cpu2_test\tests\case_reset        # 破坏性：cpu2 真实复位，单独跑
-#  - projects\wdt_test\tests\case_pmu_iwdg_full_reset    # 破坏性：整芯片复位
-#  - projects\wdt_test\tests\case_destructive_reset      # 破坏性：HART 复位
+
+
+  # 屏蔽（2026-09-23，用户裁定）：O-26 PHY 复位无界自旋未修，回归结果为 FAIL(0/0) 无有效数据
+  # - projects\eth_test

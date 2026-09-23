@@ -17,7 +17,18 @@
 #define QSPI_FLASH_NODE DT_NODELABEL(flash2)
 #define QSPI_CTRL_NODE  DT_NODELABEL(qspi2)
 
-/* 板载 NOR：32 MiB，JEDEC ID 85 23 19（roadmap §5.1 已核实） */
+/* 板载 NOR：文档值 32 MiB / JEDEC ID 85 23 19（roadmap §5.1，
+ * 来源 = `samples/spi_ls_flash_nor/README.rst` 2026-06-26 的运行日志）。
+ *
+ * ⚠️ 该组常量与 2026-09-22 回归的串口实测**不一致**（同一份日志里）：
+ *   `<inf> spi_nor: flash2@0: 64 MiBy flash` + `jedec id 20 40 20`
+ *   （ID 字节 2 = 0x20 ⇒ 512 Mbit；64 MiB）。
+ * 两者的 SFDP 版本/PH 数也不同（实测 `SFDP v 1.6 … PH0 rev 1.6: 16 DW / PH1 rev 1.0: 4 DW`，
+ * 文档日志为 `SFDP v 1.10 … PH0 rev 1.8: 23 DW / PH1 rev 1.1: 2 DW`）⇒ 器件已换型。
+ * ⇒ 依赖"容量/ID"的用例不得写死本组常量：`read/write_past_end_rejected` 已改为
+ *   运行期推导器件容量（`qspi_flash_test.c::flash_device_size()`）。
+ *   本组常量仅供 `size_is_32mib` / `qspi_flash_id` 套件使用 —— 该套件**当前未注册**
+ *   （KNOWN_ISSUES #96），启用前必须先上板复核这两个值。 */
 #define QSPI_FLASH_EXPECT_SIZE 0x2000000U
 #define QSPI_FLASH_ID0         0x85U
 #define QSPI_FLASH_ID1         0x23U

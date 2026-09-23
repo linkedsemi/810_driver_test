@@ -1,0 +1,139 @@
+{
+  "case": "case_default",
+  "result": "PASS",
+  "execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "calib_status_expected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "calib_status_null",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_above_max_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_below_min_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_boundary_6m25_accepted",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_freq_zero_silent",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "erase_non_sector_multiple_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "erase_sector_all_ff",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "erase_unaligned_addr_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "read_past_end_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_past_end_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_len1",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_len255",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_len256",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_len4096",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_len8192",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "mode_222_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "raw_read_1_1_1_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "raw_read_1_1_4_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "raw_read_1_4_4_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "spi_transceive_notsup",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_cmd_wren_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_read_chunked_over_4096",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_reg_read_len_4097_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_write_len_4096_accepted",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "stg_write_len_4097_rejected",
+      "result": "PASS",
+      "reason": ""
+    }
+  ],
+  "zero_evidence": false,
+  "items_note": ""
+}

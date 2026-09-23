@@ -3,7 +3,9 @@
  *
  * QSPI flash 单核测试（ztest 原生框架）。
  *
- * 被测硬件：qspi2@40040000 + 板载 32 MiB Puya NOR（JEDEC ID 85 23 19），
+ * 被测硬件：qspi2@40040000 + 板载 NOR（文档记作 32 MiB Puya，JEDEC ID 85 23 19；
+ *           ⚠️ 2026-09-22 实测为 64 MiB / ID 20 40 20 —— 见 include/qspi_flash_test.h
+ *           的常量说明与 flash_device_size() 注释），
  *           零外部接线（pinmux 板载默认 PC05/PC06-09/PC10，FUNC4）。
  *
  * 被测驱动（两层）：
@@ -389,18 +391,63 @@ ZTEST(qspi_flash_rw, erase_non_sector_multiple_rejected)
 		      ret);
 }
 
+/*
+ * 器件实际容量（字节），运行期推导。
+ *
+ * 本工程曾把容量写死为 32 MiB（文档记作板载 Puya NOR，JEDEC ID 85 23 19），
+ * 但 2026-09-22 回归的串口实测（serial_TGT.log）该 qspi2 器件为 64 MiB：
+ *   · `<inf> spi_nor: flash2@0: 64 MiBy flash`（= SFDP BFP DW2 密度 512 Mbit）
+ *   · `<inf> spi_nor: flash2@0: flash present, jedec id 20 40 20`（ID 字节 2 = 0x20
+ *     ⇒ 512 Mbit，非 85 23 19）
+ * 容量写死后，"越界" 地址会落在合法区内 ⇒ 驱动正确返回 0，而用例误判为缺陷
+ * （实测 `read past end should be -EINVAL, got 0`）。
+ * 故容量改由 flash 层 layout 推导（CONFIG_SPI_NOR_SFDP_RUNTIME 下
+ * layout.pages_count = flash_size / layout_page_size），器件换型时用例自动跟随。
+ * 返回值 0 表示查询不可用（用例据此报错，不做静默兜底）。
+ */
+static size_t flash_device_size(void)
+{
+	const size_t pages = flash_get_page_count(flash_dev);
+	struct flash_pages_info info;
+
+	if (pages == 0U) {
+		return 0U;
+	}
+	if (flash_get_page_info_by_idx(flash_dev, 0, &info) != 0) {
+		return 0U;
+	}
+
+	return (size_t)info.size * pages;
+}
+
 ZTEST(qspi_flash_rw, read_past_end_rejected)
 {
-	/* 异常参数：addr + size 越过 flash 末尾（32 MiB） */
-	int ret = flash_read(flash_dev, QSPI_FLASH_EXPECT_SIZE, rbuf, 16);
+	const size_t flash_size = flash_device_size();
+	int ret;
+
+	zassert_not_equal(flash_size, 0U,
+			  "cannot determine flash device size (page layout unavailable)");
+
+	ZT_INFO("read_past_end_rejected", "flash_size=%zu,off=%zu", flash_size, flash_size);
+
+	/* 异常参数：addr + size 越过 flash 末尾（器件实际容量，运行期推导） */
+	ret = flash_read(flash_dev, (off_t)flash_size, rbuf, 16);
 
 	zassert_equal(ret, -EINVAL, "read past end should be -EINVAL, got %d", ret);
 }
 
 ZTEST(qspi_flash_rw, write_past_end_rejected)
 {
-	/* 异常参数：addr + size 越过 flash 末尾（32 MiB） */
-	int ret = flash_write(flash_dev, QSPI_FLASH_EXPECT_SIZE, wbuf, 16);
+	const size_t flash_size = flash_device_size();
+	int ret;
+
+	zassert_not_equal(flash_size, 0U,
+			  "cannot determine flash device size (page layout unavailable)");
+
+	ZT_INFO("write_past_end_rejected", "flash_size=%zu,off=%zu", flash_size, flash_size);
+
+	/* 异常参数：addr + size 越过 flash 末尾（器件实际容量，运行期推导） */
+	ret = flash_write(flash_dev, (off_t)flash_size, wbuf, 16);
 
 	zassert_equal(ret, -EINVAL, "write past end should be -EINVAL, got %d", ret);
 }

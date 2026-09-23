@@ -322,8 +322,22 @@ ZTEST(spif, cmd_idx_accessors)
 	spif_get_cmd_by_idx(dev, &cmd, 5);
 	zassert_equal(cmd, 0x77, "set/get cmd by idx roundtrip");
 
+	/* 诊断必须先于断言：ztest 断言失败即 k_thread_abort 掉用例线程
+	 * （ztest.c `test_finalize()`），其后的代码（含 ZT_INFO）不再执行 ——
+	 * 失败轮也要能拿到回读值。上报槽 5（= SPIF_READ_CMD @0x40）的原始
+	 * 32 位与各字段，用于区分 DUMMY_CYCLE[12:8]「写不进」还是「读不回」：
+	 *   raw_dummy == 0 且 get_dummy == 0 → 该槽 DUMMY 位不可写/未实现；
+	 *   raw_dummy == 9 且 get_dummy == 0 → 位在寄存器里，是回读通路问题；
+	 *   raw_dummy == 9 且 get_dummy == 9 → 两者都对，则失败另有其因。 */
 	spif_set_dummy_by_idx(dev, 9, 5);
-	spif_get_dummy_by_idx(dev, &dummy, 5);
+	{
+		spif_cmd_t raw = { .value = sys_read32(spif_reg_base(1) + SPIF_CMD_BASE + 5 * 4) };
+
+		spif_get_dummy_by_idx(dev, &dummy, 5);
+		ZT_INFO("cmd_idx_accessors",
+			"slot5_raw=%#x,cmd=%#x,raw_dummy=%#x,get_dummy=%#x",
+			raw.value, raw.CMD, raw.DUMMY_CYCLE, dummy);
+	}
 	zassert_equal(dummy, 9, "set/get dummy by idx roundtrip");
 
 	/* replace_fixed_* 是同一组槽位的语义化包装 */
@@ -769,6 +783,14 @@ ZTEST(spif, passthrough_mode_switch)
 	const struct device *dev = spif_dev(1);   /* spif2：pinctrl 未被其他用例长期占用 */
 
 	zassert_ok(linkedsemi_spi_filter_cold_reset(dev), "cold_reset failed");
+
+	/* 诊断先于断言（ztest 断言失败即 abort 用例线程，其后代码不执行）：
+	 * default 与 passthrough 两态 pinmux 完全相同、仅差 `analog` 属性
+	 * （dtsi pinctrl-0 / pinctrl-1），故两态判据必须互斥 —— 复位后
+	 * 应为 filter=1,passthrough=0。 */
+	ZT_INFO("passthrough_mode_switch", "after_cold_reset filter=%d,passthrough=%d",
+		(int)spif_pinctrl_filter_mode_check(dev),
+		(int)spif_pinctrl_passthrough_mode_check(dev));
 
 	/* cold_reset 走 pinctrl-apply(DEFAULT)，故复位后应停在 filter 态 */
 	zassert_true(spif_pinctrl_filter_mode_check(dev),

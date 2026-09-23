@@ -6,7 +6,7 @@ agent 只负责启动；单 case FAIL 不阻断后续 case；预检 FAIL 才中�
 一次批量 = 一个会话目录 reports/<YYYY-MM-DD>-<idx>（spec §9.1）。
 
 用法：
-  python run_all.py                # 环境预检 + cases.yaml 全部启用 case
+  python run_all.py                # 环境预检 + cases.yaml 全部启用 case（两级清单，见 read_cases）
   python run_all.py --no-precheck  # 跳过预检
   python run_all.py --dry-run      # 只列启用 case 与映射脚本，不执行
 """
@@ -56,35 +56,33 @@ def _line_buffered_stdout():
 
 GDB = "riscv64-unknown-elf-gdb"
 
-# 工程 → run 脚本（tests/scripts/ 下，调用前逐一存在性校验）
-PROJECT_SCRIPT = {
-    "trng_test": "run_test.py",
-    "rtc_ls_test": "run_test.py",
-    "otbn_test": "run_test.py",
-    "otbn_selftest": "run_test.py",
-    "i2c_pure_test": "run_test.py",
-    "i3c_i2c_switch_test": "run_test.py",
-    "i3c_dualcore_test": "run_test.py",
-    "mbedtls_test": "run_test.py",
-    # 新增 6 工程（2026-09-04，全量回归纳入）
-    "adc_temper_test": "run_test.py",
-    "dma_test": "run_test.py",
-    "flash_test": "run_test.py",
-    "mbox_test": "run_test.py",
-    "wdt_test": "run_test.py",
-    "iopmp_test": "run_test.py",
-}
-DUAL_CORE = {"i2c_pure_test", "i3c_i2c_switch_test", "i3c_dualcore_test", "mbox_test",
-             "app_iwdg_cpu2_test"}
+# 工程 → run 脚本（**覆盖用**）。默认按目录约定发现 `projects/<proj>/tests/run_test.py`，
+# 无需登记；这里只在某工程要用**非默认脚本名**时才加条目。
+PROJECT_SCRIPT = {}
+
+
+def _is_dual_core(proj: str) -> bool:
+    """工程是否双核 —— **由目录结构派生，不维护工程名单**。
+
+    判据：`projects/<proj>/` 下有两个 `cpu*` 固件目录
+    （老工程 `cpu0_`+`cpu1_`，新工程 `cpu1_`+`cpu2_`）。
+
+    为什么不建外部表：漏登记会让该工程**所有 case 恒 `FAIL 0/0`**
+    （双核 run 脚本缺 `--ctrl-uart` 直接退出）—— 一个静默失效。派生则不可能漂移。
+    """
+    d = ROOT / "projects" / proj
+    if not d.is_dir():
+        return False
+    return sum(1 for x in d.iterdir()
+               if x.is_dir() and re.match(r"^cpu[0-9]+", x.name)) == 2
 
 
 def _resolve_script(proj):
     """工程名 → tests/ 下的 run 脚本名。
 
-    优先用 PROJECT_SCRIPT 显式映射（向后兼容、可覆盖默认）；未列名时按**目录约定**
-    发现 `<ROOT>/projects/<proj>/tests/run_test.py` —— 新工程只改 cases.yaml 即可接入，
-    不再因漏登记 PROJECT_SCRIPT 而**静默 SKIP**（SPEC_REFERENCE §6.4.5 同步清单第 5 步）。
-    两者都不命中返回 None（保持原 SKIP 记账行为）。
+    按**目录约定**发现 `<ROOT>/projects/<proj>/tests/run_test.py` —— 新工程**无需登记**。
+    `PROJECT_SCRIPT` 仅作**覆盖**用（某工程要用非默认脚本名时才加），现为空。
+    不命中返回 None（保持原 SKIP 记账行为）。
     """
     if proj in PROJECT_SCRIPT:
         return PROJECT_SCRIPT[proj]
@@ -396,41 +394,67 @@ def restart_debugserver() -> None:
 
 # ---- cases.yaml 读取与擦除编排 ----
 
-def read_cases(cases_file: Path = None):
-    """cases.yaml：YAML list，# 开头或空行忽略（# 屏蔽 = 跳过该 case）。
+def _parse_yaml_list(path: Path):
+    """读一份 yaml 清单的 `cases:` 段 —— 简单 list 解析，兼容无 PyYAML 环境。
 
-    `cases_file` 缺省 = 仓库里的 `regression/cases.yaml`；`--cases-file` 可指向
-    另一份同格式清单（子集验证 / 不同板况用），**格式与语义完全相同** —— 走的
-    仍然是 run_all 的完整路径（预检 → 擦除 → 逐 case 起 run_test.py → 汇总）。"""
-    cases_file = Path(cases_file) if cases_file else CASES_FILE
+    `#` 开头或空行忽略（`#` 屏蔽 = 跳过该条）。返回已统一分隔符的字符串列表。"""
     out = []
-    text = cases_file.read_text(encoding="utf-8")
-    # 简单 YAML list 解析：兼容无 PyYAML 环境
-    # 支持：
-    #   cases:
-    #     - projects\foo\tests\case_bar
-    #     # - projects\foo\tests\case_skip
-    in_cases_section = False
-    for raw in text.splitlines():
+    in_cases = False
+    for raw in Path(path).read_text(encoding="utf-8").splitlines():
         ln = raw.rstrip()
         if not ln or ln.lstrip().startswith("#"):
             continue
-        stripped = ln.strip()
-        if stripped == "cases:":
-            in_cases_section = True
+        s = ln.strip()
+        if s == "cases:":
+            in_cases = True
             continue
-        if not in_cases_section:
+        if not in_cases or not s.startswith("-"):
             continue
-        if stripped.startswith("-"):
-            item = stripped[1:].strip().strip('"').strip("'")
-            item = item.replace("\\", "/")
-            if item.lower().startswith("810_driver_test/"):
-                item = item[len("810_driver_test/"):]
-            p = ROOT / item
-            if not (p / "test.sh").exists():
-                print(f"[run_all] SKIP {item}: 目录不存在或无 test.sh")
-                continue
+        item = s[1:].strip().strip('"').strip("'").replace("\\", "/")
+        if item.lower().startswith("810_driver_test/"):
+            item = item[len("810_driver_test/"):]
+        out.append(item)
+    return out
+
+
+def read_cases(cases_file: Path = None):
+    """读启用清单，展开成**一串 case 目录**。
+
+    **两级结构**：
+      顶层（缺省 `regression/cases.yaml`，或 `--cases-file` 指定）—— 列**工程**；
+      工程侧 `projects/<工程>/tests/cases.yaml` —— 列该工程要跑哪些 **case**。
+
+    为兼容既有子集清单，顶层条目**同时认两种形态**：
+      · 工程目录（非 case 目录的目录）→ 展开其 `tests/cases.yaml`
+      · case 目录（含 `test.sh`）→ 直接采用
+
+    工程缺 `tests/cases.yaml` ⇒ **报错中止**。**不自动发现**：磁盘上存在 ≠ 启用
+    （磁盘上 60 个 case、启用 51 个），自动发现会把不该跑的一起跑。
+
+    `--cases-file` 仍可指向另一份同格式清单（子集验证 / 不同板况用），
+    走的仍是 run_all 的完整路径（预检 → 擦除 → 逐 case 起 run_test.py → 汇总）。"""
+    cases_file = Path(cases_file) if cases_file else CASES_FILE
+    out = []
+    for item in _parse_yaml_list(cases_file):
+        p = ROOT / item
+        if not p.is_dir():
+            print(f"[run_all] SKIP {item}: 目录不存在")
+            continue
+        if (p / "test.sh").exists():          # 兼容形态：条目直接是 case 目录
             out.append(p)
+            continue
+        sub = p / "tests" / "cases.yaml"       # 工程目录 → 展开其 case 清单
+        if not sub.is_file():
+            print(f"[run_all] ERROR: {item} 缺 tests/cases.yaml —— 工程必须显式声明"
+                  f"启用哪些 case（不自动发现：磁盘上存在 ≠ 启用）", file=sys.stderr)
+            raise SystemExit(1)
+        for name in _parse_yaml_list(sub):
+            cd = p / "tests" / name
+            if not (cd / "test.sh").exists():
+                print(f"[run_all] ERROR: {item}/tests/cases.yaml 登记的 {name} 下无 test.sh",
+                      file=sys.stderr)
+                raise SystemExit(1)
+            out.append(cd)
     return out
 
 
@@ -568,9 +592,13 @@ def main():
     ap.add_argument("--no-erase", action="store_true",
                     help="跳过 flash 全片擦除（默认全量前擦一次，用户 #6）")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--date", default=None,
+                    help="会话目录日期（YYYY-MM-DD），缺省 = 今天。"
+                         "用于把本批报告归到指定日期（如跨零点长跑 / 避免与当日已有批次混排）")
     ap.add_argument("--cases-file", default=None,
-                    help="改用另一份同格式 case 清单（默认 regression/cases.yaml）；"
-                         "用于子集验证——走的仍是完整 run_all 路径")
+                    help="改用另一份同格式清单（默认 regression/cases.yaml，只列工程）；"
+                         "顶层条目也认 case 目录，故旧的完整 case 路径子集清单仍可用；"
+                         "走的仍是完整 run_all 路径")
     args = ap.parse_args()
 
     cases = read_cases(args.cases_file)
@@ -608,7 +636,7 @@ def _run_all(args, cases):
     sys.path.insert(0, str(ROOT / "common"))
     from report_dir import allocate_session_dir, read_summary, update_summary
     import acquire as _acquire   # E-2：每 case 前复用同一份 DS 存活检查（不另写一套）
-    session = allocate_session_dir(REPORTS_ROOT, datetime.date.today().isoformat())
+    session = allocate_session_dir(REPORTS_ROOT, args.date or datetime.date.today().isoformat())
     print(f"[run_all] session: {session}", flush=True)
 
     if not args.no_precheck:
@@ -692,7 +720,7 @@ def _run_all(args, cases):
 
         cmd = [sys.executable, str(script_path), "--case", c.name,
                "--session-dir", str(session)]
-        if proj in DUAL_CORE:
+        if _is_dual_core(proj):
             cmd += ["--ctrl-uart", CTRL_UART, "--tgt-uart", TGT_UART]
         else:
             cmd += ["--tgt-uart", TGT_UART]  # 单核工程也传 TGT 串口

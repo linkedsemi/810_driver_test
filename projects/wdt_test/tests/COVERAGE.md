@@ -54,7 +54,7 @@
 | test_install_without_callback_accepted | `iwdt_ls_install_timeout` `callback == NULL` 分支 | 中断时序 | ret == 0 | 驱动源码 | ✅ 待实测 |
 | test_setup_without_timeout_enotsup | `iwdt_ls_setup` `!IWDT_LOAD` → -ENOTSUP | 异常参数 | ret == -ENOTSUP | 驱动源码 | ✅ 待实测 |
 | test_setup_pause_in_sleep_enotsup | `iwdt_ls_setup` `WDT_OPT_PAUSE_IN_SLEEP` → -ENOTSUP | 异常参数 | ret == -ENOTSUP | 驱动源码 | ✅ 待实测 |
-| test_setup_twice_ebusy | `iwdt_ls_setup` `IWDT_CTRL != 0` → -EBUSY | 异常参数 | 首次 0，二次 -EBUSY | 驱动源码 | ✅ 待实测 |
+| test_setup_twice_ebusy | `iwdt_ls_setup` `IWDT_CTRL & (IWDT_EN\|IWDT_RST_EN) != 0` → -EBUSY | 异常参数 | 首次 0，二次 -EBUSY | 驱动源码 | ✅ 待实测 |
 | test_setup_pause_halted_by_dbg_feed_disable | setup 使能 + `MSP_DEBUG(1)` 分支；feed / disable 返回 0 | 功能通路 | 三者均 == 0 | API 契约 | ✅ 待实测 |
 | test_pmu_iwdg_lifecycle | pmu_iwdg：install(RESET_SOC) → setup → feed → disable | 功能通路 | 全链路 == 0 | API 契约 | ✅ 待实测 |
 | test_load_ticks_min_timeout | `iwdt_calculate_load` 最小有效超时 | 边界长度 | max=1ms → IWDT_LOAD == 32 | 驱动公式 × dts clock-frequency=32768 | ✅ 待实测 |

@@ -159,7 +159,14 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             env=env_line, execution=execution, mem_line=mem_line,
             result=f"{'PASS' if case_ok else 'FAIL'} ({passed}/{ran})"),
-        '- 接线: 无（spi1/spi2 片内引脚组 + 板级 CS GPIO；总线上无从设备，判据来自驱动源码/寄存器）',
+        # 接线如实分列两个套件（2026-09-23 修正）：
+        #   原值写死「无」，而 P4.6 起套件 `spi_loopback`（8 项）有外部前置条件，
+        #   该行会把"跳线未接导致的 FAIL"误导成"驱动缺陷"（本轮任务书即据此行误判）。
+        #   与 cases.yaml `meta.env` 及 COVERAGE.md「回环可行性结论」逐 pin 一致。
+        '- 接线: 套件 `spi`（18 项）无 —— spi1/spi2 片内引脚组 + 板级 CS GPIO，总线上无从设备；'
+        '套件 `spi_loopback`（8 项）需 `外部: SPI1↔SPI3 跳线`'
+        '（SCK PA00↔PG14 / MOSI PA01↔PG15 / MISO PA02↔PG03 / CS PA03↔PG13），'
+        '跳线未接时 7 项 SKIP、`link_probe` FAIL',
         *([""] + ["> " + missing_evidence_note(missing)] if missing else []),
         "",
         "## 测试项结果",

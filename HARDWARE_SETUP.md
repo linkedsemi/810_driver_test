@@ -55,11 +55,20 @@ for port in serial.tools.list_ports.comports():
 
 ## 环境预检
 
-跑测试前确认：
+每次测试前确认：
 1. 无 FlashProgrammer 残留进程
 2. DebugServer 在线（GDB 连一次判断）
 3. 串口空闲
 4. 批量预检：`python regression/precheck/run_precheck.py`
+
+```bash
+# 快速自检（tasklist 逐项 grep）
+tasklist | grep -i DebugServer    # 1) DebugServer 已启动
+tasklist | grep -i csky           # 2) 无 FlashProgrammer 残留
+tasklist | grep -i python         # 3) 串口空闲
+```
+
+任一项异常，先按 `CLAUDE.md` §5 / `qsh-debug` skill 排查。
 
 ## GPIO Toggle 引脚
 

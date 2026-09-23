@@ -145,7 +145,7 @@ DT 事实**不冲突**；同时它们也**无法由仓库证实或证伪**。
 | callback_register | `register_callback()`（`:69-80`）：纯指针落地，恒 `0` | 功能通路 | **读回 `dev->data` 的 `cb` / `user_data` 字段**（按驱动 `struct linkedsemi_i2c_filter_data`（`i2c_filter.c:44-48`）同布局复刻视图）：注册后 `cb == 注册的函数指针`、`user_data == 注册的指针`；覆盖注册 NULL 后两者归零；4 实例各自落地 | 驱动源码（字段赋值）+ 白盒布局视图。**2026-09-18 F1 波改判**：原实现只断恒 0 的返回值 | ⏳ |
 | concurrent_fill | `dev_data->lock`（`k_mutex_lock(&dev_data->lock, K_FOREVER)`，`:150/:206/:119/:238` 等）对 `SMBF_ADDRESS_INDEX` 选择序列的保护 | 并发 | 双线程各管 8 通道 × 4 轮 fill+dump，全部 addr/bitmap 一致（无 INDEX 串扰） | 驱动 mutex 契约 + 读写序列 | ⏳ |
 | isr_addr_beyond_whitelist | ISR 路径：`linkedsemi_i2c_filter_isr()`（`:82-105`）读 `INTR_STT`（`:89`）→ 写 `INTR_CLR`（`:90`）→ `ADDRESS_BEYOND_WHITELIST` 分支（`:93-95`）→ `dev_data->cb()`（`:102-104`）。触发源 = 空白名单（16 通道全关）仍 `_en(true,true,false)` | 中断/时序 | 上游 master 访问未授权地址 → ① 回调被调用（`isr_count>=1`）② `SMBF_NONWHITELIST` 锁存**非零**违规信息 ③ 主机侧返回负值。**零外部器件** | 驱动源码 ISR 分支 + `外部:` 上游跳线（见 §3） | ⏳ |
-| filter_blocks_nonwhitelist | 白名单**非空但只授权另一地址**：`fill_bitmap(dev, 0, authorized, 全 1)`（`:134-188`）+ `_en(true,true,false)`；未授权地址的拦截语义 | 功能通路+异常参数 | 上游访问 `slave`（白名单 = `authorized`）→ 负值；filter off 后同址 → 0。**需下游从设备；扫不到则 SKIP** | 驱动源码（`SMBF_ADDRESS_ENABLE` 位 + 该地址命令位图共同决定放行） | ⏳ |
+| filter_blocks_nonwhitelist | 白名单**非空但只授权另一地址**：`fill_bitmap(dev, 0, authorized, 全 1)`（`:134-188`）+ `_en(true,true,false)`；未授权地址的拦截语义 | 功能通路+异常参数 | 上游访问 `slave`（白名单只授权 `authorized`）→ 负值；**单变量对照**：**只把 `slave` 也授权进白名单、其余全不动**再读一次 → 0。**需下游从设备；扫不到则 SKIP**。★ 2026-09-23 改判：原判据"filter off 后同址 → 0"**不可满足、已废**（该期望只是寄存器位映射推出的③级推断、从未被独立验证）。⚠ **因果注意**：曾据一个判别实验断言"关滤波器 ≠ 直通"，**该判据已撤回**（实验两条读数无判别力）—— 真正原因是**该断言位置紧接一次被拒事务之后、本就多半不可测**（KNOWN_ISSUES #112 / #116） | 驱动源码（`SMBF_ADDRESS_ENABLE` 位 + 该地址命令位图共同决定放行） | ⏳ |
 | filter_passthrough_whitelist | 放行方向：授权从设备地址 + 全命令码后，上游 master 的 `i2c_burst_read` | 功能通路 | 上游经滤波器读回 == 预先经旁路写入的 pattern（逐字节 `zassert_mem_equal`）；偏移 `0x00..0x07` 备份/恢复。**需下游从设备；扫不到则 SKIP** | 外部器件 + 透传通路。破坏性受控 | ⏳ |
 | master_eeprom_rw | `i2cf_i2c_dev()`（`:256-261`）+ `switch_to_master()`（`:263-276`）→ Zephyr `i2c_burst_read/write` → `switch_to_filter()` | 功能通路 | 从设备写入 pattern 后回读逐字节相等；偏移 `0x00..0x0f` 备份/恢复。**需下游从设备（旁路通路）；扫不到则 SKIP** | 外部器件（读写契约） | ⏳ |
 | slave_addr_scan | 旁路通路（`switch_to_master()` `:263-276` → `i2c4` 直驱 O 侧）+ 逐地址 `i2c_read` 探测 | 功能通路 | ⚠ **观测项，无判别力**（2026-09-18 F1 波如实标注）：唯一真判据 = 旁路 master 就绪；应答清单经 `ZT_INFO` 上报供人工判读。结果完全由**外部接线/器件是否在位**决定，平台内无对照量；**零应答又是用户裁定的合法结果** ⇒ 不存在"驱动正确必过 / 典型失效必不过"的判据。原两条断言（"范围 `0x08..0x77` 内" + "无重复"）**恒真**（`found[]` 由循环变量 `addr` 赋入且每地址只探一次），本轮已删除 | `外部:` 下游总线。**不因无器件失败**。⚠ 改名需同步 `tests/run_test.py:70` 与 `tests/scripts/dump_results.py:61` 的 `TEST_NAMES`（那两个文件本轮**不在写域**，另一 agent 在重写）⇒ 故**保留原名**，仅此处与源码注释标注无判别力 | ⏳ |
@@ -170,7 +170,8 @@ DT 事实**不冲突**；同时它们也**无法由仓库证实或证伪**。
   - 上游 master 实例（`app.overlay` 的 alias `i2cfupstream`）。
 - 三项行为层用例的失败信息均带**实际读回字节 / 实际 ret / 目标地址**，用于区分
   "地址或器件不符"与"滤波器/接线问题"；`isr_addr_beyond_whitelist` 与
-  `filter_blocks_nonwhitelist` 内置对照（前者用滤波器锁存信息，后者用"关 filter 后同址应成功"）。
+  `filter_blocks_nonwhitelist` 内置对照（前者用滤波器锁存信息，后者用"**只改白名单授权**（单变量）后同址应成功"；
+  ★ 2026-09-23：原"关 filter 后同址应成功"**不可满足、已废**、勿再用 —— 注意因果：**不是**"关滤波器 ≠ 直通"（该判据已撤回），而是**断言落在被拒事务紧邻位置不可测**；见 KNOWN_ISSUES #112 / #116）。
 - 无外部黄金向量文件（见 `expected/README.md`）。
 
 ---

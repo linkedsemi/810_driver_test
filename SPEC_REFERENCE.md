@@ -207,7 +207,7 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 4. **串口必须实时采集**：ztest 输出是实时流，跑完即过，事后读串口只剩 shell 提示符 → 后台线程逐行存 `lines`，判据与报告都取自该流；禁止事后一次性读串口。
 5. **行解析用 `re.search()` 不用 `^` 锚点**（KNOWN_ISSUES #5：shell 提示符重绘会在行首加 `uart:~$ ` 前缀）；`PASS - <name>` 按名字去重/多核区分，`PROJECT EXECUTION` 按核计数（双核两行都要）。
 6. **每 case 前后 DebugServer 自愈（按需重启）**：先杀残留 gdb（1025 ESTABLISHED 对端），杀完复查——连接残留仍在（ESTABLISHED 未释放）或 server 已死（无 LISTENING）才重启；健康则**不重启**（实测 6 case 全量只重启 1 次）。重启 = taskkill + Popen + 轮询日志 `DebuggerServer$` 提示符判就绪；Python 里 taskkill/tasklist 一律单斜杠参数（KNOWN_ISSUES #16）。
-   - **★ E-2（2026-09-21）：提升为"每 case 前置动作"**。实现 = `common/acquire.py::ensure_debugserver_alive()`（**唯一一份**，复用既有 `netstat_1025`/`kill_residual_gdb`/`restart_debugserver_stable`，不另写 restart）；**两处都调**：① `regression/run_all.py` case 循环内逐 case 调（一处改动覆盖全部 24 工程）；② `common/acquire.py` 五个 L1 策略入口（`single_cap`/`_ports_dict_one`/`dual_run`/`mbox`/`iwdg`）各调一次（覆盖不经 run_all 的单跑）。
+   - **★ E-2（2026-09-21）：提升为"每 case 前置动作"**。实现 = `common/acquire.py::ensure_debugserver_alive()`（**唯一一份**，复用既有 `netstat_1025`/`kill_residual_gdb`/`restart_debugserver_stable`，不另写 restart）；**两处都调**：① `regression/run_all.py` case 循环内逐 case 调（一处改动覆盖全部 23 工程）；② `common/acquire.py` 五个 L1 策略入口（`single_cap`/`_ports_dict_one`/`dual_run`/`mbox`/`iwdg`）各调一次（覆盖不经 run_all 的单跑）。
    - **判据（稳、不误杀）**：健康 = 1025 有 LISTENING **且**无 ESTABLISHED 残留 ⇒ 立即返回（零副作用，实测 **24ms/case**，**不做** `probe_gdb_alive`——探测连接本身必留残留 §10.17，会把"健康"变成"要重启"）；netstat 偶发失败内层重试 3 次（避免把"查询失败"误读成"进程已死"而错杀活实例）；**刚拉起还未 listen 不算死** ⇒ 有限等待 `DS_READY_WAIT_S=15s` 轮询。
    - **自愈阶梯**：轻自愈（`kill_residual_gdb`，只清残留不重启）→ 重自愈（`restart_debugserver_stable`，含 5s 稳定期）→ `DS_ENSURE_ATTEMPTS=2` 轮仍不就绪 ⇒ **fail-closed**：`run_all` 记 `ENV`（summary 写 `ENV-ABORT`，不计入 PASS/FAIL，退出码计 1），`run_test.py` 报 `[ERROR] DebugServer 前置检查失败` 并中止该 case。**为什么必须补**：此前该检查只在整批/单工程开始前做一次，一次 CKLink 探针瞬时故障把 DebugServer 打挂后，后续每个 case 的 gdb 只能报 `could not connect (error 138)` ⇒ **一次掉线放大成 N 个假 FAIL**（实测 1 → 4；修后同场景收敛为 1）。
    - **E-2 同族残留的收口（F1 / F3 / F4）**：E-2 落地时登记的同族缺口，三条已修，一条判定为删 ——
@@ -533,7 +533,7 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 OVERALL: PASS
 ```
 
-- **头部 bullet**：字段顺序固定 **工程 / case / 日期 / 板级 / 环境 / 执行标记 / 内存兜底 / 结果**，缺项不输出空字段（`format_report_header()`）。「内存兜底」行收 `mem_state_line()` 输出（`有效` / `无效（哨兵未置位）` / `不可用（…）` 等），工程可另加 `核执行标记` 行。
+- **头部 bullet**：字段顺序固定 **工程 / case / 日期 / 板级 / 环境 / 执行标记 / 内存兜底 / 结果**，缺项不输出空字段（`format_report_header()`）。「内存兜底」行收 `mem_state_line()` 输出（`有效` / `无效（哨兵未置位）` / `不可用（…）` 等），工程可另加 `核执行标记` 行。**⚠ 批量路径下本行恒为 `不可用（…）`、来源列随之落 `missing`**（§6.4.10 裁定：批量不取 mem）—— **这是预期形貌、不是采集故障**，勿据此判"结果被采集链路弄丢"（KNOWN_ISSUES #114）。
 - **结果**列：结果词 → 文案（`result_text()`：`✅ PASS` / `❌ FAIL` / `⏭️ SKIP` / `⬜ NOT_RUN` / `⬜ MISSING` / `⚠️ INCOMPLETE`；未登记词保留原样 `⬜ <词>`）。
 - **来源**列：统一词表 `token` / `mem` / `mem(NOT_RUN)` / `missing`（`source_label()`：去 `src=` 前缀；`token(skip)`→`token`，`mem-unavailable`→`missing`；**`mem(NOT_RUN)` 保留** = 内存明确读到该项没跑，与 `missing` 语义不同）。
 - **期望**列：来自 COVERAGE.md 该测试项的预期描述（`coverage_expected()`，§6.5.3）；超 60 字符截断 + `…`（`clip_cell()`），**完整值在 `tests/COVERAGE.md`**。
@@ -584,21 +584,39 @@ python regression/run_all.py --no-erase     # 跳过全量前 flash 全片擦除
 python regression/run_all.py --dry-run      # 只列启用 case 与映射脚本
 ```
 
-- `cases.yaml`：YAML list（`cases:` 下每行一个 case 目录路径，相对 810_driver_test，反斜杠），`#` 开头 = 屏蔽跳过。VS Code YAML 模式下 `Ctrl+/` 可直接 toggle 注释。用例清单变更改这里，run_all.py 不硬编码 case。
-- **`cases.yaml` 是"哪些工程/case 已启用"的唯一权威源**。`CLAUDE.md` §2 各工程后的 `(N)` = 本文件该工程**已启用**的 case 数（≠ 工程目录里的 case 总数）。增删工程/case 时按此清单同步，勿只改一处：
-  1. `regression/cases.yaml` —— 增删条目（唯一权威源）
-  2. `CLAUDE.md` §2 —— 单核/双核清单 + `(N)`
-  3. `README.md` §4 工程表 + §「外部接线记录」（新工程登记接线，片内写"无"）
-  4. 工程自带 `tests/COVERAGE.md` / `expected/`（骨架见 qsh-test-gen）
-  5. `regression/run_all.py` 的 **`PROJECT_SCRIPT`** —— 加 `{工程名: "run_test.py"}` 映射。
-     该表是**逐工程硬编码**的"工程名 → run 脚本"字典；未入表的工程命中
-     `PROJECT_SCRIPT.get(proj) == None` → 打印 `[run_all] SKIP <case>: 无 run 脚本映射` 并**按 SKIP 记账**
-     （不崩、但也不跑）⇒ **只改 `cases.yaml` 不够**，新工程接入必漏这一步。
-     **已实施（2026-09-18）**：`_resolve_script()` 已按目录约定自动发现 `<proj>/tests/run_test.py`，
-     `PROJECT_SCRIPT` 仅保留**覆盖用**（未命中不再静默 SKIP）。
-  6. `regression/run_all.py` 的 **`DUAL_CORE`** —— **第二张**逐工程硬编码表：未登记该集合的**双核**工程，
-     run_all 只传 `--tgt-uart`，双核 run 脚本缺 `--ctrl-uart` 直接退出 ⇒ 该工程**所有 case 恒 `FAIL 0/0`**
-     （日志尾部 `ERROR: --ctrl-uart/--tgt-uart required`）。**新双核工程 `PROJECT_SCRIPT` + `DUAL_CORE` 两张都要核**。
+- **两级清单（2026-09-22 起）**：
+
+  | 层 | 文件 | 内容 |
+  |---|---|---|
+  | 顶层 | `regression/cases.yaml` | **只列工程**（`cases:` 下每行一个工程目录，相对 `810_driver_test`，反斜杠）|
+  | 工程侧 | `projects/<工程>/tests/cases.yaml` | 该工程**自己声明**要跑哪些 case（每行一个 case 名）|
+
+  两层都是 YAML list，`#` 开头 = 屏蔽跳过。VS Code YAML 模式下 `Ctrl+/` 可直接 toggle 注释。
+  run_all.py 不硬编码 case。**工程清单与 case 清单分离**：改跑哪些工程看顶层，改某工程跑哪些 case 看它自己那份。
+- **工程缺 `tests/cases.yaml` ⇒ run_all 报错中止**。**刻意不自动发现**：磁盘上存在 ≠ 启用
+  （当前磁盘 60 个 case、启用 51 个），自动发现会把不该跑的静默带进来。
+- `--cases-file <清单>` 可指向另一份同格式清单（子集验证 / 不同板况）。顶层条目**同时认两种形态**
+  —— 工程目录（展开其 `tests/cases.yaml`）与 case 目录（含 `test.sh`，直接用），
+  **既有的"完整 case 路径"子集清单继续可用**。
+- **权威源 —— 一律可导出，故不另设登记表**：
+
+  | 信息 | 权威来源 |
+  |---|---|
+  | 有哪些工程 | `ls projects/` |
+  | 启用哪些 case | 顶层 `cases.yaml` × 各工程 `tests/cases.yaml` |
+  | **单核 / 双核** | `projects/<工程>/` 下 `cpu*` 子目录数 —— **2 = 双核，1 = 单核**（老工程 `cpu0_`+`cpu1_`，新工程 `cpu1_`+`cpu2_`）|
+  | 工程 → run 脚本 | 目录约定 `projects/<工程>/tests/run_test.py`（`PROJECT_SCRIPT` 仅作**覆盖**用，现为空）|
+
+- **增删 case**：只改 `projects/<工程>/tests/cases.yaml` + 更新该工程 `tests/COVERAGE.md`。
+- **新增工程（四步，缺一即不跑）**：
+  1. `projects/<新工程>/` 建工程骨架（骨架见 qsh-test-gen）
+  2. 写 `<工程>/tests/run_test.py`
+  3. 写 `<工程>/tests/cases.yaml` 声明要跑哪些 case —— **缺此文件 run_all 直接报错中止**
+  4. 在 `regression/cases.yaml` 登记该工程
+
+  另需：`README.md` §4 工程表 + 外部接线记录；工程自带 `tests/COVERAGE.md`。
+  **双核工程无需登记任何"双核表"** —— 由 `cpu*` 目录数自动识别（漏登记的失效模式是
+  该工程所有 case 恒 `FAIL 0/0`，所以刻意做成派生而非外部表）。
 - 流程（按 run_all.py 代码实际顺序）：读清单 → **flash 全片擦除一次**（`--erase-only`，DebugServer 互斥退出后重启，用户 #6；失败=环境 FAIL 批量中止）→ **分配会话目录**（§6.4.1）→ 环境预检（§6.4.6，报告写入该会话目录 `precheck_report.md`；可 `--no-precheck` 跳过）→ **每 case 前置 DebugServer 存活检查**（E-2，§6.2.3 第 6 条：不活则复用 acquire 自愈链拉起，起不来记 `ENV` 并跳过该 case、不烧录）→ 逐 case 调对应工程 run 脚本（`--case` + `--session-dir`）→ 每 case 日志独立存 `session/logs/` → 结束总表 + 退出码（全 PASS=0；有 FAIL **或 ENV**=1；预检 FAIL=2）。
 - **单 case FAIL 不阻断后续 case**（日志记 FAIL 继续跑完）。
 - **双核 UART 由 run_all.py 配置区显式注入**（COM15/COM16，`--ctrl-uart/--tgt-uart` 传参）——双核 run 脚本**必须显式 UART**，不支持自动发现（2026-08-29 实测）。
@@ -634,7 +652,7 @@ python regression/precheck/run_precheck.py [--session-dir <dir>] [--timeout 40]
 ```
 
 - **写入真源 = `common/serial_archive.py`（`archive_serial()` / `read_serial_log()` /
-  `read_meta()`）**，24 份 `run_test.py` 在 **采集之后、判定之前**调用，禁止各脚本自写归档逻辑。
+  `read_meta()`）**，23 份 `run_test.py` 在 **采集之后、判定之前**调用，禁止各脚本自写归档逻辑。
 - **双核必须分核各写一份**（`serial_CTRL.log` + `serial_TGT.log`）。合并成一份会把两核的行
   交错，破坏 `parse_ztest` 的核归属判定 ⇒ **无法按核重放**。单核只写 `serial_TGT.log`。
 - **硬约束（缺一不可）**：① 归档逻辑整体 try/except，异常只打一行 warning，**不改变判定与控制流**；
@@ -658,7 +676,7 @@ python regression/replay.py --session reports/2026-09-20-1 --render-from-json   
   `run_test.py`**，让它的 `main()` 原样跑完 判定 → 渲染 → 归档；**只把"硬件采集层"
   （`run_case` / `capture_case` / `run_pass` / `SerialCapture`）与"调试器层"
   （`preflight_gdb` / `clean_gdb_residue` / `restart_debugserver`）换成替身**。
-  24 份脚本的采集函数签名不同 ⇒ 需一层**接线**（`regression/replay.py` 的适配器），
+  23 份脚本的采集函数签名不同 ⇒ 需一层**接线**（`regression/replay.py` 的适配器），
   **接线层不含任何判定逻辑**。
   > **2026-09-20 A1 更新**：判定 → 渲染 → 落盘已收敛到 `common/process.py`（§6.4.8），
   > 适配器现在**只用于替换 L1 采集层**。另新增 `--l2-direct`：读归档后**直接**调
@@ -707,7 +725,7 @@ L0 契约  common/serial_archive.py（归档格式） + common/judge.py + common
 ```
 
 实现落点：`common/process.py`（新建）。命名理由：层名取 L2 的通用语义（processing），
-不绑定任何工程；`common/` 已在 24 份 `run_test.py` 的 `sys.path` 上，`import process` 零配置。
+不绑定任何工程；`common/` 已在 23 份 `run_test.py` 的 `sys.path` 上，`import process` 零配置。
 
 **L2 输入契约**
 
@@ -728,7 +746,7 @@ L0 契约  common/serial_archive.py（归档格式） + common/judge.py + common
 | 汇总 | `summary.md` 一行（key = `<driver>_<case_label>`，计数口径由工程 `summary` 钩子给） |
 | 返回码 | `0` = 全部 PASS；`1` = 有 FAIL |
 
-**每工程的唯一接入点 = 模块级 `l2_spec(facts=None, test_names=None)`**（24/24 已接入）：
+**每工程的唯一接入点 = 模块级 `l2_spec(facts=None, test_names=None)`**（23/23 已接入）：
 
 ```python
 def l2_spec(facts=None, test_names=None) -> process.ProcessSpec:
@@ -742,7 +760,7 @@ def l2_spec(facts=None, test_names=None) -> process.ProcessSpec:
     )
 ```
 
-`main()` 的接线（24 份同构，只有函数名不同）：
+`main()` 的接线（23 份同构，只有函数名不同）：
 
 ```python
 lines_by_core = {"TGT": [l for _, l in raw["tgt_lines"]]}   # ← L0 归档形状
@@ -753,7 +771,7 @@ return process.run(l2_spec(facts), case=args.case, lines=lines_by_core,
 ```
 
 **家族差异怎么放**：`ProcessSpec` 的钩子。**不在 `process.py` 里写 `if family == …`** ——
-那等于把 24 份的分叉搬进一个文件（7 个判定家族的差异是真实语义差异：双核结构不对称 /
+那等于把 23 份的分叉搬进一个文件（7 个判定家族的差异是真实语义差异：双核结构不对称 /
 mbox 标记式 / rtc_ls 自定义 token / iwdg 双 pass，不是噪音）。
 
 **已知边界（诚实清单）**
@@ -766,7 +784,7 @@ mbox 标记式 / rtc_ls 自定义 token / iwdg 双 pass，不是噪音）。
      本来就已拆分）。
 2. **`facts` 里的时序事实不进归档**：`timed_out` / `elapsed_s` 离线取缺省值 ⇒ 报告里
    "采集时长"行离线为 `0.0s`。该行已明文标注"不参与判定"。
-3. **L1 完全不在本步范围内**：构建 / 烧录 / 串口时序 / 环境自愈仍散在 24 份 `main()` 里
+3. **L1 完全不在本步范围内**：构建 / 烧录 / 串口时序 / 环境自愈仍散在 23 份 `main()` 里
    （A2 处理）。L2 的抽取**不改变**这些行为。
 
 **离线入口**：
@@ -898,7 +916,7 @@ L2 处理（纯离线）  common/process.py 的 run() / process_archive()（§6.
 ```
 
 实现落点：`common/acquire.py`（新建，约 1100 行）。命名理由：层名取 L1 的通用语义
-（acquisition），不绑定任何工程；`common/` 已在 24 份 `run_test.py` 的 `sys.path` 上，
+（acquisition），不绑定任何工程；`common/` 已在 23 份 `run_test.py` 的 `sys.path` 上，
 `import acquire` 零配置。
 
 **L1 输入契约**（`AcquireSpec` 家族，5 个 `*Spec` dataclass）
@@ -924,7 +942,7 @@ L2 处理（纯离线）  common/process.py 的 run() / process_archive()（§6.
 | `ok` / `err` / `phase` | `bool` / `str` / `'build'|'capture'` | — 供调用方复刻各自的失败分支 |
 | `rc` | `int` | 非 0 = 中止整个回归（DUAL_RUN 的 `2` = 环境中止） |
 
-**5 个采集策略**（与 `regression/replay.py` 的适配器分组同源；共 24 工程）
+**5 个采集策略**（与 `regression/replay.py` 的适配器分组同源；共 23 工程）
 
 | 策略 | 采集机制 | 工程数 / 工程 | 关键参数 |
 |---|---|---:|---|
@@ -942,9 +960,9 @@ L2 处理（纯离线）  common/process.py 的 run() / process_archive()（§6.
 > 41 KB/s（链路瓶颈），判吞吐看 gdb 的 `Transfer rate: N KB/sec`，**别从 `N bytes/write` 反推**
 > （2026-09-21 实测口径见 `qsh-debug` §3.1 / `KNOWN_ISSUES.md` #23）。
 
-**为什么不是"一个通用采集脚本"**：24 份的采集差异分 5 个**真实语义形态**（差异是两遍
+**为什么不是"一个通用采集脚本"**：23 份的采集差异分 5 个**真实语义形态**（差异是两遍
 烧录 / 单核 hold cpu2 / mbox 字节块 / iwdg 双 pass / rtc_ls 无 hold 这类**真实差异**，
-不是噪音）。把 `if project == …` 写进 `acquire.py` = 把 24 份的分叉搬进一个文件。
+不是噪音）。把 `if project == …` 写进 `acquire.py` = 把 23 份的分叉搬进一个文件。
 故：**函数体逐字搬运**，工程差异走 **spec 字段 / 钩子**，每个工程只留 <40 行薄壳
 声明"我用哪个策略、参数是什么"。
 
@@ -1011,6 +1029,12 @@ A1 的离线重放靠**猴补丁工程模块上的 L1 名字**（`mod.run_case` 
 - 批量路径**仍保留**的失败证据 = **串口原始行归档**（`_archive_failure`，纯写文件、不起 gdb）；
   **仍保留**的稳定性机制 = 每 case 前置 DS 存活预检（E-2）、自愈重试 1 次、残留清理 ——
   这些是"**保稳定**"，不是"定位问题"，**不要动**。
+- **报告里的 `内存兜底: 不可用（未执行）` + `来源=missing` 是本裁定的预期形貌，不是采集故障（★ 2026-09-23，G-TRI-2）**：
+  批量路径一律不取 mem ⇒ 报告头部按 §6.4.2 渲染 `不可用（…）`、来源列按 §6.4.2 词表落 `missing`
+  （语义 = "该核**既无 token 也无 mem**"，**不是**"结果被采集链路弄丢"）。实测群体现象：
+  `reports/2026-09-21-1` 有 **0/50** 个 case 标"不可用"（裁定生效前），`2026-09-22-1` / `2026-09-23-1`
+  各 **29/50**（裁定生效后**全体**如此，**非**某 case 特有异常）。⇒ 排查时**勿**把 `missing` 当故障、
+  去查串口/管道。判定中性已由上述 51-case 重放实测证（取与不取 PASS/FAIL 完全相同）。见 KNOWN_ISSUES #114。
 
 > **与 §6.2.4 R8 同源**：R8（用户裁定 2026-09-20）管"内存兜底取到的项**算不算证据**"
 > （答：不算，落 `MEM_NOEVID`）；本条是它的**实现侧落地**，管"**取不取**"（答：批量不取）。
@@ -1609,7 +1633,7 @@ struct rlog_frame {
 `common/ztest_report.py`（~5 行，离线可证）。**这仍满足"全部统一"** ——
 统一的是"语义 + 唯一解析器"；20 个工程的 ztest 原生行**本来就是 token**，
 改写它们不产生任何新能力，却要付出"废掉 ztest 断言/记账 + 全量重跑 + 触碰 §6.2.4 冻结表"的代价。
-若坚持**逐字**单一前缀，代价：20 工程固件重写 + 24 工程全量重跑 + §6.2.4 全面重审 + §6.4.9 离线证据作废（**不建议**）。
+若坚持**逐字**单一前缀，代价：20 工程固件重写 + 23 工程全量重跑 + §6.2.4 全面重审 + §6.4.9 离线证据作废（**不建议**）。
 
 #### 6.9.7 需要确认
 
@@ -1669,7 +1693,7 @@ struct rlog_frame {
 `acquire.<名>` 上（`acquire.run_case_shell` / `capture_case` / `run_case_dual` /
 `run_case_mbox` / `run_pass_iwdg` / `SerialCapture` / `memory_backfill` / `dump_mem`），
 **不能**打在 `run_test.py` 模块上：A1 收敛 L2（`common/process.py`）+ A2 抽出 L1
-之后，24 份薄壳只剩 `acquire.<策略>(spec)`，`mod.run_case` 之类的名字**已不存在**。
+之后，23 份薄壳只剩 `acquire.<策略>(spec)`，`mod.run_case` 之类的名字**已不存在**。
 
 * **失效模式**：补丁打空 ⇒ 重放**静默落到真硬件**（占板子 / 起 DebugServer）。
 * **隔离网**：每个适配器先 `_guard_acquire()` 把 `acquire` 上所有能碰板子/进程的
@@ -1836,6 +1860,18 @@ controller bin restore）实测 **17～50s** 才落地 ⇒ "烧录正常但慢"�
    另外 `tx_send` 现在**行首换行也剥掉**：ztest 的断言行走
    `PRINT_DATA("\n    Assertion failed at …")`，行首换行若留着，中继的信封只加在
    第一段上，第二段（真正的断言文本）会掉出分拣范围而留在主核归档里。
+   > **⚠ 2026-09-23 补记（G-TRI-3）：抬高必须逐个工程做，适用面扩大后漏抬的工程已在截断。**
+   > 上述"长长的两个工程"= `i3c_dualcore_test` / `app_iwdg_cpu2_test`（全仓**仅**这两个工程的各核
+   > CMakeLists 定义了 `RLOG_TEXT_MAX=118`）；而 **`i3c_i2c_switch_test`（命令通道型，由 `43b232e` 起单出口）
+   > 与 `i2c_pure_test`（ztest 型，§6.11.6 起单出口）两者都启用了单出口、却仍跑默认 54B**，
+   > 实测**已在截断**：switch 的 `serial_TGT.log` 出现
+   > `I3C_I2C_TEST:TGT:SUMMARY:ITEM:broadcast_nack_recove...`（原 60B → 51B + `...`）、
+   > `i2c_pure_test` 的 ztest 分隔线（67 个 `=`）被截成 51 个 + `...`（两处**恰好 54 字节**）。
+   > 本轮**未造成误判**（SUMMARY 块不参与判定）；但同型 TGT 的
+   > `...:FAIL:<name>:<reason>` 长行超 54B 会**丢掉判定** ⇒ 潜在**假 MISSING**。
+   > ⇒ 处置：**不要顺手改**（改 width 要两核同步、动 overlay ABI），按本条第 2 点配方逐个工程补。
+   > **未补工程清单于导出**：`grep -rl RLOG_TEXT_MAX projects/` 与"启用单出口的工程"取差集
+   > （**勿在此登记枚举**，见 `.claude/DOC_EDIT_RULES.md` §3.2「可导出的信息不许登记」）。见 `qsh-test-gen` §1.2 硬约束①。
 3. **分拣要"剥壳"**：`acquire.split_relay_lines(..., strip=True)` +
    `DualRunSpec.relay_strip`。ztest 型从核的本地输出本来**没有**前缀（信封纯属
    传输痕迹）⇒ 搬运时把 `<前缀>:<核>:` 剥掉，`serial_TGT.log` 才与"从核本来自己

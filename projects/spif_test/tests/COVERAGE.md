@@ -13,6 +13,38 @@
   `SPIF_CMD_TABLE_NUM=70`（`spi_filter.h:17-19`）；`SPIF_ADDR_PRIV_REG_NUN=512`、
   `SPIF_ADDR_WHITELIST_SIZE=MB(256)`（`spi_filter.h:16,23`）
 
+## ⚠️ 已知基线：`cmd_idx_accessors` 长期 FAIL（**保持现状是裁定，不是待修缺陷**）
+
+> **一句话**：本工程 `case_default` 长期停在 **17/18**，唯一 FAIL 即 `cmd_idx_accessors`。
+> 该断言在 **索引 5 槽位**上**不可满足** —— 属 **硬件/表结构事实**，**不是驱动缺陷**。
+> **用户 2026-09-23 裁定：保持现状、登记为已知基线**（与 `spi_test::link_probe` 同性质）。
+> **判据未改动是有意的**（不放宽断言是本项目纪律）—— 后来者**不要再去"修"它**。
+
+| 项 | 内容 |
+|---|---|
+| 失败断言 | `cpu1_spif_test/src/spif_test.c:341` `zassert_equal(dummy, 9, "set/get dummy by idx roundtrip")`<br>（基线行号 `:327`；`:341` 只是新增诊断 `ZT_INFO` 造成的行移，**判据文本一字未改**） |
+| 测什么 | 命令表**按索引访问**：命令行 / 使能位 / **DUMMY 周期数**都应正确往返（DUMMY 为 5 bit，`0xff` 应被截断为 `0x1f`） |
+| 实测现象（上板） | 索引 5 槽位：**命令行 ✓、使能位 ✓、DUMMY 周期数 ✗**<br>`INFO cmd_idx_accessors: slot5_raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0`（`reports/2026-09-23-1/spif_test_case_default/serial_TGT.log:38`）<br>关键：**原始寄存器**的 `[12:8]` 位段就是 `0`（`raw_dummy=0`），不只是 API 回读不对 |
+| 确定性 | `reports/2026-09-21-1` / `2026-09-22-1` / `2026-09-23-1` **三轮全 FAIL**，非 flaky |
+| 判定依据 | `raw_dummy=0` ⇒ 命中"**该槽的 DUMMY 字段不可写/未实现**"（原始寄存器位段即 0），而非"位写进去了、只是回读通路不对" |
+
+### 已排除（**不是**这些原因）
+
+- **驱动掩码/截断缺陷**：`spif_set_dummy_by_idx()` / `spif_get_dummy_by_idx()`（`spi_filter.c:1015-1079`）是标准**读-改-写**、字段读写对称，无掩码缺陷。
+- **索引或出参非法**：`idx=5` 在界内（`SPIF_FIXED_CMD_TABLE_NUM=30`）、出参非 NULL ⇒ 上游缺陷 #4 / #5 **不适用**。
+- **位域布局（LSB-first）错**：`spif_cmd_t` 布局 `CMD[7:0] / DUMMY_CYCLE[12:8] / EN[31]` 正确；同文件 `spif_cfg_t` 的位序已被 `cold_reset_state` 实测按住（`cfg=0x40` = `IP_LOCK` bit6）。
+- **同槽其它位也坏**：同用例 `:321-323` 的 **CMD** 往返（`0x77`）PASS；`cmd_table_add_remove` 固定表段的 **EN** 回读 PASS ⇒ 该槽 **CMD/EN 均正常，唯独 DUMMY 位段**。
+
+### 为什么**不**改用例 / **不**删断言（重要，防后续误改）
+
+- **保持 FAIL 是 2026-09-23 的裁定**（`OPEN_ITEMS.md` O-31），**不是疏漏、不是"待修"、不是"遗留缺陷"**。
+- 放宽（改 `ztest_test_skip()` / 删断言 / 换槽位）会**掩盖这个真实读数**；本项目纪律 = **判定前不得放宽判据**。
+- ⚠️ **最易踩的误判**（本项曾被误判过一轮）：它与同工程的 `passthrough_mode_switch` **形似而实反** —— 后者是**真驱动缺陷**、已修（`spi_filter.c` 增加 `gpio_ana_enabled` 比对，上板 `FAIL→PASS`，提交 `334ab30`）；**本项不是**驱动缺陷，**照那个思路去改驱动会白费**。
+
+### 旁注（⚠ **推测，未核实**，仅作追查线索）
+
+驱动有「固定命令占用表头前 `SPIF_FIXED_CMD_TABLE_NUM`(=30) 个槽位」的机制，**推测**索引 5 正是一个**固定命令槽**（SPIF 语义上普通 `READ` 无 dummy 相）。**此条未核实**，不作结论、不据此改动任何东西。
+
 ## 用例 → 实例分配（保证用例间零残留）
 
 | 实例 | 用例 | 理由 |

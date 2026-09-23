@@ -1,0 +1,26 @@
+# i3c_dualcore_test —— 工程识别信息 + 本工程启用的测试 case
+#
+# ⚠️ 顶部 meta 块**只是给人和外部工具读的识别信息**；run_all.py 只消费 `cases:` 段，
+#    改 meta 不影响回归。各字段均由工程目录/代码导出（改工程即随之变化）。
+#
+meta:
+  board: lsqsh_evb@2os
+  cores: 双核
+  firmware: [cpu0_i3c_controller, cpu1_i3c_target]
+  kconfig: [cpu0_i3c_controller/prj.conf, cpu1_i3c_target/prj.conf]
+  run: tests/run_test.py
+  env: 需接线：I3C5_SCL(PJ10)↔I3C6_SCL(PJ08)、SDA(PJ11)↔SDA(PJ09)、共地
+  title: I3C 主从跨核通信
+  coverage: tests/COVERAGE.md    # 工程定位 / 测试内容 / 环境需求 / 覆盖矩阵的权威源
+#
+# 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略（`#` 屏蔽 = 跳过）。
+# 本段决定 `regression/cases.yaml` 路由到本工程后**实际跑哪些 case** ——
+# 新增 case：在 `tests/` 下建目录并在此登记（不登记 = 不跑）。
+cases:
+  - case_mixed_1m_12m5
+  - case_mixed_1m_6m25
+  - case_mixed_400k_12m5
+  - case_mixed_400k_1m
+  - case_mixed_400k_6m25
+  - case_pure_i3c_12m5
+  - case_pure_i3c_6m25

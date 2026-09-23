@@ -159,3 +159,33 @@ write_read_scratch_single | !none | !none:写后回读 memcmp
 write_read_scratch_multiblock | !none | !none:4 块写后回读 memcmp
 request_mutex_not_leaked | !none | !none:以"第二次请求 2000ms 内返回"为判据，非标量
 ```
+
+---
+
+## ⚠️ 2026-09-23 更正批注（本条与上文冲突时，以本条为准）
+
+> 完整定位与修复见 `810_driver_test/reports/2026-09-23-1/emmc_test_case_block_driver/emmc_rootcause.md`。
+> 本节只做**事实更正**，不改写上文原文（沿用本项目「就地更正、留痕不删」的惯例）。
+
+**「钉住缺陷」表第 1 行（mutex 泄漏）中「已于 2026-09-18 修复」= 不实记录。**
+
+- 复核证据：`zephyr` 仓库 `git status` 对该文件为空（工作区 == HEAD），
+  `git show HEAD:drivers/sdhc/sdhci-of-linkedsemi.c` 里 `:477 return -ENOTSUP;` **仍在
+  `k_mutex_lock`(:422) 与 `k_mutex_unlock`(:505) 之间**，**全文件没有任何 `unlock:` 标签**。
+  上文描述的 `` `default` 改为 `ret = -ENOTSUP; goto unlock;` `` 与「白名单校验前置」那一版代码，
+  **在全仓 `.c` 文件中不存在**（`grep data_opcode_supported` 零命中）。
+- ⇒ 该项**从来没有通过过**：`reports/2026-09-17-4|5`、`2026-09-18-1`、`2026-09-21-1`、`2026-09-22-1`、
+  `2026-09-23-1` **全部为 `FAIL (8/10)`，失败项完全相同**。它不是回归。
+- 机理同 `OPEN_ITEMS O-16`：**文档记「已修」而代码未提交 ⇒ 被后续 git 分支操作静默冲掉**。
+- **状态列改判**：`request_mutex_not_leaked`、`request_data_invalid_opcode_notsup`
+  由「✅ PASS（2026-09-18 驱动修复后改判）」改为 **「⏳ 修复已落入工作区（2026-09-23，未提交），待上板实测」**。
+  ⚠️ **本批注发生时尚未上板**，故**不得**据此宣称 PASS。
+
+**第 4 行（时钟越界静默忽略）**：缺陷描述属实（`:228-232`）。
+2026-09-23 已按上游 SDHC 契约（`imx_usdhc` / `intel_emmc_host` / `rcar_mmc` / `sdhc_esp32` 同形；
+`zephyr/tests/drivers/sdhc/src/main.c:98-100` 即该契约的上游测试）补入 `-EINVAL` 边界检查。
+**该行「❌ 预期 FAIL」同样改判为「⏳ 待上板实测」** —— 驱动改完后它**应当**转 PASS。
+
+**「执行顺序与破坏性」段**中「该缺陷**已于 2026-09-18 修复**（单出口 + 白名单前置），本项不再阻塞」
+—— 同样为不实记录，2026-09-23 才真正落入工作区（未提交）。`zz_` 前缀的保守排序理由维持不变。
+

@@ -161,12 +161,27 @@ def evaluate(case_name, ctrl_lines, tgt_lines):
     }
 
 
+def _scored_items(items):
+    """参与计分的测试项 —— 排除框架注入的**运行元信息**。
+
+    `run::timeout`（`result=NOTE`）由本脚本在采集窗口到点时注入，明确「不参与判定」。
+    把它算进分母会让报告显示成 `PASS (18/19)`，读的人误以为挂了一项（本会话我与用户
+    都误读过）。口径与 `common/expect_check.py` 的『`run::timeout` 这类是运行元信息，
+    不是测试项』一致。
+
+    ⚠️ 该条目仍然**渲染在报告表格里** —— 它存在就是为了让「窗口到点」这件事可见；
+    这里只把它从**分母**里拿掉，既不删条目、也不改任何判定逻辑。
+    """
+    return [it for it in items if not str(it.get("name", "")).startswith("run::")]
+
+
 def print_report(results):
     print("\n--- app_iwdg_cpu2_test 双核测试结果 ---")
     for r in results:
         items = r.get("items", [])
-        passed = sum(1 for i in items if i.get("result") == "PASS")
-        print(f"## {r['case']}: {r['result']} ({passed}/{len(items)}) "
+        scored = _scored_items(items)
+        passed = sum(1 for i in scored if i.get("result") == "PASS")
+        print(f"## {r['case']}: {r['result']} ({passed}/{len(scored)}) "
               f"[CTRL(cpu2)={r.get('ctrl_execution')}, TGT(cpu1)={r.get('tgt_execution')}]")
         for it in items:
             extra = f"  reason: {it['reason']}" if it.get("reason") else ""
@@ -180,9 +195,10 @@ def write_markdown_report(cdir, result):
     md_table_row），与全家族逐字一致；本工程无内存兜底（来源恒为 token）。
     """
     base = cdir / f"{REPORT_BASE}.md"
-    items = result.get("items", [])
-    passed = sum(1 for it in items if it.get("result") == "PASS")
-    total = len(items)
+    items = result.get("items", [])          # 全部条目（含运行元信息）——表格仍照此渲染
+    scored = _scored_items(items)            # 仅测试项 —— 只用于 (passed/total) 显示
+    passed = sum(1 for it in scored if it.get("result") == "PASS")
+    total = len(scored)
     status = result.get("result") or "FAIL"
     _core_exec = ", ".join(f"{k.upper()}={result[k]}"
                            for k in ("ctrl_execution", "tgt_execution") if result.get(k))

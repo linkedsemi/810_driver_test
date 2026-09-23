@@ -49,7 +49,7 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 |---|---|---|---|
 | **L3 编排** | `regression/run_all.py` | CLI：`--no-precheck` / `--no-erase` / `--dry-run` / `--cases-file` | 否（编排，含擦除/会话分配） |
 | L3 预检 | `regression/precheck/run_precheck.py` + `precheck/fw/{cpu1_target,cpu2_controller}` | CLI：`--session-dir` / `--timeout` | 否（上板） |
-| **L1 采集** | `common/acquire.py`（5 策略 / 24 工程） | `single_cap` / `capture_case` / `run_case_dual` / `run_case_mbox` / `run_pass_iwdg`；`AcquireSpec` 家族 | **否**（时序） |
+| **L1 采集** | `common/acquire.py`（5 策略 / 23 工程） | `single_cap` / `capture_case` / `run_case_dual` / `run_case_mbox` / `run_pass_iwdg`；`AcquireSpec` 家族 | **否**（时序） |
 | **L0 归档** | `common/serial_archive.py` | `archive_serial()` / `read_serial_log()` / `read_meta()`；`ARCHIVE_VERSION(_SPLIT)=2` | **是**（往返契约） |
 | L0 判定/渲染标准 | `common/judge.py`、`common/ztest_report.py` | `parse_ztest` / `strip_line` / `parse_kv`；judge 谓词族 | **是** |
 | **L2 处理** | `common/process.py` | `run()` / `process_archive()` / `read_archive()`；`ProcessSpec` + `l2_spec()` | **是**（重放） |
@@ -57,10 +57,10 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 | L2 独立预期 | `common/expect_check.py`（+ `test_expect_check.py`） | `audit()` / `check_case()`；CLI `--audit` / `--session` / `--case` / `--case-dir` | 是（有单测） |
 | **离线重放** | `regression/replay.py` | CLI 见 §3 | — （入口本身） |
 | 契约（固件侧） | `common/rlog.{c,h}`（单出口）、`test_results.{c,h}`、`ztest_glue.{c,h}`、`common.conf` / `*.overlay` / `common_sources.cmake` | 见 `common_sources.cmake`（公共模块注入唯一入口） | 否 |
-| 契约（清单） | `regression/cases.yaml` | 唯一权威源（启用 case 数见 `CLAUDE.md` §2） | — |
+| 契约（清单） | `regression/cases.yaml`（**只列工程**）+ `projects/<工程>/tests/cases.yaml`（该工程的 case）| 两级清单，run_all 展开；缺工程侧文件即报错 | — |
 
 **设计口径**：家族/工程差异一律走 **spec 字段 + 钩子**，禁止在 `acquire.py` / `process.py`
-里写 `if project == …`（否则等于把 24 份分叉搬进一个文件）。理由与边界见
+里写 `if project == …`（否则等于把 23 份分叉搬进一个文件）。理由与边界见
 `SPEC_REFERENCE.md` §6.4.8「家族差异怎么放」+ §6.4.10「为什么不是"一个通用采集脚本"」。
 
 ---
@@ -125,8 +125,8 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 
 | 想查 | 看 |
 |---|---|
-| 板卡 / 接线 / COM / DebugServer | `HARDWARE_SETUP.md`；`CLAUDE.md` §1；`README.md` §1 |
-| 工程清单与启用 case 数 | `CLAUDE.md` §2（`(N)` 的唯一来源 = `regression/cases.yaml`） |
+| 板卡 / 接线 / COM / DebugServer | `HARDWARE_SETUP.md`（**硬件唯一源**）；`CLAUDE.md` §1（速查）；`README.md` §4（外部接线登记） |
+| 工程清单 / 启用 case / 单双核 | `ls projects/` · `regression/cases.yaml`（只列工程）· `projects/<工程>/tests/cases.yaml` · `cpu*` 子目录数（2=双核） |
 | 固件编写规范 / ztest 契约 | `SPEC_REFERENCE.md` §6.1；`qsh-test-gen` §1.4 |
 | 判定标准（各族 / 各状态） | `SPEC_REFERENCE.md` §6.2.4（**唯一真源**，G1-G10 + R1-R8）；速查 → `qsh-test-compare` §2 / `qsh-test-run` §5 |
 | 串口无输出兜底（GDB 读内存） | `SPEC_REFERENCE.md` §6.2.2 / §6.4.3；`qsh-test-compare` §3 |

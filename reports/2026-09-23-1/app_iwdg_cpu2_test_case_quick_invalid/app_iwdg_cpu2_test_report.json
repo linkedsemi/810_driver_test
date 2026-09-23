@@ -1,0 +1,38 @@
+{
+  "case": "case_quick_invalid",
+  "result": "PASS",
+  "ctrl_execution": "SUCCESSFUL",
+  "tgt_execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "cpu2::test_quick_timeout_zero_leaves_device_unready",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "cpu1::test_cpu1_does_not_own_app_iwdg",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "cpu1::test_cpu1_reset_reason_not_app_iwdt",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "run::timeout",
+      "result": "NOTE",
+      "reason": "case_timeout=120s 到点截断（非失败）"
+    }
+  ],
+  "infos": {
+    "cpu2::test_quick_timeout_zero_leaves_device_unready": {
+      "ready": "0",
+      "initialized": "1",
+      "init_res": "22"
+    },
+    "cpu1::test_cpu1_reset_reason_not_app_iwdt": {
+      "reason": "3"
+    }
+  }
+}

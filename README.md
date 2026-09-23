@@ -5,6 +5,17 @@
 - 工程规范与调试细节见 [`CLAUDE.md`](CLAUDE.md)。
 - 根仓库背景见 `d:\zephyr4_0\CLAUDE.md`。
 
+**文档分工**（同一事实只在一处维护，其余交叉链接）：
+
+| 文档 | 定位 | 何时看 |
+|---|---|---|
+| `README.md`（本文件） | 工程集门面（人读）：工程清单、**外部接线登记**、构建/运行命令 | 上手 / 查工程 |
+| [`CLAUDE.md`](CLAUDE.md) | agent 路由 + 核心规范速查 + 常见现象 | agent 每次会话 |
+| [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md) | **硬件环境唯一源**：板卡 / 接线 / COM 动态识别 / DebugServer / 环境预检 | 搭环境 |
+| [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md) | 完整技术规范（固件编写 / 判定 / 归档 / 覆盖矩阵） | 写固件 / 改判定 |
+| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 已知坑完整清单 | 排查 |
+| [`FRAMEWORK_MAP.md`](FRAMEWORK_MAP.md) | 框架分层索引（改哪层要验什么） | 改框架 |
+
 ---
 
 ## 1. 板级要求
@@ -16,8 +27,9 @@
 | cpu2（应用核，controller） | `lsqsh_evb@2os/lsqsh/cpu2`，RAM 加载执行 |
 | cpu1 串口 | uart1（PN04 TX / PN03 RX），115200 8N1 |
 | cpu2 串口 | **uart5**（PN14 TX / PN13 RX），115200 8N1 |
-| GDB server | `127.0.0.1:1025`，由 PC 端 **XuanTie DebugServer** 提供 |
 
+> 板卡 / COM 映射 / DebugServer / 环境预检等硬件事实的**唯一源是 [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md)**；
+> 本表只保留构建相关的 board 名与串口引脚。
 > cpu2 默认控制台为 uart4，本工程统一改用 uart5（`common/cpu2_console_uart5.overlay`）。
 > **单核工程固件一律用 `lsqsh_evb@1os/lsqsh/cpu1`（cpu1 入口 `0x10000000`）编译测试**，不用 2os 变体；
 > 分型判定与 board/入口矩阵见 `SPEC_REFERENCE.md` §6.1.10。
@@ -27,17 +39,8 @@
 
 ## 2. 环境准备（每次测试前）
 
-```bash
-# 1) DebugServer 已启动
-tasklist | grep -i DebugServer
-
-# 2) 无 FlashProgrammer 残留
-tasklist | grep -i csky
-
-# 3) 串口空闲
-tasklist | grep -i python
-```
-
+规则与自检命令见 [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md) §环境预检；
+批量预检 `python regression/precheck/run_precheck.py`。
 任一项异常，先按 `CLAUDE.md` §5 / `qsh-debug` skill 排查。
 
 ---
@@ -78,7 +81,9 @@ python regression/run_all.py --no-precheck  # 跳过环境预检（调试用）
 python regression/run_all.py --dry-run      # 只列启用 case，不执行
 ```
 
-用例清单在 [`regression/cases.yaml`](regression/cases.yaml)，`#` 开头即屏蔽。
+**两级清单**：`regression/cases.yaml` **只列工程**；每个工程跑哪些 case 由
+`projects/<工程>/tests/cases.yaml` 自己声明（缺该文件 run_all 直接报错）。
+两层都是 YAML list，`#` 开头即屏蔽。
 
 ---
 
@@ -110,6 +115,10 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | **`qspi_flash_test`** | 单核 | 否 | **`qspi2` 挂的板载 32 MiB NOR**（JEDEC `85 23 19`）；驱动 `qspi_ls.c` |
 | **`pwm_test`** | 单核 | 否 | 仅验接口可用性；**波形正确性需示波器确认**（报告已备注） |
 | ~~`io_probe_test`~~ | 单核 | 否 | **一次性诊断工具**（测板上有哪些 IO 互联），**不在回归套件内** |
+
+> **各工程的权威自述在工程自己那里**：`projects/<工程>/tests/cases.yaml` 的 `meta:` 块
+> （`board` / `cores` / `firmware` / `kconfig` / `env` 外部接线需求 / `title` 一句话定位）。
+> 本表是人工维护的**总览**；两者不一致时**以工程侧为准**。
 
 **注**：工程全貌与分层（L3 编排 / L1 采集 / L0 契约 / L2 处理）见 [FRAMEWORK_MAP.md](FRAMEWORK_MAP.md)。
 
@@ -183,11 +192,11 @@ python scripts/flash_program.py --bin cpu1.bin@0x08000000 --bin cpu2.bin@0x08100
 ```text
 810_driver_test/
 ├── CLAUDE.md                # 工程规范、调试手册、坑沉淀
-├── README.md                # 本文件（用户速查）
+├── README.md                # 本文件（工程集门面）
 ├── common/                  # 公共 overlay、脚本、结果模块
 ├── projects/                # 各驱动测试工程
-├── regression/              # 全量回归入口、case 清单、预检
-│   ├── cases.yaml
+├── regression/              # 全量回归入口、工程清单、预检
+│   ├── cases.yaml           #   只列工程；case 在各 projects/<工程>/tests/cases.yaml
 │   ├── run_all.py
 │   └── precheck/
 ├── reports/                 # 测试报告归档

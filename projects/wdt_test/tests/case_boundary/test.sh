@@ -7,7 +7,8 @@
 #     - install_timeout: window.min != 0 拒 / window.max == 0 拒
 #     - install_timeout: HAL_IWDG_IS_MATCH 按实例匹配 flags（RESET_CPU_CORE / RESET_SOC）
 #     - install_timeout: callback 注册（!=NULL）与清除（==NULL）分支
-#     - setup: IWDT_LOAD==0 -> -ENOTSUP / IWDT_CTRL!=0 -> -EBUSY /
+#     - setup: IWDT_LOAD==0 -> -ENOTSUP /
+#              IWDT_EN|IWDT_RST_EN!=0 -> -EBUSY /
 #              WDT_OPT_PAUSE_IN_SLEEP -> -ENOTSUP / 正常使能路径
 #     - disable / feed 正常返回
 #     - timeout_ms -> IWDT_LOAD ticks 换算，含 uint32 饱和边界

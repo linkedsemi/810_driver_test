@@ -762,8 +762,20 @@ static void i2cf_filter_on(const struct device *dev)
 /*
  * 监视/透传模式：不拦任何访问、白名单不生效
  * （BLOCK_DISABLE=1, FILTER_DISABLE=1 —— 见 i2c_filter.c:231-236 的负逻辑映射）。
- * 用作"自证"对照：同一笔访问在 filter off 下成功 ⇒ 之前的失败确由 filter 造成，
- * 而非接线/器件问题。
+ *
+ * ★ 2026-09-23 订正：**"本平台 filter off = 直通"仍是未定命题，不得当已证结论用。**
+ *   曾据判别实验判"关掉后同址仍不可达 ⇒ 本模式不转发"，但该实验的两条读数**都无
+ *   判别力**（判读笔是裸 `i2c_read` 且紧跟在一次失败事务之后；"旁路对照"步用上游
+ *   `i2c2` 发波却把 SCLO/SDAO 交给 `i2c4`，输出侧不在 i2cf4 手上 ⇒ 该步**恒 `-5`**）
+ *   ⇒ **判据已撤回，H1/H2 重新并列**。
+ *   依据：`reports/2026-09-23-1/i2c_failure_triage.md` §9.4 / `KNOWN_ISSUES` #112「★ 判据撤回」。
+ *
+ *   真正使"关滤波器后同址应可达"无法成立的是**断言位置不可测**：该笔恰好紧跟在
+ *   一笔被滤波器拦下（NACK）的事务之后，而**这个位置在本通路上多半会丢** ——
+ *   紧接被拦之后的下一笔实测 10 次里 9 次 `-EIO`（隔一次冷复位也一样），
+ *   **再下一笔**才 5/5 正常（`KNOWN_ISSUES` #116 规律 1）。
+ *   ⇒ 本函数只表达"退出拦截态 + 关白名单"这一**状态迁移**（准备改表 / 收尾），
+ *   **不得**再用它构造"关掉后应可达"这类期望。
  */
 static void i2cf_filter_off(const struct device *dev)
 {
@@ -867,7 +879,12 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	 *
 	 * 场景：白名单**非空但只授权另一地址**（0x2A）⇒ 访问从设备的 0x33
 	 *       属"黑名单"（未授权）⇒ 被拦住 + 主机 NACK。
-	 * 判据：① 0x33 访问失败；② 自证：关 filter 后同一访问成功。
+	 * 判据：① slave 访问失败（白名单里没有它 ⇒ 被拦）；
+	 *       ② 单变量对照：**只往白名单里新增一个 `slave` 授权**（通道 1），其余全不动，
+	 *          再读一次 ⇒ 必须成功（读用 `i2c_burst_read`，理由见下）。
+	 *          （★ 2026-09-23 改：原②为"关 filter 后同址应可达" —— 该断言位于**不可测
+	 *           位置**（紧接被拦事务之后），与"filter off 是否直通"无关；后者仍是**未定**
+	 *           命题。见 `i2cf_filter_off()` 处注释与 `KNOWN_ISSUES` #116 规律 1。）
 	 * 与 `isr_addr_beyond_whitelist` 的区别：那项验 ISR 路径（空白名单），
 	 * 本项验"白名单存在时的选择性拦截"语义。
 	 */
@@ -877,7 +894,8 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	uint8_t slave = 0;
 	uint8_t authorized = 0;   /* 另一候选地址：被授权，但（在本链路假设下）无器件 */
 	uint8_t val = 0;
-	int ret_blocked, ret_free;
+	uint8_t buf[8];           /* burst read 的目标缓冲（可达性对照用） */
+	int ret_blocked, ret_authorized;
 
 	zassert_true(device_is_ready(up), "upstream master i2c3 not ready");
 
@@ -909,18 +927,59 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 		     "non-whitelisted %#x must be blocked (whitelist=%#x), got %d",
 		     slave, authorized, ret_blocked);
 
-	/* 自证：filter off ⇒ 拦截消失 */
-	i2cf_filter_off(dev);
+	/* 自证：阻断确由白名单造成 —— **单变量对照**（2026-09-23 改）。
+	 *
+	 * 与上一笔"被拦"的读相比，**只有白名单内容变了**：**新增**一个授权通道
+	 * （通道 1 = `slave`）；通道 0（= `authorized`）与其余**全不动**；
+	 * 发起方（上游 master `up`）/ 通路（`switch_to_filter()` 后经滤波器）/
+	 * 目标地址 / 目标长度 / 滤波器开关状态（filter on）**全部不变**。
+	 * 两笔结果不同（拦 / 放）⇒ "拦"与"放"确由白名单决定。
+	 *
+	 * ★ 为什么用**新通道**而不是把通道 0 的地址就地改成 `slave`（2026-09-23 实测）：
+	 *   就地改址（`fill_bitmap(dev, 0, slave, ·)`）plain / burst 各测一次**都读到 `-EIO`**；
+	 *   而"新增通道 1 = `slave`"两次**都读到 `0`** ⇒ 就地改址疑似未在 HW 生效。
+	 *   **未取寄存器证据 ⇒ 未定**，此处仅作为"不用它"的理由，勿当结论引用。
+	 *
+	 * ★ 原判据（已作废）："关滤波器后同址应可达"。作废**不是**因为"关滤波器不等于直通"
+	 *   （该命题未定、其判据已撤回），而是该断言恰好落在"紧接被拦事务之后"的**不可测位置**
+	 *   （依据见 `i2cf_filter_off()` 处注释与 `KNOWN_ISSUES` #116 规律 1）。
+	 *
+	 * ★ 为什么对照读之前先"热身"一笔（2026-09-23 实测）：
+	 *   一笔**被滤波器拦下（NACK）**的事务之后，**紧接的下一笔事务在本通路上多半会丢失**
+	 *   —— 10 次处于该位置的事务里 9 次 `-EIO`（1 次成功），**中间隔了冷复位也一样**；
+	 *   而**再下一笔**（= 热身之后那一笔）实测 5/5 正常（0）。
+	 *   ⇒ 热身那笔的结果**丢弃、不进判据**；判据只看紧随其后的正式对照读。
+	 *
+	 * ★ 读的形态：裸 `i2c_read` → 带寄存器地址的 `i2c_burst_read`。
+	 *   原因：裸 `i2c_read` 在本通路上更不可靠（同配置重复曾得 `0, -5, -5`）；
+	 *   本工程既有的 `filter_passthrough_whitelist`（PASS）用的正是 burst 形态。
+	 *
+	 * ⚠ 本断言**可失败**（非恒真），证伪条件（任一成立即 FAIL）：
+	 *   ① 白名单未真正生效（通道索引 / 使能位 / 命令位图写错）⇒ 该地址仍被拦 ⇒ `-EIO`；
+	 *   ② 滤波器的放行（转发）通路坏 ⇒ `-EIO`；
+	 *   ③ 下游从设备不在位 / 跳线缺失 ⇒ 无 ACK ⇒ `-EIO`；
+	 *   ④ 连续两笔（热身 + 正式）都 `-EIO` ⇒ 上面"只丢一笔"的假设不成立 ⇒ FAIL。 */
+	i2cf_filter_off(dev);   /* 先退拦截态再改表，与 filter_passthrough_whitelist 同序 */
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, slave, bm),
+		   "authorize %#x in whitelist (channel 1)", slave);
+	i2cf_filter_on(dev);
 	k_msleep(5);
-	ret_free = i2c_read(up, &val, 1, slave);
-	zassert_ok(ret_free,
-		   "with filter OFF %#x must be reachable, got %d "
-		   "(EEPROM 未在位 / 跳线缺失; 地址未经实测)",
-		   slave, ret_free);
+
+	/* 热身（结果丢弃）：吸收"被拦后紧接一笔丢失" */
+	memset(buf, 0, sizeof(buf));
+	(void)i2c_burst_read(up, slave, 0x00, buf, sizeof(buf));
+
+	/* 正式对照读（判据） */
+	memset(buf, 0, sizeof(buf));
+	ret_authorized = i2c_burst_read(up, slave, 0x00, buf, sizeof(buf));
+	zassert_ok(ret_authorized,
+		   "authorized %#x must be reachable on the SAME path "
+		   "(whitelist only gained ch1=%#x; ch0=%#x unchanged), got %d",
+		   slave, slave, authorized, ret_authorized);
 
 	ZT_INFO("filter_blocks_nonwhitelist",
-		"whitelist=%#x,target=%#x,blocked_ret=%d,free_ret=%d",
-		authorized, slave, ret_blocked, ret_free);
+		"whitelist=%#x,target=%#x,blocked_ret=%d,authorized_ret=%d",
+		authorized, slave, ret_blocked, ret_authorized);
 
 	i2cf_filter_off(dev);
 	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "restore filter mode");
@@ -1069,3 +1128,137 @@ ZTEST(i2cf, slave_addr_scan)
 }
 
 ZTEST_SUITE(i2cf, NULL, NULL, NULL, NULL, NULL);
+
+
+/* ===========================================================================
+ * 一次性诊断用例（2026-09-23）：filter 拦截扫描时的**日志驱逐**测量
+ *
+ * 背景：用户反馈「开 filter 后外部 i2cdetect 扫描，ERR 日志一条条慢慢打印，
+ *       20+ 秒才出完」；而扫描本身很快。
+ *
+ * 测量原理（为什么不能只看固件时间戳）：
+ *   固件侧只能测**入队时刻**（= 日志行自带的时间戳，所以全是 (+0) 紧发）；
+ *   「打印慢」是 **log 线程驱逐**的耗时，只在采集侧可见。
+ *   做法：扫描结束后再打一条 marker —— 它**排在 N 条 ERR 之后**入队，
+ *   故「marker 到达时刻 − SCAN_BURST_BEGIN 到达时刻」= 驱逐跨度。
+ *   ⇒ 必须配**带到达时间戳**的串口采集（见 tests/case_scan_burst/README.md）。
+ *
+ * 本块由 CONFIG_I2CF_SCAN_BURST 保护：case_default 不置位 ⇒ 既有构建不受影响。
+ * ★ 一次性诊断，**不登记进 regression/cases.yaml**；用完可整体删除
+ *   （删：本块 + cpu1_i2cf_test/Kconfig + tests/case_scan_burst/）。
+ * ===========================================================================
+ */
+#ifdef CONFIG_I2CF_SCAN_BURST
+
+#define I2CF_BURST_ADDR_MIN 0x08u
+#define I2CF_BURST_ADDR_MAX 0x77u
+
+ZTEST(i2cf, scan_burst_drain)
+{
+	const struct device *dev = i2cf_dev(3);            /* i2cf4 */
+	const struct device *up = i2cf_upstream();
+	uint8_t val = 0;
+	int probed = 0;
+	int64_t t0, dt;
+
+	zassert_true(device_is_ready(up), "upstream master not ready");
+
+	i2cf_reset_all(dev);                               /* 全通道关闭 = 空白名单 ⇒ 每址皆越界 */
+	zassert_ok(linkedsemi_i2c_filter_register_callback(dev, 0, i2cf_isr_cb, NULL),
+		   "register ISR callback");
+	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "switch to filter");
+	i2cf_filter_on(dev);
+	i2cf_isr_arm(dev, 3);
+
+	/* ★ 采集侧以本行为计时起点 */
+	LOG_INF("SCAN_BURST_BEGIN addr=%#x..%#x", I2CF_BURST_ADDR_MIN, I2CF_BURST_ADDR_MAX);
+
+	t0 = k_uptime_get();
+	for (uint16_t addr = I2CF_BURST_ADDR_MIN; addr <= I2CF_BURST_ADDR_MAX; addr++) {
+		(void)i2c_write(up, &val, 1, (uint8_t)addr);   /* 模拟 i2cdetect 的逐址探测 */
+		probed++;
+	}
+	dt = k_uptime_get() - t0;
+
+	k_msleep(100);                                     /* 给 ISR 计数留时间 */
+
+	/* ★ 本行排在 N 条 ERR **之后**入队 ⇒ 它的到达时刻 = 驱逐结束 */
+	LOG_INF("SCAN_BURST_END probed=%d elapsed_ms=%d isr=%u",
+		probed, (int)dt, isr_count);
+
+	ZT_INFO("scan_burst", "probed=%d elapsed_ms=%d isr=%u", probed, (int)dt, isr_count);
+
+	/* 每个被拦地址应恰好产生一次 ADDRESS_BEYOND_WHITELIST 事件 */
+	zassert_equal(isr_count, (uint32_t)probed,
+		      "被拦事件数应等于探测地址数：probed=%d isr=%u", probed, isr_count);
+}
+
+#endif /* CONFIG_I2CF_SCAN_BURST */
+
+
+/* ===========================================================================
+ * 一次性判别实验（2026-09-23）：无违规前置下 filter off 是否放行 —— H1 vs H2
+ *
+ * 设计来源：reports/2026-09-23-1/i2c_failure_triage.md §3.4「试验 1（核心判别）」，
+ *   原文序列 = reset_all → switch_to_filter → filter_off → 读 0x33（**前置无任何违规**）。
+ *
+ * 为什么要"前置无任何违规"：
+ *   既有 `filter_blocks_nonwhitelist` 的自证步是「先拦一笔越界访问、再 filter off、再读」，
+ *   因而无法区分两种解释：
+ *     H1（用例侧）本 HW 上 `_en(false,false,·)` 就是"不转发"，"关掉即可达"的期望本身错；
+ *     H2（驱动侧）拦截会在滤波器内留下残留态，必须显式清中断才恢复。
+ *   去掉"先拦一笔"这一步，两条假设给出**相反**的预期 ⇒ 一次即可判死。
+ *
+ * 判读（只记录，不置判据 —— 结论由 ZT_INFO 承载）：
+ *   ⚠ **本判据已撤回：H1 未定（既未证实、也未否定）。**
+ *   原判"`fresh_off_ret != 0` ⇒ H1 成立"不成立，因为两条读数**都无判别力**：
+ *     · `fresh_off_ret` 用裸 `i2c_read`，且该笔紧跟在一次失败事务之后 ——
+ *       这个位置在本通路上本来就多半会丢（`KNOWN_ISSUES` #116 规律 1/规律 2）；
+ *     · `ret_bypass` 的"旁路对照"步发波方与引脚所有权不匹配（上游 `i2c2` 发波、
+ *       SCLO/SDAO 却交给了 `i2c4`）⇒ 该步**恒 `-5`**，不构成"链路可达"的对照。
+ *   ⇒ 不得据此给 H1/H2 定性。依据：`reports/2026-09-23-1/i2c_failure_triage.md` §9.4
+ *     与 `KNOWN_ISSUES` #112「★ 判据撤回」。
+ *   本块作为在册的一次性诊断残留保留（仅供复现），**勿当结论引用**。
+ *
+ * ★ 本块由 CONFIG_I2CF_FILTEROFF_PROBE 保护：case_default 不置位 ⇒ 既有构建逐字节不变。
+ *   一次性诊断，不登记进 regression/cases.yaml，用完可整体删除
+ *   （删：本块 + cpu1_i2cf_test/Kconfig 的 I2CF_FILTEROFF_PROBE + tests/case_filteroff_probe/）。
+ * ===========================================================================
+ */
+#ifdef CONFIG_I2CF_FILTEROFF_PROBE
+
+ZTEST(i2cf, filteroff_fresh_probe)
+{
+	const struct device *dev = i2cf_dev(3);            /* i2cf4 */
+	const struct device *up = i2cf_upstream();
+	/* 片内 target 地址，同 isr_addr_beyond_whitelist（0x33 = 两侧实测空闲） */
+	const uint8_t target = 0x33;
+	uint8_t val = 0;
+	int ret_bypass, ret_probe;
+
+	zassert_true(device_is_ready(up), "upstream master not ready");
+
+	/* ---- 对照：旁路（master）模式直读 ⇒ 证明 0x33 在线且链路可达。
+	 *      若本步就失败，则后续结论不可归因于滤波器。 ---- */
+	i2cf_reset_all(dev);
+	zassert_ok(linkedsemi_i2c_filter_switch_to_master(dev), "switch to master");
+	k_msleep(5);
+	ret_bypass = i2c_read(up, &val, 1, target);
+
+	/* ---- 判别实验：reset → switch_to_filter → filter_off → 读。
+	 *      注意此前**从未** filter_on、从未拦过任何访问（前置无违规）。 ---- */
+	i2cf_reset_all(dev);
+	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "switch to filter");
+	i2cf_filter_off(dev);                              /* BLOCK_DISABLE=1, FILTER_DISABLE=1 */
+	k_msleep(5);
+	ret_probe = i2c_read(up, &val, 1, target);
+
+	ZT_INFO("filteroff_fresh_probe",
+		"target=%#x,bypass_ret=%d,fresh_off_ret=%d",
+		target, ret_bypass, ret_probe);
+
+	/* 收尾：交回滤波器（同其它用例的收尾步） */
+	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "restore filter mode");
+}
+
+#endif /* CONFIG_I2CF_FILTEROFF_PROBE */

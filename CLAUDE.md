@@ -18,11 +18,19 @@
 
 ## 2. 测试工程
 
-**双核**：i3c_dualcore_test(7), i2c_pure_test(1), i3c_i2c_switch_test(1), mbox_test(1)
-**单核**：trng_test(1), rtc_ls_test(1), otbn_test(1), otbn_selftest(1), mbedtls_test(10), adc_temper_test(1), dma_test(1), flash_test(1), wdt_test(1), iopmp_test(1)
+**都可导出，故不在此登记**（登记 = 漂移源）：
 
-`(N)` = `regression/cases.yaml`（唯一权威源）中该工程**已启用**的 case 数。分型判定（单核 = 只有 cpu1 侧固件）
-+ board/入口矩阵见 SPEC_REFERENCE §6.1.10；增删工程/case 的同步清单见 §6.4.5。
+| 信息 | 权威来源 |
+|---|---|
+| 工程清单 | `ls projects/` |
+| 跑哪些工程 | `regression/cases.yaml`（**只列工程**）|
+| 某工程跑哪些 case | `projects/<工程>/tests/cases.yaml`（工程自声明；**缺则 run_all 报错**）|
+| 单核 / 双核 | `projects/<工程>/` 下 `cpu*` 子目录数 —— **2 = 双核，1 = 单核** |
+
+**新增工程四步**（缺一即不跑）：建骨架 → 写 `tests/run_test.py` → 写 `tests/cases.yaml` 声明 case
+→ 在 `regression/cases.yaml` 登记该工程。双核**无需**登记任何表（由目录数自动识别）。
+工程说明与外部接线登记见 [`README.md`](README.md) §4；完整规范见 SPEC_REFERENCE §6.4.5。
+
 GPIO toggle 线程在 cpu1 侧自动编入（PA05/PA07，500ms），
 配置集中于 `common/common_sources.cmake` + `common/gpio_toggle.c`。
 
@@ -71,7 +79,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | 规则 | 说明 |
 |------|------|
 | **结果判定** | 单核=全项 PASS + SUCCESSFUL；双核=同名项双核 PASS |
-| **判定细节** | ⚠️ 各族口径**不完全相同**（24 份 `run_test.py` 分 **7 个**判定家族）。**改判定前先看 [SPEC_REFERENCE §6.2.4 判定规则总表（冻结）](SPEC_REFERENCE.md#624-判定规则总表冻结2026-09-18)** —— 那是唯一真源，含各族规则 + 「明确不做」清单 |
+| **判定细节** | ⚠️ 各族口径**不完全相同**（23 份 `run_test.py` 分 **7 个**判定家族）。**改判定前先看 [SPEC_REFERENCE §6.2.4 判定规则总表（冻结）](SPEC_REFERENCE.md#624-判定规则总表冻结2026-09-18)** —— 那是唯一真源，含各族规则 + 「明确不做」清单 |
 | **改哪一层要验什么** | 框架已分层（L3 编排 / L1 采集 / L0 契约 / L2 处理）。**改前先看 [FRAMEWORK_MAP.md](FRAMEWORK_MAP.md)** —— 它给出"改哪层只需离线重放、改哪层必须上板"的判据 |
 | **串口无输出兜底** | `python scripts/dump_results.py --json` GDB 读内存。⚠️ 兜底有**独立性门**：`mem_state==ok` **且** 串口见 `ZT_BOOT`，缺一则 mem 项被剔除（防读到上一轮 RAM 残留） |
 | **log 门禁** | load 后几秒内无输出直接判失败 |
@@ -93,10 +101,12 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 
 | 主题 | 文档 | 何时查阅 |
 |------|------|---------|
+| **工程集门面** | [`README.md`](README.md) | 工程清单 + 外部接线登记 + 构建/运行命令（人读） |
 | **未决项台账** | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | **开工前先看**：待拍板/待验证项；每轮回复末尾须附其未决清单 |
-| 硬件接线/环境配置 | [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md) | 初次搭建 |
+| 硬件接线/环境配置 | [`HARDWARE_SETUP.md`](HARDWARE_SETUP.md) | 初次搭建（硬件环境唯一源） |
 | **固件规范完整版** | [`SPEC_REFERENCE.md`](SPEC_REFERENCE.md) | **编写/修改固件时必读** |
 | 已知坑完整清单 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 遇到问题时 |
+| **框架分层索引** | [`FRAMEWORK_MAP.md`](FRAMEWORK_MAP.md) | 改框架前查"改哪层要验什么" |
 | Supervisor agent | `.claude/agents/runner.md` | 理解路由逻辑 |
 | Skill 清单 | `.claude/TOOLS_AND_SKILLS.md` | 需要特定 skill |
 | 文档规范 | `.claude/DOC_EDIT_RULES.md` | 编辑 CLAUDE.md/skill 前必读 |

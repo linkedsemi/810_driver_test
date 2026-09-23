@@ -1,0 +1,39 @@
+{
+  "case": "case_quick_enable",
+  "result": "PASS",
+  "ctrl_execution": "SUCCESSFUL",
+  "tgt_execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "cpu2::test_quick_enable_boot_state_feed_disable",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "cpu1::test_cpu1_does_not_own_app_iwdg",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "cpu1::test_cpu1_reset_reason_not_app_iwdt",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "run::timeout",
+      "result": "NOTE",
+      "reason": "case_timeout=120s 到点截断（非失败）"
+    }
+  ],
+  "infos": {
+    "cpu2::test_quick_enable_boot_state_feed_disable": {
+      "ms": "60000",
+      "load": "1966080",
+      "ctrl": "0x3",
+      "ctrl_after_disable": "0x8"
+    },
+    "cpu1::test_cpu1_reset_reason_not_app_iwdt": {
+      "reason": "3"
+    }
+  }
+}

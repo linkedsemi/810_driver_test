@@ -6,7 +6,8 @@
  * 对照 zephyr/drivers/watchdog/wdt_iwdg_ls.c 逐分支覆盖：
  *   install_timeout: window.min != 0 拒 / window.max == 0 拒 /
  *                    HAL_IWDG_IS_MATCH 按实例匹配 flags / callback 注册与清除
- *   setup:           IWDT_LOAD == 0 -> -ENOTSUP / IWDT_CTRL != 0 -> -EBUSY /
+ *   setup:           IWDT_LOAD == 0 -> -ENOTSUP /
+ *                    IWDT_CTRL & (IWDT_EN|IWDT_RST_EN) != 0 -> -EBUSY /
  *                    WDT_OPT_PAUSE_IN_SLEEP -> -ENOTSUP / 正常使能路径
  *   disable/feed:    正常返回 0
  *   换算:            timeout_ms -> IWDT_LOAD ticks（含 uint32 饱和边界）

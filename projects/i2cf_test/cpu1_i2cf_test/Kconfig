@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# 本工程私有 Kconfig（放在应用目录 = 自动成为 KCONFIG_ROOT）。
+#
+# ⚠️ 一旦本文件存在，Zephyr 就用它当**根** —— 必须先 source 官方根，
+#    否则整棵 Kconfig 树丢失（pfr_tpm 模块的 `I2C_FILTER_LINKEDSEMI` /
+#    `I2C_TARGET` / `I2C_EEPROM_TARGET` 全部变未定义 → Kconfig 报错中止）。
+#    实测踩过：漏这一行 ⇒ `error: Aborting due to Kconfig warnings`。
+
+source "Kconfig.zephyr"
+
+# 用途：给「只增不改」的可选源集提供开关 —— 新增用例由本开关保护，
+#       不置位时既有构建逐字节不变（SPEC_REFERENCE §6.4.5 / qsh-test-gen §2 变体）。
+
+config I2CF_SCAN_BURST
+	bool "一次性诊断：filter 拦截扫描时的日志驱逐测量"
+	default n
+	help
+	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_SCAN_BURST` 保护的用例
+	  `i2cf::scan_burst_drain`：白名单清空 → 上游 master 逐址扫 0x08..0x77
+	  （模拟外部 i2cdetect），量化「被拦事件数」与「扫描耗时」，
+	  并打 marker 供采集侧测日志驱逐跨度。
+
+	  ★ 这是**一次性诊断**用例，不登记进 regression/cases.yaml，
+	    用完可整体删除（本文件 + i2cf_test.c 的该块 + tests/case_scan_burst/）。
+
+config I2CF_FILTEROFF_PROBE
+	bool "一次性判别实验：无违规前置下 filter off 是否放行（H1 vs H2）"
+	default n
+	help
+	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_FILTEROFF_PROBE` 保护的用例
+	  `i2cf::filteroff_fresh_probe`：reset_all → switch_to_filter → filter_off
+	  → 上游读片内 target 0x33（**前置无任何违规**）。
+
+	  判读（取自 reports/2026-09-23-1/i2c_failure_triage.md §3.4）：
+	    读成功 ⇒ H2（拦截后残留态，需显式清中断才恢复）
+	    读失败 ⇒ H1（"关滤波器 = 不转发"成立，用例自证步的期望本身错）
+
+	  ★ 只做判别、**不置任何 zassert 判据**（结论由 ZT_INFO 记录）。
+	    一次性诊断，不登记进 regression/cases.yaml，用完可整体删除
+	    （本文件 + i2cf_test.c 的该块 + tests/case_filteroff_probe/）。
