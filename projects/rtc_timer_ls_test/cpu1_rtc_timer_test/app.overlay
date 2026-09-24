@@ -4,6 +4,14 @@
  * 使能软件 RTC（BSTIM+PIS+GPTIMA），保持 PMU 硬件 rtc 关闭。
  */
 
+/* console 走 uart1（TGT）：板级 overlay 已设同值，此处按单核工程规范
+ * （qsh-test-validate §1.9b）显式声明，避免换板级/换分型时静默丢 console。 */
+/ {
+	chosen {
+		zephyr,console = &uart1;
+	};
+};
+
 &rtc {
 	status = "disabled";
 };

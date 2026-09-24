@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """从 GDB 读内存取测试结果——串口不可用/串口 token 被刷掉时的兜底通道。
 
-TRNG 单核工程版：只读 cpu1（TGT）elf 的公共结果数组。
-从 i3c_dualcore_test 样板 dump_results.py 改造（去掉 controller 核）。
+RTC Timer (rtc_timer_ls) 单核工程版：只读 cpu1（TGT）elf 的公共结果数组。
+从 spi_test（单核样板）dump_results.py 改造（去掉 controller 核）。
 
 固件把每项测试的结果记账到 810_driver_test/common/test_results.h 公共模块的
 **全局数组**（int8_t test_results[]：-1 未跑 / 0 PASS / 1 FAIL；char
@@ -40,7 +40,9 @@ GDB = "riscv64-unknown-elf-gdb"
 NM = "riscv64-unknown-elf-nm"
 GDB_HOST = os.environ.get("GDB_SERVER_HOST", "127.0.0.1")
 GDB_PORT = os.environ.get("GDB_SERVER_PORT", "1025")
-TARGET_ROM_START = 0x100C0000
+# 用户需求#8 / KNOWN_ISSUES #57：单核一律 1os 构建，cpu1 入口 = 0x10000000；
+# 2os 构建入口 0x100c0000，由 2os 工程显式 TARGET_ROM_START 环境变量覆盖。
+TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 
 # 链接序 = ztest_unit_test 段 SORT_BY_NAME 字典序（§10.27：完整段名带尾
 # 下划线比较，数字 '0'-'9' 排在 '_' 之前——勿用 plain nm 名字典序，与

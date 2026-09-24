@@ -15,6 +15,7 @@
 cases:
   - projects\trng_test
   - projects\rtc_ls_test
+  - projects\rtc_timer_ls_test
   - projects\otbn_test
   - projects\otbn_selftest
   - projects\i2c_pure_test

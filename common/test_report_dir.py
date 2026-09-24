@@ -32,6 +32,21 @@ def main():
     rows = read_summary(s1)
     assert set(rows) == {"trng_test_case_default", "rtc_test_case_default"}
     assert rows["rtc_test_case_default"]["result"] == "FAIL"
+
+    # --- O-38 回归：结果是**可视标记**，回读要剥掉；且整文件重写不得抹掉末尾注记 ---
+    # (a) 标记不污染 result（否则计数/判定会被带偏）
+    assert all(v["result"] in ("PASS", "FAIL") for v in rows.values()), \
+        "结果列的可视标记没被 read_summary 剥掉"
+    # (b) 末尾注记（别的模块写的，如 failures 指针行）在 update_summary 后必须还在 ——
+    #     本函数是整文件重写，不显式保留就是静默删除（2026-09-24 实证过一次）
+    p = s1 / "summary.md"
+    p.write_text(p.read_text(encoding="utf-8") + "\n> 失败归因：见 `failures/`\n",
+                 encoding="utf-8")
+    update_summary(s1, "trng_test_case_default", "PASS", 9, 9,
+                   "trng_test_case_default/trng_test_report.md")
+    assert "失败归因" in p.read_text(encoding="utf-8"), \
+        "update_summary 抹掉了末尾注记（O-38 复发）"
+
     print("ALL TESTS PASS")
 
 

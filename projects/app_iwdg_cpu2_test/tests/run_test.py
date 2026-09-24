@@ -274,9 +274,19 @@ def main():
     # 采多长。2026-09-18-1 实测：60s 窗口在最后一项之后、ztest 收尾标记之前到点，
     # 三个 case 全部命中 run::timeout（而本体用例其实已在 cpu2 启动后 ~2.7s 跑完，
     # cpu2 末条时间戳 00:00:02.702，且已打印 "TESTSUITE app_iwdg succeeded"）。
-    # 取值依据 = 同类双核工程 mbox_test 的 120s（同款 test.sh -r + gdb continue 链路），
-    # **只调本工程默认值，不动公共层**（其余单核工程走 --timeout 语义，不受影响）。
-    ap.add_argument("--case-timeout", type=int, default=120)
+    # 取值依据 = **实测下界 + 裕量**（只调本工程默认值，不动公共层；其余单核工程走
+    # --timeout 语义，不受影响）。2026-09-24 逐档实测（8/10/11/12/15/20/30/60/120s，
+    # 三个 case 每档全跑）：
+    #   下界 = **11s**。≤10s 时上一轮（prime pass）的收尾行会在 `clear()` **之后**
+    #   才到达 ⇒ 混进本轮归档：10s 实测「归档里多出一条 PROJECT EXECUTION」（两轮复现）；
+    #   8s 实测更严重 —— capture 轮只跑到第 1 项（归档末行 = 第 1 项的 START），
+    #   报告却按 prime 轮残片判 `PASS (18/18)` ⇒ **静默假 PASS**（本轮 capture
+    #   其实根本没跑）。11s 起两轮复现均为「单次完整运行」。
+    #   ⚠️ 该下界是 `clear()` 与采集线程之间的**竞态**边界，不随判定逻辑变化 ——
+    #   判定（PASS/FAIL）在所有档位都一模一样，**只能靠归档完整性发现退化**。
+    #   取 **30s = 实测下界的 ~3 倍**留裕量，同时把 3 个 case 的回归成本从
+    #   120s×2 轮×3 case ≈ 12min 压到 ≈3min。
+    ap.add_argument("--case-timeout", type=int, default=30)
     args = ap.parse_args()
     ctrl_uart = args.ctrl_uart or os.environ.get("I3C_CTRL_UART")
     tgt_uart = args.tgt_uart or os.environ.get("I3C_TGT_UART")

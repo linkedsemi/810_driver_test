@@ -1,0 +1,871 @@
+*** Booting Zephyr OS build openbmc-zephyr-v0.1.0-820-gbc7729ae091d ***
+ZT_BOOT TGT
+Running TESTSUITE io_probe
+===================================================================
+[00:00:00.004,000] <START - claim_i2c234_bus
+INFO claim_i2c234_bus: scl=1/3 sda=1/3 verdict=PARTIAL
+inf> gpio_toggle: [GPIO] Auto toggle threads initialized
+[00:00:00.004,000] <inf> gpio_toggle:   - PA05: priority=8 (high), period=500ms
+[00:00:00.004,000] <inf> gpio_toggle:   - PA07: priority=12 (low),  period=500ms
+[00:00:00.004,000] <inf> io_probe_test: [CPU1 IOPROBE] IO interconnect probe started
+[00:00:00.014,000] <inf> gpio_toggle: [GPIO] PA05 toggle thread started (500ms period)
+[00:00:00.014,000] <inf> gpio_toggle: [GPIO] PA07 toggle thread started (500ms period)
+[00:00:00.062,000] <inf> io_probe: IOPROBE scan done: pins=75 links=2862 ambiguous=74 asym=2624 same_pin_pairs=0
+[00:00:00.063,000] <inf> io_probe: IOPROBE   SCL link PB15 <-> PE02
+[00:00:00.063,000] <inf> io_probe: IOPROBE   SDA link PB14 <-> PB00
+[00:00:00.063,000] <inf> io_probe: IOPROBE CLAIM i2c2/i2c3/i2c4 tied together:
+[00:00:00.063,000] <inf> io_probe: IOPROBE   SCL {PB04(i2c2),PB15(i2c3),PE02(i2c4)} linked 1/3  -> PARTIAL
+[00:00:00.063,000] <inf> io_probe: IOPROBE   SDA {PB01(i2c2),PB14(i2c3),PB00(i2c4)} linked 1/3  -> PARTIAL
+[00:00:00.063,000] [0 PASS - claim_i2c234_bus in 0.005 seconds
+===================================================================
+START - claim_spi_spif_interconnect
+INFO claim_spi_spif_interconnect: cross_links=54 verdict=CONNECTED
+m<inf> io_probe: IOPROBE   note: i2cfN.SCLO/SDAO Óë i2cN ÊÇ**Í¬Ò»¸ù½Å**£¨DT ¹ÌÓÐ£¬¼û±¨¸æ SAME_PIN ÉùÃ÷½Ú£©£¬ÒÑ°´ÎïÀí½ÅÈ¥ÖØ£¬²»²ÎÓëÉÏÃæ¼ÆÊý
+[00:00:00.183,000] <inf> io_probe: IOPROBE CLAIM SPI <-> SPIF IOs jumpered together: 54 measured cross-links -> CONNECTED
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PI08<->PI02
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG02<->PI02
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PI10
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PG04
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PF14
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PG06
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH00
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH02
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PG00
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PF15
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PF13
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH01
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH03
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PG08
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH04
+[00:00:00.183,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH06
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PG12
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PG09
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH05
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PH07
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PI02
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PF08
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PF04
+[00:00:00.184,000] <inf> io_probe: IOPROBE   SPI<->SPIF PG13<->PF02
+[00:00:00.184,000] <inf> io_probe: IOPROBE   note: ÒÔÏÂ³É¶ÔÐÅºÅÊÇ**Í¬Ò»¸ù½Å**£¨DT ¹ÌÓÐ£¬¼û±¨¸æ SAME_PIN ÉùÃ÷½Ú PASS - claim_spi_spif_interconnect in 0.008 seconds
+===================================================================
+START - dump_full_matrix
+£©£¬ÒÑ°´ÎïÀí½ÅÈ¥ÖØ£¬²»²ÎÓëÉÏÃæµÄ¿ç×é¼ÆÊý£ºspif1.CSNO=PI08(spi3.CS0)¡¢spif2.CSNI=PG03(spi3.IO1)¡¢spif2.IO2_IN=PG14(spi3.SCK)¡¢spif2.IO2_OUT=PG15(spi3.IO0)¡¢spif2.CSNO=PG02(spi3.CS1)¡¢spif2.IO3_OUT=PG13(spi3.CS0 board)¡¢spif2.IO3_IN=PG12(spi3.CS1 board)¡¢spif3.CSNO=PI00(spi4.CS0)¡¢spif4.CSNI=PQ05(spi4.IO2)¡¢spif4.CSNO=PQ00(spi4.SCK)
+[00:00:00.401,000] <inf> io_probe: IOPROBE ================ IO INTERCONNECT PROBE REPORT ================
+[00:00:00.401,000] <inf> io_probe: IOPROBE method: drive-LOW adjacency scan; all other pins input+internal-pull-up
+[00:00:00.401,000] <inf> io_probe: IOPROBE pins=75 links=2862 ambiguous=74 asym=2624
+[00:00:00.401,000] <inf> io_probe: IOPROBE ---- DT-INHERENT SAME-PAD PAIRS (declared, NOT measured) ----
+[00:00:00.401,000] <inf> io_probe: IOPROBE these are ONE piece of silicon pad each; they will ALWAYS read
+[00:00:00.401,000] <inf> io_probe: IOPROBE as connected, and they are NEVER the jumper you soldered:
+[00:00:00.401,000] <inf> io_probe: IOPROBE SAME_PIN i2c2.SCL(PB04) == i2cf2.SCLO(PB04)
+[00:00:00.421,000] <inf> io_probe: IOPROBE SAME_PIN i2c2.SDA(PB01) == i2cf2.SDAO(PB01)
+[00:00:00.441,000] <inf> io_probe: IOPROBE SAME_PIN i2c3.SCL(PB15) == i2cf3.SCLO(PB15)
+[00:00:00.461,000] <inf> io_probe: IOPROBE SAME_PIN i2c3.SDA(PB14) == i2cf3.SDAO(PB14)
+[00:00:00.482,000] <inf> io_probe: IOPROBE SAME_PIN i2c4.SCL(PE02) == i2cf4.SCLO(PE02)
+[00:00:00.502,000] <inf> io_probe: IOPROBE SAME_PIN i2c4.SDA(PB00) == i2cf4.SDAO(PB00)
+[00:00:00.522,000] <inf> io_probe: IOPROBE SAME_PIN spi3.SCK(PG14) == spif2.IO2_IN(PG14)
+[00:00:00.542,000] <inf> io_probe: IOPROBE SAME_PIN spi3.IO0(PG15) == spif2.IO2_OUT(PG15)
+[00:00:00.562,000] <inf> io_probe: IOPROBE SAME_PIN spi3.IO1(PG03) == spif2.CSNI(PG03)
+[00:00:00.582,000] <inf> io_probe: IOPROBE SAME_PIN spi3.CS1(PG02) == spif2.CSNO(PG02)
+[00:00:00.602,000] <inf> io_probe: IOPROBE SAME_PIN spi3.CS0(board)(PG13) == spif2.IO3_OUT(PG13)
+[00:00:00.622,000] <inf> io_probe: IOPROBE SAME_PIN spi3.CS1(board)(PG12) == spif2.IO3_IN(PG12)
+[00:00:00.642,000] <inf> io_probe: IOPROBE SAME_PIN spi4.SCK(PQ00) == spif4.CSNO(PQ00)
+[00:00:00.662,000] <inf> io_probe: IOPROBE SAME_PIN spi4.IO2(PQ05) == spif4.CSNI(PQ05)
+[00:00:00.683,000] <inf> io_probe: IOPROBE SAME_PIN spi3.CS0(spif ctx)(PI08) == spif1.CSNO(PI08)
+[00:00:00.703,000] <inf> io_probe: IOPROBE SAME_PIN spi4.CS0(spif ctx)(PI00) == spif3.CSNO(PI00)
+[00:00:00.723,000] <inf> io_probe: IOPROBE ------------------------------------------------------------
+[00:00:00.723,000] <inf> io_probe: IOPROBE ===== PIN LEGEND (label = port+pin ; names = logical signals) =====
+[00:00:00.723,000] <inf> io_probe: IOPROBE LEGEND PA00  spi1.SCK                               ctl=1 base=HIGH
+[00:00:00.723,000] <inf> io_probe: IOPROBE LEGEND PA01  spi1.MOSI                              ctl=1 base=HIGH
+[00:00:00.723,000] <inf> io_probe: IOPROBE LEGEND PA02  spi1.MISO                              ctl=1 base=HIGH
+[00:00:00.723,000] <inf> io_probe: IOPROBE LEGEND PA03  spi1.CS(cs-gpios)                      ctl=1 base=HIGH
+[00:00:00.743,000] <inf> io_probe: IOPROBE LEGEND PB04  i2c2.SCL|i2cf2.SCLO                    ctl=1 base=HIGH
+[00:00:00.743,000] <inf> io_probe: IOPROBE LEGEND PB01  i2c2.SDA|i2cf2.SDAO                    ctl=1 base=HIGH
+[00:00:00.743,000] <inf> io_probe: IOPROBE LEGEND PB05  i2cf2.SCLI                             ctl=1 base=HIGH
+[00:00:00.743,000] <inf> io_probe: IOPROBE LEGEND PB03  i2cf2.SDAI                             ctl=1 base=HIGH
+[00:00:00.763,000] <inf> io_probe: IOPROBE LEGEND PB15  i2c3.SCL|i2cf3.SCLO                    ctl=1 base=HIGH
+[00:00:00.763,000] <inf> io_probe: IOPROBE LEGEND PB14  i2c3.SDA|i2cf3.SDAO                    ctl=1 base=HIGH
+[00:00:00.763,000] <inf> io_probe: IOPROBE LEGEND PB13  i2cf3.SCLI                             ctl=1 base=HIGH
+[00:00:00.763,000] <inf> io_probe: IOPROBE LEGEND PB12  i2cf3.SDAI                             ctl=1 base=HIGH
+[00:00:00.783,000] <inf> io_probe: IOPROBE LEGEND PE02  i2c4.SCL|i2cf4.SCLO                    ctl=1 base=HIGH
+[00:00:00.783,000] <inf> io_probe: IOPROBE LEGEND PB00  i2c4.SDA|i2cf4.SDAO                    ctl=1 base=HIGH
+[00:00:00.783,000] <inf> io_probe: IOPROBE LEGEND PE03  i2cf4.SCLI                             ctl=1 base=HIGH
+[00:00:00.783,000] <inf> io_probe: IOPROBE LEGEND PB02  i2cf4.SDAI                             ctl=1 base=HIGH
+[00:00:00.803,000] <inf> io_probe: IOPROBE LEGEND PG14  spi3.SCK|spif2.IO2_IN                  ctl=1 base=HIGH
+[00:00:00.803,000] <inf> io_probe: IOPROBE LEGEND PG15  spi3.IO0|spif2.IO2_OUT                 ctl=1 base=HIGH
+[00:00:00.803,000] <inf> io_probe: IOPROBE LEGEND PG03  spi3.IO1|spif2.CSNI                    ctl=1 base=HIGH
+[00:00:00.803,000] <inf> io_probe: IOPROBE LEGEND PE01  spi3.IO2                               ctl=1 base=HIGH
+[00:00:00.823,000] <inf> io_probe: IOPROBE LEGEND PE00  spi3.IO3                               ctl=1 base=HIGH
+[00:00:00.823,000] <inf> io_probe: IOPROBE LEGEND PI08  spi3.CS0|spif1.CSNO                    ctl=1 base=HIGH
+[00:00:00.823,000] <inf> io_probe: IOPROBE LEGEND PG02  spi3.CS1|spif2.CSNO                    ctl=1 base=HIGH
+[00:00:00.823,000] <inf> io_probe: IOPROBE LEGEND PQ00  spi4.SCK|spif4.CSNO                    ctl=1 base=HIGH
+[00:00:00.843,000] <inf> io_probe: IOPROBE LEGEND PQ03  spi4.IO0                               ctl=1 base=HIGH
+[00:00:00.843,000] <inf> io_probe: IOPROBE LEGEND PQ04  spi4.IO1                               ctl=1 base=HIGH
+[00:00:00.843,000] <inf> io_probe: IOPROBE LEGEND PQ05  spi4.IO2|spif4.CSNI                    ctl=1 base=HIGH
+[00:00:00.843,000] <inf> io_probe: IOPROBE LEGEND PQ06  spi4.IO3                               ctl=1 base=HIGH
+[00:00:00.863,000] <inf> io_probe: IOPROBE LEGEND PQ02  spi4.CS0(cs-gpios)                     ctl=1 base=HIGH
+[00:00:00.863,000] <inf> io_probe: IOPROBE LEGEND PQ01  spi4.CS1(cs-gpios)                     ctl=1 base=HIGH
+[00:00:00.863,000] <inf> io_probe: IOPROBE LEGEND PI00  spi4.CS0|spif3.CSNO                    ctl=1 base=HIGH
+[00:00:00.863,000] <inf> io_probe: IOPROBE LEGEND PI10  spif1.CSNI                             ctl=1 base=HIGH
+[00:00:00.884,000] <inf> io_probe: IOPROBE LEGEND PG04  spif1.SCKI                             ctl=1 base=HIGH
+[00:00:00.884,000] <inf> io_probe: IOPROBE LEGEND PF14  spif1.SI                               ctl=1 base=HIGH
+[00:00:00.884,000] <inf> io_probe: IOPROBE LEGEND PG06  spif1.IO1_IN                           ctl=1 base=HIGH
+[00:00:00.884,000] <inf> io_probe: IOPROBE LEGEND PH00  spif1.IO2_IN                           ctl=1 base=HIGH
+[00:00:00.904,000] <inf> io_probe: IOPROBE LEGEND PH02  spif1.IO3_IN                           ctl=1 base=HIGH
+[00:00:00.904,000] <inf> io_probe: IOPROBE LEGEND PG00  spif1.SCKO                             ctl=1 base=HIGH
+[00:00:00.904,000] <inf> io_probe: IOPROBE LEGEND PF15  spif1.SO                               ctl=1 base=HIGH
+[00:00:00.904,000] <inf> io_probe: IOPROBE LEGEND PF13  spif1.IO1_OUT                          ctl=1 base=HIGH
+[00:00:00.924,000] <inf> io_probe: IOPROBE LEGEND PH01  spif1.IO2_OUT                          ctl=1 base=HIGH
+[00:00:00.924,000] <inf> io_probe: IOPROBE LEGEND PH03  spif1.IO3_OUT                          ctl=1 base=HIGH
+[00:00:00.924,000] <inf> io_probe: IOPROBE LEGEND PG08  spif2.SCKI                             ctl=1 base=HIGH
+[00:00:00.924,000] <inf> io_probe: IOPROBE LEGEND PH04  spif2.SI                               ctl=1 base=HIGH
+[00:00:00.944,000] <inf> io_probe: IOPROBE LEGEND PH06  spif2.IO1_IN                           ctl=1 base=HIGH
+[00:00:00.944,000] <inf> io_probe: IOPROBE LEGEND PG12  spif2.IO3_IN|spi3.CS1(board)           ctl=1 base=HIGH
+[00:00:00.944,000] <inf> io_probe: IOPROBE LEGEND PG09  spif2.SCKO                             ctl=1 base=HIGH
+[00:00:00.944,000] <inf> io_probe: IOPROBE LEGEND PH05  spif2.SO                               ctl=1 base=HIGH
+[00:00:00.964,000] <inf> io_probe: IOPROBE LEGEND PH07  spif2.IO1_OUT                          ctl=1 base=HIGH
+[00:00:00.964,000] <inf> io_probe: IOPROBE LEGEND PG13  spif2.IO3_OUT|spi3.CS0(board)          ctl=1 base=HIGH
+[00:00:00.964,000] <inf> io_probe: IOPROBE LEGEND PI02  spif3.CSNI                             ctl=1 base=HIGH
+[00:00:00.964,000] <inf> io_probe: IOPROBE LEGEND PF08  spif3.SCKI                             ctl=1 base=HIGH
+[00:00:00.984,000] <inf> io_probe: IOPROBE LEGEND PF04  spif3.SI                               ctl=1 base=HIGH
+[00:00:00.984,000] <inf> io_probe: IOPROBE LEGEND PF02  spif3.IO1_IN                           ctl=1 base=HIGH
+[00:00:00.984,000] <inf> io_probe: IOPROBE LEGEND PF10  spif3.IO2_IN                           ctl=1 base=HIGH
+[00:00:00.984,000] <inf> io_probe: IOPROBE LEGEND PF06  spif3.IO3_IN                           ctl=1 base=HIGH
+[00:00:01.004,000] <inf> io_probe: IOPROBE LEGEND PF09  spif3.SCKO                             ctl=1 base=HIGH
+[00:00:01.004,000] <inf> io_probe: IOPROBE LEGEND PF05  spif3.SO                               ctl=1 base=HIGH
+[00:00:01.004,000] <inf> io_probe: IOPROBE LEGEND PF03  spif3.IO1_OUT                          ctl=1 base=HIGH
+[00:00:01.004,000] <inf> io_probe: IOPROBE LEGEND PF11  spif3.IO2_OUT                          ctl=1 base=HIGH
+[00:00:01.024,000] <inf> io_probe: IOPROBE LEGEND PF07  spif3.IO3_OUT                          ctl=1 base=HIGH
+[00:00:01.024,000] <inf> io_probe: IOPROBE LEGEND PH12  spif4.SCKI                             ctl=0 base=HIGH
+[00:00:01.024,000] <inf> io_probe: IOPROBE LEGEND PH10  spif4.SI                               ctl=1 base=HIGH
+[00:00:01.024,000] <inf> io_probe: IOPROBE LEGEND PH08  spif4.IO1_IN                           ctl=1 base=HIGH
+[00:00:01.044,000] <inf> io_probe: IOPROBE LEGEND PF12  spif4.IO2_IN                           ctl=1 base=LOW
+[00:00:01.044,000] <inf> io_probe: IOPROBE LEGEND PG07  spif4.IO3_IN                           ctl=0 base=HIGH
+[00:00:01.044,000] <inf> io_probe: IOPROBE LEGEND PH13  spif4.SCKO                             ctl=1 base=HIGH
+[00:00:01.044,000] <inf> io_probe: IOPROBE LEGEND PH11  spif4.SO                               ctl=1 base=HIGH
+[00:00:01.064,000] <inf> io_probe: IOPROBE LEGEND PH09  spif4.IO1_OUT                          ctl=1 base=HIGH
+[00:00:01.064,000] <inf> io_probe: IOPROBE LEGEND PG01  spif4.IO2_OUT                          ctl=1 base=HIGH
+[00:00:01.064,000] <inf> io_probe: IOPROBE LEGEND PG05  spif4.IO3_OUT                          ctl=1 base=HIGH
+[00:00:01.064,000] <inf> io_probe: IOPROBE LEGEND PJ10  i3c5.SCL                               ctl=1 base=HIGH
+[00:00:01.085,000] <inf> io_probe: IOPROBE LEGEND PJ11  i3c5.SDA                               ctl=1 base=HIGH
+[00:00:01.085,000] <inf> io_probe: IOPROBE LEGEND PJ08  i3c6.SCL                               ctl=1 base=HIGH
+[00:00:01.085,000] <inf> io_probe: IOPROBE LEGEND PJ09  i3c6.SDA                               ctl=1 base=HIGH
+[00:00:01.085,000] <inf> io_probe: IOPROBE COLS        PA00PA01PA02PA03PB04PB01PB05PB03PB15PB14PB13PB12PE02PB00PE03PB02PG14PG15PG03PE01PE00PI08PG02PQ00PQ03PQ04PQ05PQ06PQ02PQ01PI00PI10PG04PF14PG06PH00
+[00:00:01.105,000] <inf> io_probe: IOPROBE ROW   PA00 |  *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.125,000] <inf> io_probe: IOPROBE ROW   PA01 |  #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.145,000] <inf> io_probe: IOPROBE ROW   PA02 |  #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.165,000] <inf> io_probe: IOPROBE ROW   PA03 |  #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.185,000] <inf> io_probe: IOPROBE ROW   PB04 |  #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.205,000] <inf> io_probe: IOPROBE ROW   PB01 |  #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.225,000] <inf> io_probe: IOPROBE ROW   PB05 |  #   #   #   #   #   #   *   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.245,000] <inf> io_probe: IOPROBE ROW   PB03 |  #   #   #   #   #   #   #   *   .   .   .   .   #   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.266,000] <inf> io_probe: IOPROBE ROW   PB15 |  #   #   #   #   #   #   #   #   *   .   .   .   #   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.286,000] <inf> io_probe: IOPROBE ROW   PB14 |  #   #   #   #   #   #   #   #   #   *   .   .   #   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.306,000] <inf> io_probe: IOPROBE ROW   PB13 |  #   #   #   #   #   #   #   #   #   #   *   .   #   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.326,000] <inf> io_probe: IOPROBE ROW   PB12 |  #   #   #   #   #   #   #   #   #   #   #   *   #   #   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.346,000] <inf> io_probe: IOPROBE ROW   PE02 |  #   #   #   #   #   #   #   #   #   #   #   #   *   #   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.366,000] <inf> io_probe: IOPROBE ROW   PB00 |  #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.386,000] <inf> io_probe: IOPROBE ROW   PE03 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.406,000] <inf> io_probe: IOPROBE ROW   PB02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.426,000] <inf> io_probe: IOPROBE ROW   PG14 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.446,000] <inf> io_probe: IOPROBE ROW   PG15 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.467,000] <inf> io_probe: IOPROBE ROW   PG03 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.487,000] <inf> io_probe: IOPROBE ROW   PE01 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.507,000] <inf> io_probe: IOPROBE ROW   PE00 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.527,000] <inf> io_probe: IOPROBE ROW   PI08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.547,000] <inf> io_probe: IOPROBE ROW   PG02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.567,000] <inf> io_probe: IOPROBE ROW   PQ00 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.587,000] <inf> io_probe: IOPROBE ROW   PQ03 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.607,000] <inf> io_probe: IOPROBE ROW   PQ04 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   .   . 
+[00:00:01.627,000] <inf> io_probe: IOPROBE ROW   PQ05 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   . 
+[00:00:01.647,000] <inf> io_probe: IOPROBE ROW   PQ06 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   . 
+[00:00:01.668,000] <inf> io_probe: IOPROBE ROW   PQ02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   . 
+[00:00:01.688,000] <inf> io_probe: IOPROBE ROW   PQ01 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   . 
+[00:00:01.708,000] <inf> io_probe: IOPROBE ROW   PI00 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   . 
+[00:00:01.728,000] <inf> io_probe: IOPROBE ROW   PI10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   . 
+[00:00:01.748,000] <inf> io_probe: IOPROBE ROW   PG04 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   . 
+[00:00:01.768,000] <inf> io_probe: IOPROBE ROW   PF14 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   . 
+[00:00:01.788,000] <inf> io_probe: IOPROBE ROW   PG06 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   . 
+[00:00:01.808,000] <inf> io_probe: IOPROBE ROW   PH00 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   * 
+[00:00:01.828,000] <inf> io_probe: IOPROBE ROW   PH02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.848,000] <inf> io_probe: IOPROBE ROW   PG00 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.869,000] <inf> io_probe: IOPROBE ROW   PF15 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.889,000] <inf> io_probe: IOPROBE ROW   PF13 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.909,000] <inf> io_probe: IOPROBE ROW   PH01 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.929,000] <inf> io_probe: IOPROBE ROW   PH03 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.949,000] <inf> io_probe: IOPROBE ROW   PG08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.969,000] <inf> io_probe: IOPROBE ROW   PH04 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:01.989,000] <inf> io_probe: IOPROBE ROW   PH06 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.009,000] <inf> io_probe: IOPROBE ROW   PG12 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.029,000] <inf> io_probe: IOPROBE ROW   PG09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.049,000] <inf> io_probe: IOPROBE ROW   PH05 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.070,000] <inf> io_probe: IOPROBE ROW   PH07 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.090,000] <inf> io_probe: IOPROBE ROW   PG13 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.110,000] <inf> io_probe: IOPROBE ROW   PI02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.130,000] <inf> io_probe: IOPROBE ROW   PF08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.150,000] <inf> io_probe: IOPROBE ROW   PF04 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.170,000] <inf> io_probe: IOPROBE ROW   PF02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.190,000] <inf> io_probe: IOPROBE ROW   PF10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.210,000] <inf> io_probe: IOPROBE ROW   PF06 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.230,000] <inf> io_probe: IOPROBE ROW   PF09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.250,000] <inf> io_probe: IOPROBE ROW   PF05 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.271,000] <inf> io_probe: IOPROBE ROW   PF03 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.291,000] <inf> io_probe: IOPROBE ROW   PF11 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.311,000] <inf> io_probe: IOPROBE ROW   PF07 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.331,000] <inf> io_probe: IOPROBE ROW   PH12 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.351,000] <inf> io_probe: IOPROBE ROW   PH10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.371,000] <inf> io_probe: IOPROBE ROW   PH08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.391,000] <inf> io_probe: IOPROBE ROW   PF12 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.411,000] <inf> io_probe: IOPROBE ROW   PG07 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.431,000] <inf> io_probe: IOPROBE ROW   PH13 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.451,000] <inf> io_probe: IOPROBE ROW   PH11 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.472,000] <inf> io_probe: IOPROBE ROW   PH09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.492,000] <inf> io_probe: IOPROBE ROW   PG01 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.512,000] <inf> io_probe: IOPROBE ROW   PG05 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.532,000] <inf> io_probe: IOPROBE ROW   PJ10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.552,000] <inf> io_probe: IOPROBE ROW   PJ11 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.572,000] <inf> io_probe: IOPROBE ROW   PJ08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.592,000] <inf> io_probe: IOPROBE ROW   PJ09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+[00:00:02.612,000] <inf> io_probe: IOPROBE COLS        PH02PG00PF15PF13PH01PH03PG08PH04PH06PG12PG09PH05PH07PG13PI02PF08PF04PF02PF10PF06PF09PF05PF03PF11PF07PH12PH10PH08PF12PG07PH13PH11PH09PG01PG05PJ10
+[00:00:02.632,000] <inf> io_probe: IOPROBE ROW   PA00 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.652,000] <inf> io_probe: IOPROBE ROW   PA01 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.673,000] <inf> io_probe: IOPROBE ROW   PA02 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.693,000] <inf> io_probe: IOPROBE ROW   PA03 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.713,000] <inf> io_probe: IOPROBE ROW   PB04 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.733,000] <inf> io_probe: IOPROBE ROW   PB01 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.753,000] <inf> io_probe: IOPROBE ROW   PB05 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.773,000] <inf> io_probe: IOPROBE ROW   PB03 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.793,000] <inf> io_probe: IOPROBE ROW   PB15 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.813,000] <inf> io_probe: IOPROBE ROW   PB14 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.833,000] <inf> io_probe: IOPROBE ROW   PB13 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.853,000] <inf> io_probe: IOPROBE ROW   PB12 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.874,000] <inf> io_probe: IOPROBE ROW   PE02 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.894,000] <inf> io_probe: IOPROBE ROW   PB00 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.914,000] <inf> io_probe: IOPROBE ROW   PE03 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.934,000] <inf> io_probe: IOPROBE ROW   PB02 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.954,000] <inf> io_probe: IOPROBE ROW   PG14 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.974,000] <inf> io_probe: IOPROBE ROW   PG15 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:02.994,000] <inf> io_probe: IOPROBE ROW   PG03 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.014,000] <inf> io_probe: IOPROBE ROW   PE01 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.034,000] <inf> io_probe: IOPROBE ROW   PE00 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.054,000] <inf> io_probe: IOPROBE ROW   PI08 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.075,000] <inf> io_probe: IOPROBE ROW   PG02 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.095,000] <inf> io_probe: IOPROBE ROW   PQ00 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.115,000] <inf> io_probe: IOPROBE ROW   PQ03 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.135,000] <inf> io_probe: IOPROBE ROW   PQ04 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.155,000] <inf> io_probe: IOPROBE ROW   PQ05 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.175,000] <inf> io_probe: IOPROBE ROW   PQ06 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.195,000] <inf> io_probe: IOPROBE ROW   PQ02 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.215,000] <inf> io_probe: IOPROBE ROW   PQ01 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.235,000] <inf> io_probe: IOPROBE ROW   PI00 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.255,000] <inf> io_probe: IOPROBE ROW   PI10 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.276,000] <inf> io_probe: IOPROBE ROW   PG04 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.296,000] <inf> io_probe: IOPROBE ROW   PF14 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.316,000] <inf> io_probe: IOPROBE ROW   PG06 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.336,000] <inf> io_probe: IOPROBE ROW   PH00 |  .   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.356,000] <inf> io_probe: IOPROBE ROW   PH02 |  *   .   .   .   .   .   .   .   .   .   .   .   .   .   #   .   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.376,000] <inf> io_probe: IOPROBE ROW   PG00 |  #   *   .   .   .   .   .   .   .   .   .   .   .   .   #   #   .   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.396,000] <inf> io_probe: IOPROBE ROW   PF15 |  #   #   *   .   .   .   .   .   .   .   .   .   .   .   #   #   #   .   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.416,000] <inf> io_probe: IOPROBE ROW   PF13 |  #   #   #   *   .   .   .   .   .   .   .   .   .   .   #   #   #   #   .   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.436,000] <inf> io_probe: IOPROBE ROW   PH01 |  #   #   #   #   *   .   .   .   .   .   .   .   .   .   #   #   #   #   #   .   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.456,000] <inf> io_probe: IOPROBE ROW   PH03 |  #   #   #   #   #   *   .   .   .   .   .   .   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.477,000] <inf> io_probe: IOPROBE ROW   PG08 |  #   #   #   #   #   #   *   .   .   .   .   .   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.497,000] <inf> io_probe: IOPROBE ROW   PH04 |  #   #   #   #   #   #   #   *   .   .   .   .   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.517,000] <inf> io_probe: IOPROBE ROW   PH06 |  #   #   #   #   #   #   #   #   *   .   .   .   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.537,000] <inf> io_probe: IOPROBE ROW   PG12 |  #   #   #   #   #   #   #   #   #   *   .   .   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.557,000] <inf> io_probe: IOPROBE ROW   PG09 |  #   #   #   #   #   #   #   #   #   #   *   .   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.577,000] <inf> io_probe: IOPROBE ROW   PH05 |  #   #   #   #   #   #   #   #   #   #   #   *   .   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.597,000] <inf> io_probe: IOPROBE ROW   PH07 |  #   #   #   #   #   #   #   #   #   #   #   #   *   .   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.617,000] <inf> io_probe: IOPROBE ROW   PG13 |  #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.637,000] <inf> io_probe: IOPROBE ROW   PI02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.657,000] <inf> io_probe: IOPROBE ROW   PF08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.678,000] <inf> io_probe: IOPROBE ROW   PF04 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.698,000] <inf> io_probe: IOPROBE ROW   PF02 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.718,000] <inf> io_probe: IOPROBE ROW   PF10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   #   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.738,000] <inf> io_probe: IOPROBE ROW   PF06 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.758,000] <inf> io_probe: IOPROBE ROW   PF09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.778,000] <inf> io_probe: IOPROBE ROW   PF05 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.798,000] <inf> io_probe: IOPROBE ROW   PF03 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.818,000] <inf> io_probe: IOPROBE ROW   PF11 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.838,000] <inf> io_probe: IOPROBE ROW   PF07 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.858,000] <inf> io_probe: IOPROBE ROW   PH12 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   *   .   .   ?   .   .   .   .   .   .   . 
+[00:00:03.879,000] <inf> io_probe: IOPROBE ROW   PH10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   *   .   ?   .   .   .   .   .   .   . 
+[00:00:03.899,000] <inf> io_probe: IOPROBE ROW   PH08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   *   ?   .   .   .   .   .   .   . 
+[00:00:03.919,000] <inf> io_probe: IOPROBE ROW   PF12 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   *   .   .   .   .   .   .   . 
+[00:00:03.939,000] <inf> io_probe: IOPROBE ROW   PG07 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   *   .   .   .   .   .   . 
+[00:00:03.959,000] <inf> io_probe: IOPROBE ROW   PH13 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   *   .   .   .   .   . 
+[00:00:03.979,000] <inf> io_probe: IOPROBE ROW   PH11 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   *   .   .   .   . 
+[00:00:03.999,000] <inf> io_probe: IOPROBE ROW   PH09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   *   .   .   . 
+[00:00:04.019,000] <inf> io_probe: IOPROBE ROW   PG01 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   #   *   .   . 
+[00:00:04.039,000] <inf> io_probe: IOPROBE ROW   PG05 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   #   #   *   . 
+[00:00:04.059,000] <inf> io_probe: IOPROBE ROW   PJ10 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   #   #   #   * 
+[00:00:04.080,000] <inf> io_probe: IOPROBE ROW   PJ11 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   #   #   #   # 
+[00:00:04.100,000] <inf> io_probe: IOPROBE ROW   PJ08 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   #   #   #   # 
+[00:00:04.120,000] <inf> io_probe: IOPROBE ROW   PJ09 |  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   .   #   #   ?   .   #   #   #   #   #   # 
+[00:00:04.140,000] <inf> io_probe: IOPROBE COLS        PJ11PJ08PJ09
+[00:00:04.160,000] <inf> io_probe: IOPROBE ROW   PA00 |  .   .   . 
+[00:00:04.180,000] <inf> io_probe: IOPROBE ROW   PA01 |  .   .   . 
+[00:00:04.200,000] <inf> io_probe: IOPROBE ROW   PA02 |  .   .   . 
+[00:00:04.220,000] <inf> io_probe: IOPROBE ROW   PA03 |  .   .   . 
+[00:00:04.240,000] <inf> io_probe: IOPROBE ROW   PB04 |  .   .   . 
+[00:00:04.260,000] <inf> io_probe: IOPROBE ROW   PB01 |  .   .   . 
+[00:00:04.281,000] <inf> io_probe: IOPROBE ROW   PB05 |  .   .   . 
+[00:00:04.301,000] <inf> io_probe: IOPROBE ROW   PB03 |  .   .   . 
+[00:00:04.321,000] <inf> io_probe: IOPROBE ROW   PB15 |  .   .   . 
+[00:00:04.341,000] <inf> io_probe: IOPROBE ROW   PB14 |  .   .   . 
+[00:00:04.361,000] <inf> io_probe: IOPROBE ROW   PB13 |  .   .   . 
+[00:00:04.381,000] <inf> io_probe: IOPROBE ROW   PB12 |  .   .   . 
+[00:00:04.401,000] <inf> io_probe: IOPROBE ROW   PE02 |  .   .   . 
+[00:00:04.421,000] <inf> io_probe: IOPROBE ROW   PB00 |  .   .   . 
+[00:00:04.441,000] <inf> io_probe: IOPROBE ROW   PE03 |  .   .   . 
+[00:00:04.461,000] <inf> io_probe: IOPROBE ROW   PB02 |  .   .   . 
+[00:00:04.482,000] <inf> io_probe: IOPROBE ROW   PG14 |  .   .   . 
+[00:00:04.502,000] <inf> io_probe: IOPROBE ROW   PG15 |  .   .   . 
+[00:00:04.522,000] <inf> io_probe: IOPROBE ROW   PG03 |  .   .   . 
+[00:00:04.542,000] <inf> io_probe: IOPROBE ROW   PE01 |  .   .   . 
+[00:00:04.562,000] <inf> io_probe: IOPROBE ROW   PE00 |  .   .   . 
+[00:00:04.582,000] <inf> io_probe: IOPROBE ROW   PI08 |  .   .   . 
+[00:00:04.602,000] <inf> io_probe: IOPROBE ROW   PG02 |  .   .   . 
+[00:00:04.622,000] <inf> io_probe: IOPROBE ROW   PQ00 |  .   .   . 
+[00:00:04.642,000] <inf> io_probe: IOPROBE ROW   PQ03 |  .   .   . 
+[00:00:04.662,000] <inf> io_probe: IOPROBE ROW   PQ04 |  .   .   . 
+[00:00:04.683,000] <inf> io_probe: IOPROBE ROW   PQ05 |  .   .   . 
+[00:00:04.703,000] <inf> io_probe: IOPROBE ROW   PQ06 |  .   .   . 
+[00:00:04.723,000] <inf> io_probe: IOPROBE ROW   PQ02 |  .   .   . 
+[00:00:04.743,000] <inf> io_probe: IOPROBE ROW   PQ01 |  .   .   . 
+[00:00:04.763,000] <inf> io_probe: IOPROBE ROW   PI00 |  .   .   . 
+[00:00:04.783,000] <inf> io_probe: IOPROBE ROW   PI10 |  .   .   . 
+[00:00:04.803,000] <inf> io_probe: IOPROBE ROW   PG04 |  .   .   . 
+[00:00:04.823,000] <inf> io_probe: IOPROBE ROW   PF14 |  .   .   . 
+[00:00:04.843,000] <inf> io_probe: IOPROBE ROW   PG06 |  .   .   . 
+[00:00:04.863,000] <inf> io_probe: IOPROBE ROW   PH00 |  .   .   . 
+[00:00:04.884,000] <inf> io_probe: IOPROBE ROW   PH02 |  .   .   . 
+[00:00:04.904,000] <inf> io_probe: IOPROBE ROW   PG00 |  .   .   . 
+[00:00:04.924,000] <inf> io_probe: IOPROBE ROW   PF15 |  .   .   . 
+[00:00:04.944,000] <inf> io_probe: IOPROBE ROW   PF13 |  .   .   . 
+[00:00:04.964,000] <inf> io_probe: IOPROBE ROW   PH01 |  .   .   . 
+[00:00:04.984,000] <inf> io_probe: IOPROBE ROW   PH03 |  .   .   . 
+[00:00:05.004,000] <inf> io_probe: IOPROBE ROW   PG08 |  .   .   . 
+[00:00:05.024,000] <inf> io_probe: IOPROBE ROW   PH04 |  .   .   . 
+[00:00:05.044,000] <inf> io_probe: IOPROBE ROW   PH06 |  .   .   . 
+[00:00:05.064,000] <inf> io_probe: IOPROBE ROW   PG12 |  .   .   . 
+[00:00:05.085,000] <inf> io_probe: IOPROBE ROW   PG09 |  .   .   . 
+[00:00:05.105,000] <inf> io_probe: IOPROBE ROW   PH05 |  .   .   . 
+[00:00:05.125,000] <inf> io_probe: IOPROBE ROW   PH07 |  .   .   . 
+[00:00:05.145,000] <inf> io_probe: IOPROBE ROW   PG13 |  .   .   . 
+[00:00:05.165,000] <inf> io_probe: IOPROBE ROW   PI02 |  .   .   . 
+[00:00:05.185,000] <inf> io_probe: IOPROBE ROW   PF08 |  .   .   . 
+[00:00:05.205,000] <inf> io_probe: IOPROBE ROW   PF04 |  .   .   . 
+[00:00:05.225,000] <inf> io_probe: IOPROBE ROW   PF02 |  .   .   . 
+[00:00:05.245,000] <inf> io_probe: IOPROBE ROW   PF10 |  .   .   . 
+[00:00:05.265,000] <inf> io_probe: IOPROBE ROW   PF06 |  .   .   . 
+[00:00:05.286,000] <inf> io_probe: IOPROBE ROW   PF09 |  .   .   . 
+[00:00:05.306,000] <inf> io_probe: IOPROBE ROW   PF05 |  .   .   . 
+[00:00:05.326,000] <inf> io_probe: IOPROBE ROW   PF03 |  .   .   . 
+[00:00:05.346,000] <inf> io_probe: IOPROBE ROW   PF11 |  .   .   . 
+[00:00:05.366,000] <inf> io_probe: IOPROBE ROW   PF07 |  .   .   . 
+[00:00:05.386,000] <inf> io_probe: IOPROBE ROW   PH12 |  .   .   . 
+[00:00:05.406,000] <inf> io_probe: IOPROBE ROW   PH10 |  .   .   . 
+[00:00:05.426,000] <inf> io_probe: IOPROBE ROW   PH08 |  .   .   . 
+[00:00:05.446,000] <inf> io_probe: IOPROBE ROW   PF12 |  .   .   . 
+[00:00:05.466,000] <inf> io_probe: IOPROBE ROW   PG07 |  .   .   . 
+[00:00:05.487,000] <inf> io_probe: IOPROBE ROW   PH13 |  .   .   . 
+[00:00:05.507,000] <inf> io_probe: IOPROBE ROW   PH11 |  .   .   . 
+[00:00:05.527,000] <inf> io_probe: IOPROBE ROW   PH09 |  .   .   . 
+[00:00:05.547,000] <inf> io_probe: IOPROBE ROW   PG01 |  .   .   . 
+[00:00:05.567,000] <inf> io_probe: IOPROBE ROW   PG05 |  .   .   . 
+[00:00:05.587,000] <inf> io_probe: IOPROBE ROW   PJ10 |  .   #   . 
+[00:00:05.607,000] <inf> io_probe: IOPROBE ROW   PJ11 |  *   #   # 
+[00:00:05.627,000] <inf> io_probe: IOPROBE ROW   PJ08 |  #   *   # 
+[00:00:05.647,000] <inf> io_probe: IOPROBE ROW   PJ09 |  #   #   * 
+[00:00:05.667,000] <inf> io_probe: IOPROBE MATRIX KEY: '#'=LINK(measured) '?'=AMBIG(other pin held low) '.'=no link '-'=read-failed '*'=self '='=SAME PIN(same pad; belt-and-braces, only if the table lists one pad twice)
+[00:00:05.667,000] <inf> io_probe: IOPROBE Ò»¸ùÎïÀí½ÅÖ»Õ¼¾ØÕóÒ»ÐÐ ¡ª¡ª DT ¹ÌÓÐÍ¬½Å¹ØÏµ¼ûÉÏÃæ SAME_PIN ÉùÃ÷£¬²»»áÔÚ¾ØÕóÀïÒÔÁ½¸ñ³öÏÖ
+[00:00:05.667,000] <inf> io_probe: IOPROBE LINK i2cf2.SCLI(PB05) <-> i2c4.SCL|i2cf4.SCLO(PE02)
+[00:00:05.688,000] <inf> io_probe: IOPROBE LINK i2cf2.SDAI(PB03) <-> i2c4.SCL|i2cf4.SCLO(PE02)
+[00:00:05.708,000] <inf> io_probe: IOPROBE LINK i2cf2.SDAI(PB03) <-> i2c4.SDA|i2cf4.SDAO(PB00)
+[00:00:05.728,000] <inf> io_probe: IOPROBE LINK i2c3.SCL|i2cf3.SCLO(PB15) <-> i2c4.SCL|i2cf4.SCLO(PE02)
+[00:00:05.748,000] <inf> io_probe: IOPROBE LINK i2c3.SCL|i2cf3.SCLO(PB15) <-> i2c4.SDA|i2cf4.SDAO(PB00)
+[00:00:05.768,000] <inf> io_probe: IOPROBE LINK i2c3.SDA|i2cf3.SDAO(PB14) <-> i2c4.SCL|i2cf4.SCLO(PE02)
+[00:00:05.788,000] <inf> io_probe: IOPROBE LINK i2c3.SDA|i2cf3.SDAO(PB14) <-> i2c4.SDA|i2cf4.SDAO(PB00)
+[00:00:05.808,000] <inf> io_probe: IOPROBE LINK i2cf3.SCLI(PB13) <-> i2c4.SCL|i2cf4.SCLO(PE02)
+[00:00:05.828,000] <inf> io_probe: IOPROBE LINK i2cf3.SCLI(PB13) <-> i2c4.SDA|i2cf4.SDAO(PB00)
+[00:00:05.848,000] <inf> io_probe: IOPROBE LINK i2cf3.SDAI(PB12) <-> i2c4.SCL|i2cf4.SCLO(PE02)
+[00:00:05.868,000] <inf> io_probe: IOPROBE LINK i2cf3.SDAI(PB12) <-> i2c4.SDA|i2cf4.SDAO(PB00)
+[00:00:05.889,000] <inf> io_probe: IOPROBE LINK i2cf3.SDAI(PB12) <-> i2cf4.SDAI(PB02)
+[00:00:05.909,000] <inf> io_probe: IOPROBE LINK i2c4.SCL|i2cf4.SCLO(PE02) <-> i2c4.SDA|i2cf4.SDAO(PB00)
+[00:00:05.929,000] <inf> io_probe: IOPROBE LINK i2c4.SCL|i2cf4.SCLO(PE02) <-> i2cf4.SDAI(PB02)
+[00:00:05.949,000] <inf> io_probe: IOPROBE LINK i2c4.SDA|i2cf4.SDAO(PB00) <-> i2cf4.SDAI(PB02)
+[00:00:05.969,000] <inf> io_probe: IOPROBE LINK i2cf4.SCLI(PE03) <-> i2cf4.SDAI(PB02)
+[00:00:05.989,000] <inf> io_probe: IOPROBE LINK spi3.CS0|spif1.CSNO(PI08) <-> spif3.CSNI(PI02)
+[00:00:06.009,000] <inf> io_probe: IOPROBE LINK spi3.CS1|spif2.CSNO(PG02) <-> spif3.CSNI(PI02)
+[00:00:06.029,000] <inf> io_probe: IOPROBE LINK spi4.SCK|spif4.CSNO(PQ00) <-> spif3.CSNI(PI02)
+[00:00:06.049,000] <inf> io_probe: IOPROBE LINK spi4.IO0(PQ03) <-> spif3.CSNI(PI02)
+[00:00:06.069,000] <inf> io_probe: IOPROBE LINK spi4.IO1(PQ04) <-> spif3.CSNI(PI02)
+[00:00:06.090,000] <inf> io_probe: IOPROBE LINK spi4.IO2|spif4.CSNI(PQ05) <-> spif3.CSNI(PI02)
+[00:00:06.110,000] <inf> io_probe: IOPROBE LINK spi4.IO3(PQ06) <-> spif3.CSNI(PI02)
+[00:00:06.130,000] <inf> io_probe: IOPROBE LINK spi4.CS0(cs-gpios)(PQ02) <-> spif3.CSNI(PI02)
+[00:00:06.150,000] <inf> io_probe: IOPROBE LINK spi4.CS1(cs-gpios)(PQ01) <-> spif3.CSNI(PI02)
+[00:00:06.170,000] <inf> io_probe: IOPROBE LINK spi4.CS0|spif3.CSNO(PI00) <-> spif3.CSNI(PI02)
+[00:00:06.190,000] <inf> io_probe: IOPROBE LINK spif1.CSNI(PI10) <-> spif3.CSNI(PI02)
+[00:00:06.210,000] <inf> io_probe: IOPROBE LINK spif1.SCKI(PG04) <-> spif3.CSNI(PI02)
+[00:00:06.230,000] <inf> io_probe: IOPROBE LINK spif1.SI(PF14) <-> spif3.CSNI(PI02)
+[00:00:06.250,000] <inf> io_probe: IOPROBE LINK spif1.IO1_IN(PG06) <-> spif3.CSNI(PI02)
+[00:00:06.270,000] <inf> io_probe: IOPROBE LINK spif1.IO2_IN(PH00) <-> spif3.CSNI(PI02)
+[00:00:06.291,000] <inf> io_probe: IOPROBE LINK spif1.IO3_IN(PH02) <-> spif3.CSNI(PI02)
+[00:00:06.311,000] <inf> io_probe: IOPROBE LINK spif1.SCKO(PG00) <-> spif3.CSNI(PI02)
+[00:00:06.331,000] <inf> io_probe: IOPROBE LINK spif1.SCKO(PG00) <-> spif3.SCKI(PF08)
+[00:00:06.351,000] <inf> io_probe: IOPROBE LINK spif1.SO(PF15) <-> spif3.CSNI(PI02)
+[00:00:06.371,000] <inf> io_probe: IOPROBE LINK spif1.SO(PF15) <-> spif3.SCKI(PF08)
+[00:00:06.391,000] <inf> io_probe: IOPROBE LINK spif1.SO(PF15) <-> spif3.SI(PF04)
+[00:00:06.411,000] <inf> io_probe: IOPROBE LINK spif1.IO1_OUT(PF13) <-> spif3.CSNI(PI02)
+[00:00:06.431,000] <inf> io_probe: IOPROBE LINK spif1.IO1_OUT(PF13) <-> spif3.SCKI(PF08)
+[00:00:06.451,000] <inf> io_probe: IOPROBE LINK spif1.IO1_OUT(PF13) <-> spif3.SI(PF04)
+[00:00:06.471,000] <inf> io_probe: IOPROBE LINK spif1.IO1_OUT(PF13) <-> spif3.IO1_IN(PF02)
+[00:00:06.492,000] <inf> io_probe: IOPROBE LINK spif1.IO2_OUT(PH01) <-> spif3.CSNI(PI02)
+[00:00:06.512,000] <inf> io_probe: IOPROBE LINK spif1.IO2_OUT(PH01) <-> spif3.SCKI(PF08)
+[00:00:06.532,000] <inf> io_probe: IOPROBE LINK spif1.IO2_OUT(PH01) <-> spif3.SI(PF04)
+[00:00:06.552,000] <inf> io_probe: IOPROBE LINK spif1.IO2_OUT(PH01) <-> spif3.IO1_IN(PF02)
+[00:00:06.572,000] <inf> io_probe: IOPROBE LINK spif1.IO2_OUT(PH01) <-> spif3.IO2_IN(PF10)
+[00:00:06.592,000] <inf> io_probe: IOPROBE LINK spif1.IO3_OUT(PH03) <-> spif3.CSNI(PI02)
+[00:00:06.612,000] <inf> io_probe: IOPROBE LINK spif1.IO3_OUT(PH03) <-> spif3.SCKI(PF08)
+[00:00:06.632,000] <inf> io_probe: IOPROBE LINK spif1.IO3_OUT(PH03) <-> spif3.SI(PF04)
+[00:00:06.652,000] <inf> io_probe: IOPROBE LINK spif1.IO3_OUT(PH03) <-> spif3.IO1_IN(PF02)
+[00:00:06.672,000] <inf> io_probe: IOPROBE LINK spif1.IO3_OUT(PH03) <-> spif3.IO2_IN(PF10)
+[00:00:06.693,000] <inf> io_probe: IOPROBE LINK spif1.IO3_OUT(PH03) <-> spif3.IO3_IN(PF06)
+[00:00:06.713,000] <inf> io_probe: IOPROBE LINK spif2.SCKI(PG08) <-> spif3.CSNI(PI02)
+[00:00:06.733,000] <inf> io_probe: IOPROBE LINK spif2.SCKI(PG08) <-> spif3.SCKI(PF08)
+[00:00:06.753,000] <inf> io_probe: IOPROBE LINK spif2.SCKI(PG08) <-> spif3.SI(PF04)
+[00:00:06.773,000] <inf> io_probe: IOPROBE LINK spif2.SCKI(PG08) <-> spif3.IO1_IN(PF02)
+[00:00:06.793,000] <inf> io_probe: IOPROBE LINK spif2.SCKI(PG08) <-> spif3.IO2_IN(PF10)
+[00:00:06.813,000] <inf> io_probe: IOPROBE LINK spif2.SCKI(PG08) <-> spif3.IO3_IN(PF06)
+[00:00:06.833,000] <inf> io_probe: IOPROBE LINK spif2.SI(PH04) <-> spif3.CSNI(PI02)
+[00:00:06.853,000] <inf> io_probe: IOPROBE LINK spif2.SI(PH04) <-> spif3.SCKI(PF08)
+[00:00:06.873,000] <inf> io_probe: IOPROBE LINK spif2.SI(PH04) <-> spif3.SI(PF04)
+[00:00:06.894,000] <inf> io_probe: IOPROBE LINK spif2.SI(PH04) <-> spif3.IO1_IN(PF02)
+[00:00:06.914,000] <inf> io_probe: IOPROBE LINK spif2.SI(PH04) <-> spif3.IO2_IN(PF10)
+[00:00:06.934,000] <inf> io_probe: IOPROBE LINK spif2.SI(PH04) <-> spif3.IO3_IN(PF06)
+[00:00:06.954,000] <inf> io_probe: IOPROBE LINK spif2.IO1_IN(PH06) <-> spif3.CSNI(PI02)
+[00:00:06.974,000] <inf> io_probe: IOPROBE LINK spif2.IO1_IN(PH06) <-> spif3.SCKI(PF08)
+[00:00:06.994,000] <inf> io_probe: IOPROBE LINK spif2.IO1_IN(PH06) <-> spif3.SI(PF04)
+[00:00:07.014,000] <inf> io_probe: IOPROBE LINK spif2.IO1_IN(PH06) <-> spif3.IO1_IN(PF02)
+[00:00:07.034,000] <inf> io_probe: IOPROBE LINK spif2.IO1_IN(PH06) <-> spif3.IO2_IN(PF10)
+[00:00:07.054,000] <inf> io_probe: IOPROBE LINK spif2.IO1_IN(PH06) <-> spif3.IO3_IN(PF06)
+[00:00:07.074,000] <inf> io_probe: IOPROBE LINK spif2.IO3_IN|spi3.CS1(board)(PG12) <-> spif3.CSNI(PI02)
+[00:00:07.095,000] <inf> io_probe: IOPROBE LINK spif2.IO3_IN|spi3.CS1(board)(PG12) <-> spif3.SCKI(PF08)
+[00:00:07.115,000] <inf> io_probe: IOPROBE LINK spif2.IO3_IN|spi3.CS1(board)(PG12) <-> spif3.SI(PF04)
+[00:00:07.135,000] <inf> io_probe: IOPROBE LINK spif2.IO3_IN|spi3.CS1(board)(PG12) <-> spif3.IO1_IN(PF02)
+[00:00:07.155,000] <inf> io_probe: IOPROBE LINK spif2.IO3_IN|spi3.CS1(board)(PG12) <-> spif3.IO2_IN(PF10)
+[00:00:07.175,000] <inf> io_probe: IOPROBE LINK spif2.IO3_IN|spi3.CS1(board)(PG12) <-> spif3.IO3_IN(PF06)
+[00:00:07.195,000] <inf> io_probe: IOPROBE LINK spif2.SCKO(PG09) <-> spif3.CSNI(PI02)
+[00:00:07.215,000] <inf> io_probe: IOPROBE LINK spif2.SCKO(PG09) <-> spif3.SCKI(PF08)
+[00:00:07.235,000] <inf> io_probe: IOPROBE LINK spif2.SCKO(PG09) <-> spif3.SI(PF04)
+[00:00:07.255,000] <inf> io_probe: IOPROBE LINK spif2.SCKO(PG09) <-> spif3.IO1_IN(PF02)
+[00:00:07.275,000] <inf> io_probe: IOPROBE LINK spif2.SCKO(PG09) <-> spif3.IO2_IN(PF10)
+[00:00:07.296,000] <inf> io_probe: IOPROBE LINK spif2.SCKO(PG09) <-> spif3.IO3_IN(PF06)
+[00:00:07.316,000] <inf> io_probe: IOPROBE LINK spif2.SO(PH05) <-> spif3.CSNI(PI02)
+[00:00:07.336,000] <inf> io_probe: IOPROBE LINK spif2.SO(PH05) <-> spif3.SCKI(PF08)
+[00:00:07.356,000] <inf> io_probe: IOPROBE LINK spif2.SO(PH05) <-> spif3.SI(PF04)
+[00:00:07.376,000] <inf> io_probe: IOPROBE LINK spif2.SO(PH05) <-> spif3.IO1_IN(PF02)
+[00:00:07.396,000] <inf> io_probe: IOPROBE LINK spif2.SO(PH05) <-> spif3.IO2_IN(PF10)
+[00:00:07.416,000] <inf> io_probe: IOPROBE LINK spif2.SO(PH05) <-> spif3.IO3_IN(PF06)
+[00:00:07.436,000] <inf> io_probe: IOPROBE LINK spif2.IO1_OUT(PH07) <-> spif3.CSNI(PI02)
+[00:00:07.456,000] <inf> io_probe: IOPROBE LINK spif2.IO1_OUT(PH07) <-> spif3.SCKI(PF08)
+[00:00:07.476,000] <inf> io_probe: IOPROBE LINK spif2.IO1_OUT(PH07) <-> spif3.SI(PF04)
+[00:00:07.497,000] <inf> io_probe: IOPROBE LINK spif2.IO1_OUT(PH07) <-> spif3.IO1_IN(PF02)
+[00:00:07.517,000] <inf> io_probe: IOPROBE LINK spif2.IO1_OUT(PH07) <-> spif3.IO2_IN(PF10)
+[00:00:07.537,000] <inf> io_probe: IOPROBE LINK spif2.IO1_OUT(PH07) <-> spif3.IO3_IN(PF06)
+[00:00:07.557,000] <inf> io_probe: IOPROBE LINK spif2.IO3_OUT|spi3.CS0(board)(PG13) <-> spif3.CSNI(PI02)
+[00:00:07.577,000] <inf> io_probe: IOPROBE LINK spif2.IO3_OUT|spi3.CS0(board)(PG13) <-> spif3.SCKI(PF08)
+[00:00:07.597,000] <inf> io_probe: IOPROBE LINK spif2.IO3_OUT|spi3.CS0(board)(PG13) <-> spif3.SI(PF04)
+[00:00:07.617,000] <inf> io_probe: IOPROBE LINK spif2.IO3_OUT|spi3.CS0(board)(PG13) <-> spif3.IO1_IN(PF02)
+[00:00:07.637,000] <inf> io_probe: IOPROBE LINK spif2.IO3_OUT|spi3.CS0(board)(PG13) <-> spif3.IO2_IN(PF10)
+[00:00:07.657,000] <inf> io_probe: IOPROBE LINK spif2.IO3_OUT|spi3.CS0(board)(PG13) <-> spif3.IO3_IN(PF06)
+[00:00:07.677,000] <inf> io_probe: IOPROBE LINK spif3.CSNI(PI02) <-> spif3.SCKI(PF08)
+[00:00:07.698,000] <inf> io_probe: IOPROBE LINK spif3.CSNI(PI02) <-> spif3.SI(PF04)
+[00:00:07.718,000] <inf> io_probe: IOPROBE LINK spif3.CSNI(PI02) <-> spif3.IO1_IN(PF02)
+[00:00:07.738,000] <inf> io_probe: IOPROBE LINK spif3.CSNI(PI02) <-> spif3.IO2_IN(PF10)
+[00:00:07.758,000] <inf> io_probe: IOPROBE LINK spif3.CSNI(PI02) <-> spif3.IO3_IN(PF06)
+[00:00:07.778,000] <inf> io_probe: IOPROBE LINK spif3.SCKI(PF08) <-> spif3.SI(PF04)
+[00:00:07.798,000] <inf> io_probe: IOPROBE LINK spif3.SCKI(PF08) <-> spif3.IO1_IN(PF02)
+[00:00:07.818,000] <inf> io_probe: IOPROBE LINK spif3.SCKI(PF08) <-> spif3.IO2_IN(PF10)
+[00:00:07.838,000] <inf> io_probe: IOPROBE LINK spif3.SCKI(PF08) <-> spif3.IO3_IN(PF06)
+[00:00:07.858,000] <inf> io_probe: IOPROBE LINK spif3.SI(PF04) <-> spif3.IO1_IN(PF02)
+[00:00:07.878,000] <inf> io_probe: IOPROBE LINK spif3.SI(PF04) <-> spif3.IO2_IN(PF10)
+[00:00:07.899,000] <inf> io_probe: IOPROBE LINK spif3.SI(PF04) <-> spif3.IO3_IN(PF06)
+[00:00:07.919,000] <inf> io_probe: IOPROBE LINK spif3.IO1_IN(PF02) <-> spif3.IO2_IN(PF10)
+[00:00:07.939,000] <inf> io_probe: IOPROBE LINK spif3.IO1_IN(PF02) <-> spif3.IO3_IN(PF06)
+[00:00:07.959,000] <inf> io_probe: IOPROBE LINK spif3.IO2_IN(PF10) <-> spif3.IO3_IN(PF06)
+[00:00:07.979,000] <inf> io_probe: IOPROBE LINK i3c5.SCL(PJ10) <-> i3c6.SCL(PJ08)
+[00:00:07.999,000] <inf> io_probe: IOPROBE LINK i3c5.SDA(PJ11) <-> i3c6.SCL(PJ08)
+[00:00:08.019,000] <inf> io_probe: IOPROBE LINK i3c5.SDA(PJ11) <-> i3c6.SDA(PJ09)
+[00:00:08.039,000] <inf> io_probe: IOPROBE LINK i3c6.SCL(PJ08) <-> i3c6.SDA(PJ09)
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PH13) OPEN <-> PH13(PG12) LINK
+--- 2288 messages dropped ---
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PH11) OPEN <-> PH11(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PH09) OPEN <-> PH09(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PG01) OPEN <-> PG01(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PG05) OPEN <-> PG05(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PJ10) OPEN <-> PJ10(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PJ11) OPEN <-> PJ11(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PJ08) OPEN <-> PJ08(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG12(PJ09) OPEN <-> PJ09(PG12) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH05) OPEN <-> PH05(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH07) OPEN <-> PH07(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PG13) OPEN <-> PG13(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PF09) OPEN <-> PF09(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PF05) OPEN <-> PF05(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PF03) OPEN <-> PF03(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PF11) OPEN <-> PF11(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PF07) OPEN <-> PF07(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH12) OPEN <-> PH12(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH10) OPEN <-> PH10(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH08) OPEN <-> PH08(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PF12) OPEN <-> PF12(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PG07) OPEN <-> PG07(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH13) OPEN <-> PH13(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH11) OPEN <-> PH11(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PH09) OPEN <-> PH09(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PG01) OPEN <-> PG01(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PG05) OPEN <-> PG05(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PJ10) OPEN <-> PJ10(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PJ11) OPEN <-> PJ11(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PJ08) OPEN <-> PJ08(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PG09(PJ09) OPEN <-> PJ09(PG09) LINK
+[00:00:08.095,000] <wrn> io_probe: IOPROBE ASYM PH05(PH07) OPEN <-> PH07(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PG13) OPEN <-> PG13(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PF09) OPEN <-> PF09(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PF05) OPEN <-> PF05(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PF03) OPEN <-> PF03(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PF11) OPEN <-> PF11(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PF07) OPEN <-> PF07(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PH12) OPEN <-> PH12(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PH10) OPEN <-> PH10(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PH08) OPEN <-> PH08(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PF12) OPEN <-> PF12(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PG07) OPEN <-> PG07(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PH13) OPEN <-> PH13(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PH11) OPEN <-> PH11(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PH09) OPEN <-> PH09(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PG01) OPEN <-> PG01(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PG05) OPEN <-> PG05(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PJ10) OPEN <-> PJ10(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PJ11) OPEN <-> PJ11(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PJ08) OPEN <-> PJ08(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH05(PJ09) OPEN <-> PJ09(PH05) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PG13) OPEN <-> PG13(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PF09) OPEN <-> PF09(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PF05) OPEN <-> PF05(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PF03) OPEN <-> PF03(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PF11) OPEN <-> PF11(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PF07) OPEN <-> PF07(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PH12) OPEN <-> PH12(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PH10) OPEN <-> PH10(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PH08) OPEN <-> PH08(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PF12) OPEN <-> PF12(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PG07) OPEN <-> PG07(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PH13) OPEN <-> PH13(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PH11) OPEN <-> PH11(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PH09) OPEN <-> PH09(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PG01) OPEN <-> PG01(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PG05) OPEN <-> PG05(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PJ10) OPEN <-> PJ10(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PJ11) OPEN <-> PJ11(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PJ08) OPEN <-> PJ08(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PH07(PJ09) OPEN <-> PJ09(PH07) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PF09) OPEN <-> PF09(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PF05) OPEN <-> PF05(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PF03) OPEN <-> PF03(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PF11) OPEN <-> PF11(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PF07) OPEN <-> PF07(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PH12) OPEN <-> PH12(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PH10) OPEN <-> PH10(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PH08) OPEN <-> PH08(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PF12) OPEN <-> PF12(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PG07) OPEN <-> PG07(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PH13) OPEN <-> PH13(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PH11) OPEN <-> PH11(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PH09) OPEN <-> PH09(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PG01) OPEN <-> PG01(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PG05) OPEN <-> PG05(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PJ10) OPEN <-> PJ10(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PJ11) OPEN <-> PJ11(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PJ08) OPEN <-> PJ08(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PG13(PJ09) OPEN <-> PJ09(PG13) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PI02(PF09) OPEN <-> PF09(PI02) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PI02(PF05) OPEN <-> PF05(PI02) LINK
+[00:00:08.096,000] <wrn> io_probe: IOPROBE ASYM PI02(PF03) OPEN <-> PF03(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PF11) OPEN <-> PF11(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PF07) OPEN <-> PF07(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PH12) OPEN <-> PH12(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PH10) OPEN <-> PH10(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PH08) OPEN <-> PH08(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PF12) OPEN <-> PF12(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PG07) OPEN <-> PG07(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PH13) OPEN <-> PH13(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PH11) OPEN <-> PH11(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PH09) OPEN <-> PH09(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PG01) OPEN <-> PG01(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PG05) OPEN <-> PG05(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PJ10) OPEN <-> PJ10(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PJ11) OPEN <-> PJ11(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PJ08) OPEN <-> PJ08(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PI02(PJ09) OPEN <-> PJ09(PI02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PF09) OPEN <-> PF09(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PF05) OPEN <-> PF05(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PF03) OPEN <-> PF03(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PF11) OPEN <-> PF11(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PF07) OPEN <-> PF07(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PH12) OPEN <-> PH12(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PH10) OPEN <-> PH10(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PH08) OPEN <-> PH08(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PF12) OPEN <-> PF12(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PG07) OPEN <-> PG07(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PH13) OPEN <-> PH13(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PH11) OPEN <-> PH11(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PH09) OPEN <-> PH09(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PG01) OPEN <-> PG01(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PG05) OPEN <-> PG05(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PJ10) OPEN <-> PJ10(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PJ11) OPEN <-> PJ11(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PJ08) OPEN <-> PJ08(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF08(PJ09) OPEN <-> PJ09(PF08) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PF09) OPEN <-> PF09(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PF05) OPEN <-> PF05(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PF03) OPEN <-> PF03(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PF11) OPEN <-> PF11(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PF07) OPEN <-> PF07(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PH12) OPEN <-> PH12(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PH10) OPEN <-> PH10(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PH08) OPEN <-> PH08(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PF12) OPEN <-> PF12(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PG07) OPEN <-> PG07(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PH13) OPEN <-> PH13(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PH11) OPEN <-> PH11(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PH09) OPEN <-> PH09(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PG01) OPEN <-> PG01(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PG05) OPEN <-> PG05(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PJ10) OPEN <-> PJ10(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PJ11) OPEN <-> PJ11(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PJ08) OPEN <-> PJ08(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF04(PJ09) OPEN <-> PJ09(PF04) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PF09) OPEN <-> PF09(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PF05) OPEN <-> PF05(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PF03) OPEN <-> PF03(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PF11) OPEN <-> PF11(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PF07) OPEN <-> PF07(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PH12) OPEN <-> PH12(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PH10) OPEN <-> PH10(PF02) LINK
+[00:00:08.097,000] <wrn> io_probe: IOPROBE ASYM PF02(PH08) OPEN <-> PH08(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PF12) OPEN <-> PF12(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PG07) OPEN <-> PG07(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PH13) OPEN <-> PH13(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PH11) OPEN <-> PH11(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PH09) OPEN <-> PH09(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PG01) OPEN <-> PG01(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PG05) OPEN <-> PG05(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PJ10) OPEN <-> PJ10(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PJ11) OPEN <-> PJ11(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PJ08) OPEN <-> PJ08(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF02(PJ09) OPEN <-> PJ09(PF02) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PF09) OPEN <-> PF09(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PF05) OPEN <-> PF05(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PF03) OPEN <-> PF03(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PF11) OPEN <-> PF11(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PF07) OPEN <-> PF07(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PH12) OPEN <-> PH12(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PH10) OPEN <-> PH10(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PH08) OPEN <-> PH08(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PF12) OPEN <-> PF12(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PG07) OPEN <-> PG07(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PH13) OPEN <-> PH13(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PH11) OPEN <-> PH11(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PH09) OPEN <-> PH09(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PG01) OPEN <-> PG01(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PG05) OPEN <-> PG05(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PJ10) OPEN <-> PJ10(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PJ11) OPEN <-> PJ11(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PJ08) OPEN <-> PJ08(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF10(PJ09) OPEN <-> PJ09(PF10) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PF09) OPEN <-> PF09(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PF05) OPEN <-> PF05(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PF03) OPEN <-> PF03(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PF11) OPEN <-> PF11(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PF07) OPEN <-> PF07(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PH12) OPEN <-> PH12(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PH10) OPEN <-> PH10(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PH08) OPEN <-> PH08(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PF12) OPEN <-> PF12(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PG07) OPEN <-> PG07(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PH13) OPEN <-> PH13(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PH11) OPEN <-> PH11(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PH09) OPEN <-> PH09(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PG01) OPEN <-> PG01(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PG05) OPEN <-> PG05(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PJ10) OPEN <-> PJ10(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PJ11) OPEN <-> PJ11(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PJ08) OPEN <-> PJ08(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF06(PJ09) OPEN <-> PJ09(PF06) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PF05) OPEN <-> PF05(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PF03) OPEN <-> PF03(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PF11) OPEN <-> PF11(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PF07) OPEN <-> PF07(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PH12) OPEN <-> PH12(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PH10) OPEN <-> PH10(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PH08) OPEN <-> PH08(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PF12) OPEN <-> PF12(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PG07) OPEN <-> PG07(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PH13) OPEN <-> PH13(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PH11) OPEN <-> PH11(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PH09) OPEN <-> PH09(PF09) LINK
+[00:00:08.098,000] <wrn> io_probe: IOPROBE ASYM PF09(PG01) OPEN <-> PG01(PF09) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF09(PG05) OPEN <-> PG05(PF09) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF09(PJ10) OPEN <-> PJ10(PF09) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF09(PJ11) OPEN <-> PJ11(PF09) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF09(PJ08) OPEN <-> PJ08(PF09) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF09(PJ09) OPEN <-> PJ09(PF09) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PF03) OPEN <-> PF03(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PF11) OPEN <-> PF11(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PF07) OPEN <-> PF07(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PH12) OPEN <-> PH12(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PH10) OPEN <-> PH10(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PH08) OPEN <-> PH08(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PF12) OPEN <-> PF12(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PG07) OPEN <-> PG07(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PH13) OPEN <-> PH13(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PH11) OPEN <-> PH11(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PH09) OPEN <-> PH09(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PG01) OPEN <-> PG01(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PG05) OPEN <-> PG05(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PJ10) OPEN <-> PJ10(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PJ11) OPEN <-> PJ11(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PJ08) OPEN <-> PJ08(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF05(PJ09) OPEN <-> PJ09(PF05) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PF11) OPEN <-> PF11(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PF07) OPEN <-> PF07(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PH12) OPEN <-> PH12(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PH10) OPEN <-> PH10(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PH08) OPEN <-> PH08(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PF12) OPEN <-> PF12(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PG07) OPEN <-> PG07(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PH13) OPEN <-> PH13(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PH11) OPEN <-> PH11(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PH09) OPEN <-> PH09(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PG01) OPEN <-> PG01(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PG05) OPEN <-> PG05(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PJ10) OPEN <-> PJ10(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PJ11) OPEN <-> PJ11(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PJ08) OPEN <-> PJ08(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF03(PJ09) OPEN <-> PJ09(PF03) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PF07) OPEN <-> PF07(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PH12) OPEN <-> PH12(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PH10) OPEN <-> PH10(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PH08) OPEN <-> PH08(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PF12) OPEN <-> PF12(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PG07) OPEN <-> PG07(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PH13) OPEN <-> PH13(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PH11) OPEN <-> PH11(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PH09) OPEN <-> PH09(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PG01) OPEN <-> PG01(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PG05) OPEN <-> PG05(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PJ10) OPEN <-> PJ10(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PJ11) OPEN <-> PJ11(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PJ08) OPEN <-> PJ08(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF11(PJ09) OPEN <-> PJ09(PF11) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PH12) OPEN <-> PH12(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PH10) OPEN <-> PH10(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PH08) OPEN <-> PH08(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PF12) OPEN <-> PF12(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PG07) OPEN <-> PG07(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PH13) OPEN <-> PH13(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PH11) OPEN <-> PH11(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PH09) OPEN <-> PH09(PF07) LINK
+[00:00:08.099,000] <wrn> io_probe: IOPROBE ASYM PF07(PG01) OPEN <-> PG01(PF07) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PF07(PG05) OPEN <-> PG05(PF07) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PF07(PJ10) OPEN <-> PJ10(PF07) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PF07(PJ11) OPEN <-> PJ11(PF07) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PF07(PJ08) OPEN <-> PJ08(PF07) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PF07(PJ09) OPEN <-> PJ09(PF07) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PH08) OPEN <-> PH08(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PF12) OPEN <-> PF12(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PG07) OPEN <-> PG07(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PH13) OPEN <-> PH13(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PH11) OPEN <-> PH11(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PH09) OPEN <-> PH09(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PG01) OPEN <-> PG01(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PG05) OPEN <-> PG05(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PJ10) OPEN <-> PJ10(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PJ11) OPEN <-> PJ11(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PJ08) OPEN <-> PJ08(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH10(PJ09) OPEN <-> PJ09(PH10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PF12) OPEN <-> PF12(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PG07) OPEN <-> PG07(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PH13) OPEN <-> PH13(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PH11) OPEN <-> PH11(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PH09) OPEN <-> PH09(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PG01) OPEN <-> PG01(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PG05) OPEN <-> PG05(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PJ10) OPEN <-> PJ10(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PJ11) OPEN <-> PJ11(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PJ08) OPEN <-> PJ08(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH08(PJ09) OPEN <-> PJ09(PH08) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PH11) OPEN <-> PH11(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PH09) OPEN <-> PH09(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PG01) OPEN <-> PG01(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PG05) OPEN <-> PG05(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PJ10) OPEN <-> PJ10(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PJ11) OPEN <-> PJ11(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PJ08) OPEN <-> PJ08(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH13(PJ09) OPEN <-> PJ09(PH13) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PH09) OPEN <-> PH09(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PG01) OPEN <-> PG01(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PG05) OPEN <-> PG05(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PJ10) OPEN <-> PJ10(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PJ11) OPEN <-> PJ11(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PJ08) OPEN <-> PJ08(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH11(PJ09) OPEN <-> PJ09(PH11) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH09(PG01) OPEN <-> PG01(PH09) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH09(PG05) OPEN <-> PG05(PH09) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH09(PJ10) OPEN <-> PJ10(PH09) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH09(PJ11) OPEN <-> PJ11(PH09) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH09(PJ08) OPEN <-> PJ08(PH09) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PH09(PJ09) OPEN <-> PJ09(PH09) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG01(PG05) OPEN <-> PG05(PG01) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG01(PJ10) OPEN <-> PJ10(PG01) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG01(PJ11) OPEN <-> PJ11(PG01) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG01(PJ08) OPEN <-> PJ08(PG01) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG01(PJ09) OPEN <-> PJ09(PG01) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG05(PJ10) OPEN <-> PJ10(PG05) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG05(PJ11) OPEN <-> PJ11(PG05) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG05(PJ08) OPEN <-> PJ08(PG05) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PG05(PJ09) OPEN <-> PJ09(PG05) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PJ10(PJ11) OPEN <-> PJ11(PJ10) LINK
+[00:00:08.100,000] <wrn> io_probe: IOPROBE ASYM PJ10(PJ09) OPEN <-> PJ09(PJ10) LINK
+[00:00:08.100,000] <inf> io_probe: IOPROBE ====================== END OF REPORT ======================
+ PASS - dump_full_matrix in 0.542 seconds
+===================================================================
+START - pin_controllable
+INFO pin_controllable: pins=75 not_controlled=2
+
+    Assertion failed at WEST_TOPDIR/810_driver_test/projects/io_probe_test/cpu1_io_probe_test/src/io_probe_test.c:590: io_probe_pin_controllable: (bad not equal to 0)
+ÓÐ 2 ¸öºòÑ¡½ÅÎÞ·¨±» GPIO Çý¶¯£¨Ïê¼û IOPROBE ANOMALY ÐÐ£©
+[00:00:11.014,000] <err> io_probe: IOPROBE pin NOT controlled: PH12 (spif4.SCKI)
+[00:00:11.014,000] <err> io_probe: IOPROBE pin NOT controlled: PG07 (spif4.IO3_IN)
+ FAIL - pin_controllable in 0.026 seconds
+===================================================================
+START - positive_control_i3c_link
+INFO positive_control_i3c_link: scl_PJ10_PJ08=2 sda_PJ11_PJ09=2
+ PASS - positive_control_i3c_link in 0.006 seconds
+===================================================================
+START - same_pin_groups
+INFO same_pin_groups: dt_same_pad_pairs=16
+[00:00:11.173,000] <inf> io_probe: IOPROBE DT-inherent same-pad pairs = 16 (declared, never counted as links)
+ PASS - same_pin_groups in 0.004 seconds
+===================================================================
+START - symmetry_report
+INFO symmetry_report: asymmetric_pairs=2624 links=2862
+[00:00:11.289,000] <inf> io_probe: IOPROBE symmetry: asymmetric_pairs=2624 (details above if any)
+[00:00:11.289,000] <inf> io_probe: IOPROBE note: ²»¶Ô³ÆÖ»±¨²»ÅÐËÀ£¨ÖÐ¼ä¿ÉÄÜÓÐ¶þ¼«¹Ü/Çý¶¯Æ÷£©£»¾ØÕóÁ½²à¶¼¼ÇÏÂÀ´ÁË£¬°´½Å²é IOPROBE LINK Çåµ¥¼´¿É
+ PASS - symmetry_report in 0.005 seconds
+===================================================================
+TESTSUITE io_probe failed.
+===================================================================
+PROJECT EXECUTION FAILED

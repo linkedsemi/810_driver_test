@@ -45,7 +45,7 @@
 
 ## 备注
 
-- **历史对比（非本目录数据，取自工程 notes）**：本 suite 在 `projects/dma_test/tests/notes/DMA_DW_BLOCK_TS_MASK_AND_TFR_STATE_ROOTCAUSE.md:108` 与 `OPEN_ITEMS.md:42`（O-5）中记录为 **6/6 PASS**（会话 `reports/2026-09-17-dmaC`）。本次 9 项中 5 项 FAIL（另 3 项为假 PASS），属**明显回归**。
+- **历史对比（非本目录数据，取自工程 notes）**：本 suite 在 `projects/dma_test/tests/notes/DMA_DW_BLOCK_TS_MASK_AND_TFR_STATE_ROOTCAUSE.md:108` 与 `OPEN_ITEMS.md:42`（O-5）中记录为 **6/6 PASS**（会话 `reports/2026-09-17-dmaC` —— ⚠️ **该会话已不可得且从未入库**，见 `SPEC_REFERENCE` §6.4.7「语料可用性声明」）。本次 9 项中 5 项 FAIL（另 3 项为假 PASS），属**明显回归**。
 - **当前工作区驱动不在"已修"状态（重要，需人工确认）**：notes 记录的修复在当前磁盘的 `zephyr/drivers/dma/dma_dw_common.{c,h}`（mtime 2026-09-21 11:30，`git status` 干净）中**均不在位**：
   - "TFR 解除屏蔽移出 else"未生效 —— `dma_dw_common.c:507-508`（BLOCK/DST_TRAN）与 `:512`（TFR，仍在 `else` 内），对照 notes `:103`。
   - `DW_CTLH_BLOCK_TS_MASK` 仍在变体 `#if` 之外 —— `dma_dw_common.h:186-187` 定义为 `MASK(16, 0)`，对照 notes `:102`。

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""One-shot debug runner (single-core): GDB-load cpu1 ELF, capture UART, parse tokens.
+"""One-shot debug runner (single-core): GDB-load cpu1 ELF, capture UART, parse ztest.
 
-单核工程版：从 i3c_dualcore_test 样板 dbg_run.py 改造，去掉 controller 核
-（无 restore bin），只加载 cpu1 ELF；角色只有 TGT。
+RTC Timer (rtc_timer_ls) 单核工程版：从 spi_test（单核样板）dbg_run.py 改造，只加载
+cpu1 ELF；角色只有 TGT。
 
 Usage:
     python scripts/dbg_run.py [--case case_default] [--timeout 15] [--raw]
@@ -18,6 +18,7 @@ UART role discovery (dynamic):
 Assumes firmware is already built under tests/<case>/build/target.
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -28,15 +29,18 @@ from pathlib import Path
 import serial
 import serial.tools.list_ports as list_ports
 
-# tests/scripts/dbg_run.py -> parents[1] = trng_test/tests
+# tests/scripts/dbg_run.py -> parents[1] = rtc_timer_ls_test/tests
 TESTS_DIR = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))
 from ztest_report import parse_ztest   # noqa: E402
+from acquire import dbg_run_preflight  # noqa: E402
 
 GDB = "riscv64-unknown-elf-gdb"
 GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
-TARGET_ROM_START = "0x100c0000"
+# 用户需求#8 / KNOWN_ISSUES #57：单核一律 1os 构建，cpu1 入口 = 0x10000000；
+# 2os 构建入口 0x100c0000，由 2os 工程显式 TARGET_ROM_START 环境变量覆盖。
+TARGET_ROM_START = os.environ.get("TARGET_ROM_START", "0x10000000")
 
 TGT_BANNERS = ("CPU1 RTC_TIMER", "rtc_timer", "RTC_TIMER")
 
@@ -96,6 +100,7 @@ def main():
     if not Path(target_elf).exists():
         sys.exit(f"ERROR: not built: {target_elf}")
 
+    dbg_run_preflight()   # F1：DS 不健康先自愈，起不来则明确中止（不退化 error 138）
     names = discover_ports([p for p in (args.tgt_uart,) if p])
     ports = {name: {"lines": [], "stop": threading.Event()} for name in names}
 
@@ -143,13 +148,26 @@ def main():
         超时后必须干净退出（interrupt + detach + quit），不能 proc.kill():
         kill 会让 DebugServer 认为连接仍存在（连接残留），下次 target
         remote 能连上但 reset/load 实际无效 → 固件不跑、串口 0 行。
-        详见 CLAUDE.md §10.1 / qsh-debug §2.3。
+        详见 qsh-debug §2.3。
         """
         proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
+        # ★ 不能用 communicate()：它会关闭 proc.stdin，之后再写 "\x03" 必抛 ValueError
+        # → 优雅中断 (interrupt+detach+quit) 直接退化成 proc.kill() → DebugServer 连接残留
+        # （qsh-debug §2.3）。改 drain 线程持续排空 stdout， stdin 全程保持可写，\x03 才真发得出去。
+        _gdb_lines = []
+
+        def _drain_stdout():
+            try:
+                for _ln in proc.stdout:
+                    _gdb_lines.append(_ln)
+            except Exception:
+                pass
+        _drain_t = threading.Thread(target=_drain_stdout, daemon=True)
+        _drain_t.start()
         try:
-            out, _ = proc.communicate(timeout=run_secs)
+            proc.wait(timeout=run_secs)
         except subprocess.TimeoutExpired:
             try:
                 proc.stdin.write("\x03")   # interrupt: 暂停目标
@@ -157,10 +175,12 @@ def main():
                 time.sleep(1.0)
                 proc.stdin.write("detach\nquit\n")
                 proc.stdin.flush()
-                out, _ = proc.communicate(timeout=10)
+                proc.wait(timeout=10)
             except Exception:
                 proc.kill()                # 兜底（正常路径不走到）
-                out, _ = proc.communicate()
+                proc.wait()
+        _drain_t.join(timeout=2)
+        out = "".join(_gdb_lines)
         # gdb 完整输出存文件，失败时打印尾部
         with open(TESTS_DIR / "dbg_gdb_last.log", "w", encoding="utf-8") as f:
             f.write(out)
@@ -184,6 +204,19 @@ def main():
     proc = subprocess.Popen(gdb_cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
+    # ★ capture 轮必须持续排空 gdb stdout：Windows 匿名管道缓冲写满后 gdb 阻塞
+    # 在写 stdout 上 → DebugServer 会话停摆 → 目标被中途 halt，长用例尾部
+    # token（PASS / PROJECT EXECUTION）永远采不到。见 qsh-test-gen §1.5。
+    gdb_out = []
+
+    def _drain_gdb():
+        try:
+            for ln in proc.stdout:
+                gdb_out.append(ln)
+        except Exception:
+            pass
+    threading.Thread(target=_drain_gdb, daemon=True).start()
+
     time.sleep(args.timeout)  # target runs while gdb sits in 'continue'
     try:
         proc.stdin.write("\x03")   # 干净退出，避免连接残留（见 flash_once 注释）
@@ -191,10 +224,11 @@ def main():
         time.sleep(1.0)
         proc.stdin.write("detach\nquit\n")
         proc.stdin.flush()
-        out, _ = proc.communicate(timeout=10)
+        proc.wait(timeout=15)
+        out = "".join(gdb_out)
     except Exception:
         proc.kill()
-        out, _ = proc.communicate()
+        out = "".join(gdb_out)
     if "Loading section" in out:
         print("[dbg] flash OK", flush=True)
     else:
@@ -235,11 +269,6 @@ def main():
             print(f"  {tname:<20} {t['result']}{extra}")
         for tname, kv in sorted(r["infos"].items()):
             print(f"  {tname:<20} INFO " + ", ".join(f"{k}={v}" for k, v in kv.items()))
-        # key debug lines
-        for ln in p["lines"]:
-            if any(k in ln for k in ("entropy_get_entropy ret", "monobit", "throughput",
-                                     "duplicate block", "device not ready")):
-                print("  * " + ln)
 
     if args.raw:
         for name, p in ports.items():

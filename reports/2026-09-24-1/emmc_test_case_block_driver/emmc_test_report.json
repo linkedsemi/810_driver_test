@@ -1,0 +1,59 @@
+{
+  "case": "case_block_driver",
+  "result": "PASS",
+  "execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "disk_ioctl_sector_count",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "disk_ioctl_sector_size",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "disk_present_and_init",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "read_aligned_matches_unaligned",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "read_unknown_drive_rejected",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_scratch_multiblock",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "write_read_scratch_single",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "request_data_invalid_opcode_notsup",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "request_mutex_not_leaked",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "set_io_clock_out_of_range_not_silent",
+      "result": "PASS",
+      "reason": ""
+    }
+  ],
+  "zero_evidence": false,
+  "items_note": ""
+}

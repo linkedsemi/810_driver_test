@@ -194,13 +194,27 @@ def _status(spec, judged):
     return fn(judged) or "FAIL"
 
 
+def _scored_items(items):
+    """参与计分的测试项 —— 排除框架注入的**运行元信息**。
+
+    `run::timeout` 等（`result="NOTE"`）是运行元信息、不是测试项：把它算进分母会让
+    summary 显示成 `PASS (18/19)`，读的人误以为挂了一项。口径与
+    `common/expect_check.py`（「`run::timeout` 这类是运行元信息，不是测试项」）一致。
+
+    ⚠️ 该条目仍然**渲染在各 case 的报告表格里** —— 它存在就是为了让「窗口到点」这件事
+    可见；这里只把它从**分母**里拿掉，既不删条目、也不改任何判定逻辑。
+    """
+    return [x for x in items if not str((x or {}).get("name", "")).startswith("run::")]
+
+
 def _summary(spec, judged_list):
     if spec.summary is not None:
         return spec.summary(judged_list)
     it = judged_list[0] if len(judged_list) == 1 else None
     items = (it or {}).get("items", []) if isinstance(it, dict) else []
-    passed = sum(1 for x in items if (x or {}).get("result") == "PASS")
-    return _status(spec, it), passed, len(items)
+    scored = _scored_items(items)
+    passed = sum(1 for x in scored if (x or {}).get("result") == "PASS")
+    return _status(spec, it), passed, len(scored)
 
 
 def _default_render_json(judged_list, case_dir, spec):

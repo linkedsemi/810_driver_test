@@ -1,0 +1,20 @@
+# rtc_timer_ls_test —— 工程识别信息 + 本工程启用的测试 case
+#
+# ⚠️ 顶部 meta 块**只是给人和外部工具读的识别信息**；run_all.py 只消费 `cases:` 段，
+#    改 meta 不影响回归。各字段均由工程目录/代码导出（改工程即随之变化）。
+#
+meta:
+  board: lsqsh_evb@1os/lsqsh/cpu1
+  cores: 单核
+  firmware: [cpu1_rtc_timer_test]
+  kconfig: [cpu1_rtc_timer_test/prj.conf]
+  run: tests/run_test.py
+  env: 无外部接线
+  title: RTC Timer (rtc_timer_ls) BSTIM+PIS+GPTIMA 软件 RTC set/get + 日历边界
+  coverage: tests/COVERAGE.md    # 工程定位 / 测试内容 / 环境需求 / 覆盖矩阵的权威源
+#
+# 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略（`#` 屏蔽 = 跳过）。
+# 本段决定 `regression/cases.yaml` 路由到本工程后**实际跑哪些 case** ——
+# 新增 case：在 `tests/` 下建目录并在此登记（不登记 = 不跑）。
+cases:
+  - case_default

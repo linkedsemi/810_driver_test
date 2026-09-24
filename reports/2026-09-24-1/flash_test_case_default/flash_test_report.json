@@ -1,0 +1,59 @@
+{
+  "case": "case_default",
+  "result": "PASS",
+  "execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "test_flash_area_info",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_device_bounds",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_erase_all_ff",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_erase_size_boundary",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_jedec_id",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_page_boundary",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_partition_bounds",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_read_write_basic",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_write_out_of_bounds",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_flash_write_read_multiple_patterns",
+      "result": "PASS",
+      "reason": ""
+    }
+  ],
+  "zero_evidence": false,
+  "items_note": ""
+}

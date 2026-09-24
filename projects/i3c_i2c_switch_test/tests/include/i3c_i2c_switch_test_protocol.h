@@ -71,9 +71,17 @@ extern "C" {
  * controller 发完命令后延时 CTRL_SWITCH_DELAY_MS 再切（必须 > TGT）。 */
 #define TGT_SWITCH_DELAY_MS  5
 #define CTRL_SWITCH_DELAY_MS 8
-/* NACK 窗口时长（target 收到 'N' 后切 I2C 保持的时长，controller 须在此
- * 窗口内完成一次广播 NACK，窗口结束后 target 自动切回 I3C 应答） */
-#define NACK_WINDOW_MS       2
+/* NACK 窗口时长（target 收到 'N' —— 先延时 TGT_SWITCH_DELAY_MS 再切 I2C，
+ * 保持 NACK_WINDOW_MS 后自动切回 I3C 应答）。
+ *
+ * 窗口起点 ≈ dispatcher(~1ms) + TGT_SWITCH_DELAY_MS(5ms) ≈ **6ms**，
+ * 终点 ≈ 6ms + NACK_WINDOW_MS。
+ * controller 必须在窗口**内部**完成一次广播 NACK —— 太早 target 还没切、
+ * 太晚 target 已切回，两种都会让 NACK 收不到。
+ *
+ * ⚠️ 2026-09-24：原值 2ms ⇒ 窗口仅 [6,8]，与跨核 dispatcher 抖动同量级，
+ * 实测确定性失败。放宽到 10ms 给 controller 的固定等待留出裕量。 */
+#define NACK_WINDOW_MS       10
 
 /* pinctrl "pinmux_i2c" 状态的 ID：私有状态从 PINCTRL_STATE_PRIV_START 起
  * （pinctrl-names 第 2 个状态），固件据此验证 IO 区分机制的配置。 */

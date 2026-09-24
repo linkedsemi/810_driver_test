@@ -14,8 +14,8 @@
   },
   "timeout": 120,
   "script": "D:\\zephyr4_0\\810_driver_test\\projects\\app_iwdg_cpu2_test\\tests\\run_test.py",
-  "script_md5": "9f4e3bd530c5fbe09482d936ec5dc222",
-  "timestamp": "2026-09-22T23:19:58",
+  "script_md5": "c6be236e69e3d877385d6b6ab6ac0f2d",
+  "timestamp": "2026-09-23T19:57:40",
   "split_from_primary": true,
   "relay_envelope_stripped": true
 }

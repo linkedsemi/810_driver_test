@@ -101,6 +101,10 @@ SINGLE_CAP = {                    # 单核 SerialCapture + run_case -> tgt_lines
 PORTS_DICT = {                    # 单核 capture_case -> (ports, ok, err)
     "trng_test", "i2cf_test", "io_probe_test", "spi_test", "spid_test",
     "spif_test", "otbn_test", "otbn_selftest", "mbedtls_test", "rtc_ls_test",
+    # 2026-09-24：rtc_timer_ls_test 接入 L1/L2 薄壳（`acquire.PortsDictSpec`）后
+    # 登记到本族 —— 否则 `split_case_dir()` 解析不出该工程 ⇒ 会话里它的 case 被
+    # 整批跳过（`--l2-direct` 同样是空跑），L0 归档有也重放不了。
+    "rtc_timer_ls_test",
 }
 DUAL_RUN = {                      # 双核 run_case -> ctrl_lines/tgt_lines
     "i3c_dualcore_test", "i2c_pure_test", "i3c_i2c_switch_test",
@@ -261,16 +265,104 @@ def _forbidden(name):
 
 
 # 重放期间会被**合法**调用、但不得产生硬件副作用的名字（置空为无害值）。
-_ACQ_SILENT = ("clean_gdb_residue", "clean_gdb_residue_plain", "_clean_gdb_residue",
+#
+# ★ 2026-09-24（O-40）：原名单里的 `_clean_gdb_residue` / `_restart_debugserver`
+#   在 `common/acquire.py` 里**根本不存在**（`def` 计数 = 0）—— 私有别名是从没接线
+#   的残留。它们过去靠 `hasattr` 守卫静默跳过 ⇒ "以为打上了、其实没有"。
+#   已删除，并由 `_assert_isolation_net()` 的**名单-实体一致性检查**兜住（见下）。
+_ACQ_SILENT = ("clean_gdb_residue", "clean_gdb_residue_plain",
                "restart_debugserver", "restart_debugserver_stable",
-               "_restart_debugserver", "preflight_gdb", "kill_residual_gdb")
+               "preflight_gdb", "kill_residual_gdb",
+               "dbg_run_preflight")          # O-40 补：内部会 netstat/杀进程/重启/exit(3)
 # 重放绝不该走到的名字（真烧录 / 起 gdb / 起 test.sh / 构建） —— 硬中止。
 _ACQ_FORBIDDEN = ("gdb_flash_once", "gdb_watch_session", "spawn_test_run",
                   "kill_proc_group", "build_via_test_sh", "build_via_test_sh_raise",
-                  "west_build", "_serial")
+                  "west_build", "_serial",
+                  # --- O-40 补：同样会碰板子、原先三张名单都没收 ---
+                  "capture_pc_snapshot",   # gdb attach 读 $pc / bt（会 halt 目标）
+                  "_log_pc_snapshot",      # 上者的日志壳（0 输出兜底路径）
+                  "reader")                # 串口读线程体：拿到活句柄就能读板子
 # 5 个 L1 采集入口：先全部硬中止，再由各策略按需换成"喂归档行"的替身。
 _ACQ_CAPTURE_ENTRIES = ("run_case_shell", "run_case_dual", "run_case_mbox",
                         "run_pass_iwdg", "capture_case")
+
+# ------------------------------------------------- 隔离网覆盖面自检（O-40）
+# ★ 为什么必须自检**名单本身**：三张名单是**手写**的 ⇒ **新加的硬件入口不会自动
+#   进网**。`scripts/guard_demo.py` 的自检 PASS **不代表无洞** —— 它的名单同样是
+#   手写 7 条，`ensure_debugserver_alive` 就是被它放过去的（2026-09-24 实测：
+#   它 PASS，而同名函数在 PORTS_DICT 族 11 个工程的每 case 前置里真探 1025）。
+#   ⇒ **自检的覆盖面取决于名单全不全，而名单本身没人校。**
+#
+#   修法：**反向枚举 `acquire.__all__`** —— 公开 API 的每个名字必须**显式分类**：
+#     * 硬件入口 ⇒ 必须落进某张替身名单（缺一个 ⇒ **启动即报错**，fail-closed）；
+#     * 纯计算   ⇒ 必须写进 `_ACQ_PURE`（逼作者为"它不碰硬件"背书一行）。
+#   于是"新增硬件入口忘了登记"**当场报错**，而不是重放时静默落到真硬件。
+#
+#   分类判据 = **读函数体**。本项目已实测"自述两个方向都不可信"（`verify_all.sh`
+#   夸大、`hw_cmp.py` 缩小）⇒ 不看注释、不看名字，只看它有没有 open/popen/gdb/
+#   串口/taskkill/netstat/构建/读目标内存。
+_ACQ_HW_ENTRIES = frozenset({
+    # 串口 / 端口枚举（开设备或枚举设备）
+    "SerialCapture", "reader", "discover_ports", "find_tgt_uart",
+    # 调试器探活 / 进程 / 环境自愈
+    "probe_gdb_alive", "netstat_1025", "kill_residual_gdb",
+    "restart_debugserver", "clean_gdb_residue", "preflight_gdb",
+    "ensure_debugserver_alive", "dbg_run_preflight",
+    # 烧录 / 起 test.sh / 构建 / 杀进程组
+    "gdb_flash_once", "gdb_watch_session", "spawn_test_run",
+    "kill_proc_group", "west_build", "build_via_test_sh",
+    # 内存兜底（起 gdb 子进程读目标内存）
+    "memory_backfill", "dump_mem",
+    # 4 个 L1 采集入口（`capture_case` 是第 5 个，但**不在 `__all__`** ⇒ 见 EXTRA）
+    "run_case_shell", "run_case_dual", "run_case_mbox", "run_pass_iwdg",
+})
+_ACQ_HW_EXTRA = frozenset({
+    # 不在 `__all__` 里、但同样是硬件入口（私有名 / 历史别名）—— 一并纳入枚举，
+    # 否则"私有入口"会成为绕过自检的后门。
+    "build_via_test_sh_raise", "restart_debugserver_stable",
+    "clean_gdb_residue_plain", "capture_pc_snapshot", "_log_pc_snapshot",
+    "_serial",
+    "capture_case",          # PORTS_DICT 的烧录+采集入口（未导出，但被适配器替换）
+})
+_ACQ_DRIVERS = frozenset({
+    # 策略入口：重放**合法调用**它们（`run_test.py` 薄壳 → `acquire.<策略>(spec)`），
+    # 内部硬件动作已被逐名替换 ⇒ **不得**给它们打替身。
+    "single_cap", "ports_dict", "ports_dict_case", "dual_run", "mbox", "iwdg",
+})
+_ACQ_PURE = frozenset({
+    # `__all__` 里判为"不碰硬件"的名字（含只写磁盘 / 只做路径解析的）
+    "GDB", "GDB_HOST", "GDB_PORT", "DEBUGSERVER_EXE", "DS_HEALTHY_MSG",
+    "log", "Acquired",
+    "SingleCapSpec", "PortsDictSpec", "DualRunSpec", "MboxSpec", "IwdgSpec",
+    "archive",          # 只写磁盘（落 L0 归档），不起进程；写点由 --out 约束
+    "find_git_bash",    # 纯路径解析（仍被显式置成 "bash" 以保证重放确定性）
+})
+_ACQ_HW_ALL = frozenset(_ACQ_HW_ENTRIES | _ACQ_HW_EXTRA | _ACQ_DRIVERS)
+# 逐个打的替身（不在三张名单里，但同样是"已覆盖"）：用于覆盖面断言。
+_ACQ_SINGLE = ("find_git_bash", "find_tgt_uart", "discover_ports",
+               "probe_gdb_alive", "netstat_1025",
+               "memory_backfill", "dump_mem",
+               "ensure_debugserver_alive", "SerialCapture")
+
+# `ensure_debugserver_alive` 替身返回串。**刻意 != DS_HEALTHY_MSG**：各策略据此
+# 打一行 `[ENV] DebugServer 前置检查: ...` ⇒ **留痕"这一段被替身接管了"**（这行
+# 只可能由替身产生，正是"真函数没被调用"的证据）。
+_ACQ_DS_STUB_MSG = "<replay: stubbed>"
+
+
+def _stub_debugserver_alive(style="d3", *, wait_s=None, attempts=None):
+    """`acquire.ensure_debugserver_alive` 的重放替身：**返回 `(ok, msg)` 二元组**。
+
+    ★ 为什么不能与其它替身共用 `_noop`（O-40 的第二个坑）：调用方一律
+      `ds_ok, ds_msg = ensure_debugserver_alive(...)` **解包**，
+      `_noop` 返回 `None` ⇒ 立刻 `TypeError: cannot unpack non-sequence NoneType`；
+      即便侥幸能解包，`ok=False` 会让调用方走 **fail-closed** 分支
+      （`Acquired(ok=False, err="DebugServer unavailable")`）⇒ 每个 case 都变成
+      "采集失败"，重放结论整体作废。故必须 `(True, ...)`。
+
+    签名与真身逐字对齐（`style` / `wait_s` / `attempts` 全部接受，含关键字调用）。
+    """
+    return True, _ACQ_DS_STUB_MSG
 
 
 class _ForbiddenCapture:
@@ -280,13 +372,76 @@ class _ForbiddenCapture:
         raise HardwareTouchAttempt("重放不允许实例化 acquire.SerialCapture（会开串口）")
 
 
+def _assert_isolation_net(acq):
+    """**启动即跑**的隔离网一致性自检：任何"漏登记"当场报错，绝不静默放行。
+
+    三条断言（全部 fail-closed）：
+
+      ① **每个硬件入口都必须已被接管**：`_ACQ_HW_ENTRIES | _ACQ_HW_EXTRA`
+         ⊆ `三张名单 ∪ 逐个打的`。少一个 ⇒ 那个入口在重放里会**打到真硬件**。
+      ② **`acquire.__all__` 必须与分类表逐字对齐**：`__all__ ==
+         _ACQ_HW_ENTRIES | _ACQ_DRIVERS | _ACQ_PURE`。新加入口忘了分类 ⇒ 报错
+         （这条是"自动收编"的关键：名单不会自己长大，但**枚举会**）；把非公开名
+         误放进这三个集合 ⇒ 也报错（私有入口归 `_ACQ_HW_EXTRA`）。
+         实测该断言当场抓出过一处误分类：`capture_case` **不在 `__all__`**（未导出），
+         却被归进 `_ACQ_HW_ENTRIES`。
+      ③ **名单里的名字必须真实存在**：否则是"打了空补丁"（`hasattr` 守卫会静默
+         跳过）。原 `_ACQ_SILENT` 里的 `_clean_gdb_residue` / `_restart_debugserver`
+         正是这么藏了很久的（已删；另有一处 `hasattr(acq, "list_serial_ports")`
+         的幽灵补丁也被本断言逼出来删掉 —— 它不在任何名单里，故靠人工核对发现）。
+    """
+    covered = frozenset(_ACQ_SILENT) | frozenset(_ACQ_FORBIDDEN) \
+        | frozenset(_ACQ_CAPTURE_ENTRIES) | frozenset(_ACQ_SINGLE)
+
+    uncovered = sorted((_ACQ_HW_ENTRIES | _ACQ_HW_EXTRA) - covered)
+    if uncovered:
+        raise RuntimeError(
+            "硬件隔离网有洞（O-40）：以下名字会碰板子/调试器/串口/进程/构建，"
+            "却没进任何替身名单 => 重放会打到真硬件：" + ", ".join(uncovered)
+            + " —— 请登记进 _ACQ_SILENT / _ACQ_FORBIDDEN / _ACQ_CAPTURE_ENTRIES，"
+              "或逐个打替身并加进 _ACQ_SINGLE。")
+
+    public = set(getattr(acq, "__all__", ()))
+    classified = _ACQ_HW_ENTRIES | _ACQ_DRIVERS | _ACQ_PURE
+    unclassified = sorted(public - classified)
+    if unclassified:
+        raise RuntimeError(
+            "隔离网分类表过期（O-40）：acquire.__all__ 里以下名字既不是已登记的"
+            "硬件入口、也不在 _ACQ_PURE：「" + ", ".join(unclassified)
+            + "」—— 新增入口必须显式分类（读函数体判定，别信自述）："
+              "碰硬件的进 _ACQ_HW_ENTRIES 并补进替身名单；确认纯计算的进 _ACQ_PURE。")
+    misfiled = sorted(classified - public)
+    if misfiled:
+        raise RuntimeError(
+            "隔离网分类表与 acquire.__all__ 不一致（O-40）：以下名字被归进"
+            " `_ACQ_HW_ENTRIES`/`_ACQ_DRIVERS`/`_ACQ_PURE`，但**并不在 `__all__`**："
+            + ", ".join(misfiled)
+            + " —— 未导出的私有硬件入口请归 `_ACQ_HW_EXTRA`（它是「私有后门」的"
+              "登记处），非硬件 / 未导出的名字则不必分类。")
+
+    ghosts = sorted(n for n in (covered | _ACQ_HW_ALL) if not hasattr(acq, n))
+    if ghosts:
+        raise RuntimeError(
+            "隔离网名单里有 acquire 上不存在的名字（O-40）：" + ", ".join(ghosts)
+            + " —— 说明名单在给一个**不存在**的函数打补丁（hasattr 守卫会静默"
+              "跳过 = 打了空补丁）。请改名或删除该条目。")
+
+    return len(covered)
+
+
 def _guard_acquire(acq):
     """给 `acquire` 装"硬件层隔离网"：所有能碰板子/进程的入口换替身。
 
     顺序敏感：**先装隔离网，再由策略覆盖采集入口** —— 颠倒会让策略替身被盖掉。
     只动"连调试器 / 起串口 / 杀进程 / 重启 server / 构建 / 读内存"这一层；
     判定与渲染函数一律不碰。
+
+    ★ **第一件事是自检**（`_assert_isolation_net`）：名单漏项 ⇒ 立刻 `RuntimeError`，
+    不装网、不放行。**自检本身在 import 时已经跑过一次**（见文件尾部），这里是
+    第二道 —— 防运行期有人改了名单却没改分类表。
     """
+    _assert_isolation_net(acq)
+
     for n in _ACQ_SILENT:
         if hasattr(acq, n):
             setattr(acq, n, _noop)
@@ -302,12 +457,20 @@ def _guard_acquire(acq):
         acq.find_tgt_uart = lambda: "REPLAY_TGT"
     if hasattr(acq, "discover_ports"):
         acq.discover_ports = lambda explicit=None: list(explicit or [])
-    if hasattr(acq, "list_serial_ports"):
-        acq.list_serial_ports = lambda *_a, **_k: []
+    # （原有一条 `hasattr(acq, "list_serial_ports")` 的防御性补丁：该名字在
+    #   `common/acquire.py` 里**不存在**（def 计数 = 0）⇒ 永远静默跳过 = 打了空补丁。
+    #   已删。若将来真有此入口：公开 ⇒ 会被 `__all__` 反向枚举抓住；私有 ⇒ 登记进
+    #   `_ACQ_HW_EXTRA`，届时"名单-实体一致性"断言会强制它真实存在。）
     if hasattr(acq, "probe_gdb_alive"):
         acq.probe_gdb_alive = lambda *_a, **_k: False
     if hasattr(acq, "netstat_1025"):
         acq.netstat_1025 = lambda *_a, **_k: []
+
+    # ★ O-40 主洞：每 case 前置的 DebugServer 存活检查。真身会 netstat 1025、
+    #   必要时 taskkill + Popen(DebugServerConsole.exe)。**必须返回 `(True, msg)`**
+    #   （理由见 `_stub_debugserver_alive`），不能进 `_ACQ_SILENT` 用 `_noop` 兜。
+    if hasattr(acq, "ensure_debugserver_alive"):
+        acq.ensure_debugserver_alive = _stub_debugserver_alive
 
     # 内存兜底置空（内存内容未归档，见文件头「边界」表）：返回 None ⇒ 工程走它
     # 自己的 mem-unavailable 分支，而不是跳过一个分支。eth 的 `mem_hook` 是
@@ -316,6 +479,13 @@ def _guard_acquire(acq):
         if hasattr(acq, n):
             setattr(acq, n, lambda *_a, **_k: None)
     acq.SerialCapture = _ForbiddenCapture
+
+
+# ★ 启动即自检（O-40）：**import 本模块就整表校验一次**，且覆盖**所有路径** ——
+#   包括完全绕开适配器 / `_guard_acquire()` 的 `--l2-direct`。名单漏项 ⇒ 本文件
+#   根本 import 不进来（fail-closed、报错信息直指缺哪个名字），而不是等到某个
+#   case 才暴露 —— 更不是"静默放行到真硬件"。
+_assert_isolation_net(acquire)
 
 
 # =============================================================== 适配器
@@ -595,7 +765,7 @@ def main():
     ap.add_argument("--l2-direct", action="store_true",
                     help="★ 真正离线：纯 L2 路径，直接调 common/process.process_archive()"
                          "（不经 main()、不猴补丁硬件层，实测 0.0s/case）。"
-                         "**不带本开关会走工程 main()（含 DebugServer 前置检查）⇒ 不是离线、"
+                         "**不带本开关会走工程 main()（含 DebugServer 前置检查）=> 不是离线、"
                          "DS 未起时每 case 白等 ~52s 且不产出报告**")
     args = ap.parse_args()
 
@@ -649,7 +819,10 @@ def main():
     print(f"输出目录 : {out_root}")
     print(f"模式     : {'报告重渲染（json→md 校验）' if args.render_from_json else '串口重放'}")
     if not args.l2_direct and not args.render_from_json:
-        print("[WARN] 未加 --l2-direct ⇒ **这不是纯离线重放**：本模式会走工程 main()，"
+        # ★ 本行过去含 `⇒`（U+21D2）—— **GBK 控制台打不出来**（cp936 下
+        #   UnicodeEncodeError）⇒ 这条"你不是离线"的告警恰恰在最需要它的场景
+        #   （用户忘了加 --l2-direct）变成一页 traceback。改成 ASCII `=>`（2026-09-24）。
+        print("[WARN] 未加 --l2-direct => **这不是纯离线重放**：本模式会走工程 main()，"
               "其中含 DebugServer 前置检查。DS 未起时**每个 case 白等自愈超时"
               "（实测 51.7s）且不产出任何报告** —— 表现为「跑很久、目录是空的」。\n"
               "       只改 L1/L2 脚本、不碰板子时请加 --l2-direct（实测 0.0s/case、真离线）。",

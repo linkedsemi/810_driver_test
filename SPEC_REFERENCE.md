@@ -266,7 +266,8 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 > 147 份归档报告（2427 个测试项，来源 token=1780 / mem=66）重放：PASS→FAIL **仅 2 例**，
 > 全部是 `i3c_i2c_switch_test_case_switch_core`（O-13 本体，11/11 全 mem、两核零 token）；
 > 另 6 例零 token 的 `eth_test`（17-4/17-5/18-1 的 mdio/phy_reset）本就 FAIL（E6），不构成翻转。
-> 脚本：`tmp/r7/replay_r7.py`（`scan_archives.py` 产出 `tmp/r7/archive_sources.json`）。
+> 脚本：`scripts/replay_r7.py`（`scan_archives.py` 产出 `scripts/archive_sources.json`；
+> 2026-09-24 由 `tmp/r7/` 迁入 `scripts/`）。
 >
 > **O-13 的根治**：该工程 token 宏原为 no-op ⇒ 已恢复成真 `printk`（协议头），并让
 > `common/ztest_report.py::parse_ztest` 认领它的原生 token 形态
@@ -330,8 +331,8 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 > —— CTRL 的 **token FAIL** 照旧表达"测坏了"（不被抹成"没测到"），TGT 的 mem 取值照旧人可查
 > 但显式标"非证据"。
 >
-> **R8 离线证据（不碰板子；脚本 `tmp/brule/`）**：
-> **（a）合成穷举 + 非空转自检**（`tmp/brule/ab.py --part 3`）：6 族 × 9 变体
+> **R8 离线证据（不碰板子；脚本 `scripts/`，原 `tmp/brule/`）**：
+> **（a）合成穷举 + 非空转自检**（`scripts/ab.py --part 3`，2026-09-24 迁入）：6 族 × 9 变体
 > （全 token / 全 mem / 混合 / 无 `ZT_BOOT` / `mem_state != ok` / 截断 / token FAIL），
 > 逐变体比对"改动前 vs 改动后"的**判定签名 + .md/.json 字节**：
 > **非 mem 变体 0 差异**（`alltoken`/`memstate_bad`/`token_fail1`/`dma` 的 `mem_payload_ignored`）；
@@ -354,7 +355,8 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 > ⚠ 该 case 在改动前的报告里已是 FAIL ⇒ **现存活语料中不存在"带 mem 项且判 PASS"的归档**，
 > 故"PASS→FAIL 预期翻转"由（a）合成穷举给出（R7 时代有 2 份这样的归档
 > `reports/2026-09-17-{1,3}/i3c_i2c_switch_test_case_switch_core`，但**已随语料被清理**
-> 而不复存在 —— 见 `tmp/r7/archive_sources.json`）。
+> 而不复存在 —— 该批归档**从未入库、无法从 git 恢复**（留存范围与引用纪律见 §6.4.7
+> **「语料可用性声明」**，此处不另立说法）；另见 `scripts/archive_sources.json`）。
 >
 > **冻结再声明（2026-09-21，R8 收尾）**：本轮同样是**用户直接裁定**触发的例外（裁定 2026-09-20
 > 「B 严：mem 一律不算证据」），范围仅限「G10 通则 + D3/D6/E-table 的同步收紧 + 明确不做第 6 条
@@ -663,14 +665,35 @@ python regression/precheck/run_precheck.py [--session-dir <dir>] [--timeout 40]
 
 **重放入口 = `regression/replay.py`（不碰板子、不构建、不烧录）**：
 
+> ⚠️ **"不碰板子"有已知漏洞（2026-09-24）**：隔离网的三张屏蔽名单**未收 `ensure_debugserver_alive`**，
+> 而它是 **11 个 PORTS_DICT 族工程**（`trng` / `i2cf` / `spi*` / `spif` / `spid` / `otbn*` / `mbedtls` /
+> `rtc_ls` / `rtc_timer_ls` / `io_probe`）的**每 case 前置** ⇒ 对这些工程做离线重放**可能真探 1025、
+> 必要时重启 DebugServer**（**既有缺陷、非本次引入**）。范围、证据与待裁定见 `OPEN_ITEMS` **O-40**。
+> **别把 `scripts/guard_demo.py` 自检 PASS 当成"补丁打严了"** —— 它的 `FORBIDDEN` 是**手写 7 条**、
+> 不含该名（见 §6.10.1）。
+
 ```bash
 cd 810_driver_test
-python regression/replay.py --session reports/2026-09-20-1 --list          # 列出可重放 case
-python regression/replay.py --session reports/2026-09-20-1 --case trng_test_case_default
-python regression/replay.py --session reports/2026-09-20-1 \
+python regression/replay.py --session reports/2026-09-21-1 --list          # 列出可重放 case
+python regression/replay.py --session reports/2026-09-21-1 --case trng_test_case_default
+python regression/replay.py --session reports/2026-09-21-1 \
     --project trng_test --project i3c_dualcore_test --limit 2             # 按工程抽样批量重放
-python regression/replay.py --session reports/2026-09-20-1 --render-from-json   # 用 .json 反推 .md（校验）
+python regression/replay.py --session reports/2026-09-21-1 --render-from-json   # 用 .json 反推 .md（校验）
 ```
+
+> **★ 语料可用性声明（`reports/` 留存范围 —— 唯一真源，2026-09-24）**
+> - **现存**：**仅 `<date>-1` 四份** —— `reports/2026-09-21-1` / `-22-1` / `-23-1` / `-24-1`
+>   （均含 `serial_*.log` + `replay_meta.json`，各 49~51 个可重放 case）。**本节示例命令统一用
+>   `2026-09-21-1`**（已入库、留存最稳；`regression/replay.py --session reports/2026-09-21-1 --list`
+>   实测 rc=0）。
+> - **已不可得**：① `reports/2026-09-17-*` / `-18-*` / `-19-*` / `-20-*`（含 `2026-09-20-11/-12/-13/-18`）
+>   —— 工作区无、且 `git log --all --diff-filter=A` **返回空**（**从未提交，无法从 git 恢复**）；
+>   ② **同日其它序号**（如 `2026-09-21-2` / `-7` / `-8`、`2026-09-22-2`）**亦不保留** —— 会话目录
+>   按需分配、且可能被后续重写（本文档前部"语料快照提示"即记了"另一路 agent 重写 `reports/`"的实例）。
+>   **原示例 `--session reports/2026-09-20-1` 即属①**：直接复制会失败，故本版改用 `2026-09-21-1`。
+> - **纪律**：引用旧会话（`2026-09-17~09-20`）时**只作留痕**，**不得据此向外指路**（不得新写
+>   "详见 `reports/…`"）；确需引用时把**结论本身内联**，或改指现存会话。
+>   **不要重建、也不要推测缺失报告的内容。**
 
 - **复用同一套判定/渲染函数**：重放不另写一套判定。它把归档的原始行接回**该工程自己的
   `run_test.py`**，让它的 `main()` 原样跑完 判定 → 渲染 → 归档；**只把"硬件采集层"
@@ -842,6 +865,10 @@ python regression/replay.py --session reports/<会话> --project <p> --l2-direct
 
 **第 1 档的状态矩阵（每个工程各跑一遍，`tmp/a1/synthgen.py` 生成）**：
 
+> ⚠️ **`tmp/a1/synthgen.py` 未迁、不建议复跑（2026-09-24）**：它 `import harness`，而 `harness` / `abrun`
+> 的 `after` 子树**会落到真硬件入口**（见 §6.4.9 ⑥ 注）⇒ 归"**依赖被否模块**"一类。下表是**当年的产出
+> 记录**，**不是"照着跑一遍"的指令**。
+
 | 变体 | 目标判定分支 |
 |---|---|
 | `allpass` | 常规全 PASS + `PROJECT EXECUTION SUCCESSFUL` |
@@ -862,8 +889,16 @@ mbedtls 的 `_own_port` BOOT 门直接 `CAPTURE FAILED`；② `rtc_ls` 缺 `CPU1
 
 ⇒ **强制自检**：`tmp/a1/coverage.py` 对每个 (工程 × 变体) 抽出**实际落盘的判定面签名**
 （`result` / `execution` / `ctrl_done` / `overall`），要求**同一工程的多个变体给出互不
-相同的观测**。当前结果：**24 个工程全部 ≥ 4 种不同观测，空转嫌疑 0 个**
-（`tmp/a1/coverage_table.md`）。典型观测：`allpass→result=PASS/execution=SUCCESSFUL`、
+相同的观测**。**历史结果**：24 个工程全部 ≥ 4 种不同观测，空转嫌疑 0 个
+（`tmp/a1/coverage_table.md`）。
+
+> ⚠️ **口径更正（2026-09-24）：`coverage.py` 不是纯离线，该自检今天跑不绿。** 其 `:59` 调
+> `harness.drive(..., "after")` ⇒ 走 **11 个 PORTS_DICT 族工程**的**真硬件入口**，与 `O-40`
+> **同一根因**（`ensure_debugserver_alive` 不在隔离网内）⇒ 这些工程**必 `CAPTURE FAILED`**。
+> **旧结论只作留痕，不得当作"今天可复跑"的承诺**；脚本与 `coverage_table.md` **未迁**
+> （碰硬件，一票否决 —— 见 `FRAMEWORK_MAP.md` §2 注）。
+
+典型观测：`allpass→result=PASS/execution=SUCCESSFUL`、
 `fail→FAIL/FAILED`、`zero→FAIL/UNKNOWN`、`conflict→FAIL/CONFLICTING_MARKERS`。
 
 **⑤ 还缺什么（诚实清单）**
@@ -885,7 +920,13 @@ mbedtls 的 `_own_port` BOOT 门直接 `CAPTURE FAILED`；② `rtc_ls` 缺 `CPU1
 | 归档 `.json` → `.md` 重渲染（既有 `--render-from-json`） | 11 case | **11/11 与归档逐字节相同** |
 | `py_compile` + 导入冒烟 | 24 `run_test.py` + `common/*` + `regression/*` | **全过** |
 
-一键复跑：`bash tmp/a1/verify_all.sh`（全部离线，不碰板子）。
+一键复跑：`bash tmp/a1/verify_all.sh`（原注"全部离线，不碰板子" —— **⚠️ 该自述已证伪，见下**）。
+
+> ⚠️ **`tmp/a1/verify_all.sh`（含 `abrun.py` / `harness.py`）自述"离线、不碰板子"与实测不符（2026-09-24）**：
+> 实测其 **`after` 子树会走到真硬件入口** —— 在 PORTS_DICT 族工程上触发 `DebugServer 前置检查` 与
+> `[run] CAPTURE FAILED`（**路径是通的**；本次未真正拉起 DS）。另**第 7 步的输入 `reports/2026-09-20-4`
+> 已不可得** ⇒ "一键复跑全绿"的语义**已经破了**。**勿据其自述在无人看管时运行。**
+> （该三件套属未迁的 `tmp/` 线束；详见 `reports/2026-09-24-1/scripts-promotion-2026-09-24.md` §2.1/§4.2。）
 
 **⑦ 本步之后，「改处理层」能否不碰板子？**
 
@@ -899,6 +940,8 @@ mbedtls 的 `_own_port` BOOT 门直接 `CAPTURE FAILED`；② `rtc_ls` 缺 `CPU1
 
 > 断言（可被上表推翻）：**只要改动不落到"L1 采集段 / mem 兜底 / 固件"三者之一，就不需要上板**。
 > `bash tmp/a1/verify_all.sh` 全绿 = 该断言在本仓库当前状态下成立。
+> ⚠️ **但这一行今天已不成立（2026-09-24）** —— 该脚本会碰真硬件入口（自述"离线"证伪）+ 第 7 步输入
+> 已不可得 ⇒ **"全绿"语义已破**，勿据其自述无人看管地跑（详见 §6.4.9 ⑥ 的 ⚠️ 注）。
 
 #### 6.4.10 L1 采集层契约（★ 2026-09-20 A2）
 
@@ -979,7 +1022,10 @@ L2 处理（纯离线）  common/process.py 的 run() / process_archive()（§6.
 | `common/process.py`（L2） | 可离线重放（§6.4.8） | — |
 | 固件 `.c/.h` | **必须全量** | 输出会变 |
 
-**A2 自证证据**（脚本在 `tmp/a2/`，可复跑）
+**A2 自证证据**（**离线四件套现于 `scripts/`** —— 2026-09-24 由 `tmp/a2/` 迁入：`equiv.py` /
+`l1survey.py` / `dump.py` / `normgroup.py` + 快照 `scripts/equiv_before/`；**`tmp/a2/hw_cmp.py`
+（自述"抽样上板"）未迁**。⚠️ `tmp/a2/patch_equiv{1..4}.py` **无 `__main__` 守卫、会改写公共源码**，
+**不要搬运、不要 `import`** —— 详见 `FRAMEWORK_MAP.md` §2 注）
 
 | 检查 | 方法 | 结果 |
 |---|---|---|
@@ -990,7 +1036,7 @@ L2 处理（纯离线）  common/process.py 的 run() / process_archive()（§6.
 | E4 接线表 | 24 个薄壳各自恰好调一次采集策略，且 L1 定义已清空 | 24/24 |
 | 抽样上板 | 5 个代表（见下）改动前/后 A/B | 判定 5/5 全部一致；归档 3/5 逐字节完全相同（含两个双核工程的两路），其余差异经 **A/A 对照**证实为运行间噪声 |
 
-抽样上板（改动前 = `tmp/a2/before/<p>/run_test.py`，改动后 = 现文件；同一 build）：
+抽样上板（改动前 = `scripts/equiv_before/<p>/run_test.py`，改动后 = 现文件；同一 build）：
 
 | 代表 | 形态 | 判定 A/B | 归档 A/B |
 |---|---|---|---|
@@ -1661,7 +1707,7 @@ struct rlog_frame {
 
 | 落点 | 改动 | 证据 |
 |---|---|---|
-| `common/ztest_report.py` | `_NATIVE_RESULT_RE` / `_NATIVE_INFO_RE` 前缀从硬编码改**登记白名单** `NATIVE_PREFIXES = (I3C_I2C_TEST, RTC_TEST, MBOX_TEST)` | 314 份真/合成归档 A/B：差异**只有** `RTC_TEST` 行被新认领，零丢失、其余逐字不变（`tmp/b2/ab_prefix.py`） |
+| `common/ztest_report.py` | `_NATIVE_RESULT_RE` / `_NATIVE_INFO_RE` 前缀从硬编码改**登记白名单** `NATIVE_PREFIXES = (I3C_I2C_TEST, RTC_TEST, MBOX_TEST)` | 314 份真/合成归档 A/B：差异**只有** `RTC_TEST` 行被新认领，零丢失、其余逐字不变（`scripts/ab_prefix.py`，2026-09-24 由 `tmp/b2/` 迁入） |
 | `projects/rtc_ls_test/cpu1_rtc_test` | `main.c` 首行 `zt_init("TGT")`；`CMakeLists.txt` 补编 `common/ztest_glue.c`（该工程原先**刻意不编**，故为全仓最后一个无 `ZT_BOOT` 者） | 上板 15/15 PASS，归档出现 `ZT_BOOT TGT` |
 | `projects/mbox_test` | 逐项改走 D2 结果 token `MBOX_TEST:<core>:(PASS\|FAIL):<name>[:<明细>]`；收尾去冒号；observe/guard 留在 INFO 类别；`tests/run_test.py` 同步 | 上板 `case_mbox_basic` 5/5、`case_mbox_invalid` 7/7（observe/guard 正常呈现） |
 
@@ -1696,12 +1742,23 @@ struct rlog_frame {
 之后，23 份薄壳只剩 `acquire.<策略>(spec)`，`mod.run_case` 之类的名字**已不存在**。
 
 * **失效模式**：补丁打空 ⇒ 重放**静默落到真硬件**（占板子 / 起 DebugServer）。
+* **⚠️ 已知实例（2026-09-24，本节的判据不能只靠自检）**：屏蔽名单**漏收 `ensure_debugserver_alive`**
+  ⇒ **PORTS_DICT 族 11 个工程**的离线重放会**真探 1025 / 可能拉起 DebugServer**。
+  **教训**：判据必须**枚举 `acquire` 的全部硬件入口**（可对照 `scripts/audit_patch_targets.py` 的
+  "补丁目标必须是既有全局名"），**不能拿"自检 PASS"当"补丁打严了"** —— `scripts/guard_demo.py` 的
+  `FORBIDDEN` 是**手写 7 条**，**新加的入口不会自动进网**。见 `OPEN_ITEMS` **O-40**。
 * **隔离网**：每个适配器先 `_guard_acquire()` 把 `acquire` 上所有能碰板子/进程的
   入口换成替身（置空或硬中止 `HardwareTouchAttempt`），再覆盖本策略要用的采集入口。
   未预期触达 ⇒ **抛异常中止整批**（不静默跳过）。
-* **判据**：`tmp/b1/guard_demo.py`（逐策略：本策略入口=替身、其余 4 个采集入口=绊线；
-  烧录/构建/起 gdb/起 test.sh/开串口/pyserial 全部拦截）；`tmp/b1/audit_patch_targets.py`
-  （补丁目标必须都是 `acquire` 的**既有**全局名）。
+* **判据**：`scripts/guard_demo.py`（逐策略：本策略入口=替身、其余 4 个采集入口=绊线；
+  烧录/构建/起 gdb/起 test.sh/开串口/pyserial 全部拦截）；`scripts/audit_patch_targets.py`
+  （补丁目标必须都是 `acquire` 的**既有**全局名）。**两者均于 2026-09-24 由 `tmp/b1/` 迁入 `scripts/`。**
+  > ⚠️ **自检 PASS ≠ 隔离网无洞（2026-09-24）**：`guard_demo.py` 的 `FORBIDDEN` 是**手写 7 条**，
+  > **不会自动收编后来新加的入口** —— 实测漏了 `ensure_debugserver_alive`（见 §6.10.1 失效模式注
+  > 与 `OPEN_ITEMS` **O-40**）。判据要**枚举 `acquire` 的全部硬件入口**，别把"自检过了"当成"补丁打严了"。
+  > **推论（通用）**：**文件头自述两个方向都不可信** —— 可能**夸大**（`tmp/a2/hw_cmp.py` 自述"抽样上板"，
+  > 实则零硬件调用），也可能**缩小**（`tmp/a1/harness.py` / `verify_all.sh` 自述"离线不碰板子"，实则
+  > 会落到真硬件入口）⇒ **判据一律看代码与实测，不看自述。**
 
 #### 6.10.2 INFO kv 解析唯一规则：`common/ztest_report.parse_kv`
 
@@ -1713,7 +1770,10 @@ INFO 值串的分隔符**同时**容忍逗号与空白（`rtc_ls` 用逗号；`i
 * 唯一实现：`common/ztest_report.parse_kv`。`common/expect_check.expand_kv` 已收敛到它
   （禁止再留第二套规则）。
 * 判定/渲染是 L2 路径 ⇒ 改动须按 §6.4.9 用真归档重放验证：**只有原本被吞掉的键新出现**，
-  其余零变化（证据：`tmp/b1/kv_before_after.py`、`tmp/b1/io_probe_ab.py`）。
+  其余零变化（证据：`scripts/kv_before_after.py` —— 2026-09-24 由 `tmp/b1/` 迁入、其输入数据
+  `scripts/io_probe_run1_uart.txt` 同步迁入；另一处证据 `tmp/b1/io_probe_ab.py` **未迁且已不可用** ——
+  它依赖的工程 `projects/io_probe_test/` **已被删除**，跑起来即 `FileNotFoundError`（**记载保留、不删**；
+  该结论以上一个脚本为准））。
 * INFO 的**名字**必须是字符串字面量（`ZT_INFO("rsa3072_modexp", …)`），
   不得把格式串当名字（`ZT_INFO("rsa%d_modexp", …)` 会让两个测试项**撞同一个键**，
   后写覆盖前写 ⇒ 两项在报告里恒为 `-`）。跨测试项共用一个 helper 时，
@@ -1736,9 +1796,13 @@ KNOWN_ISSUES #101）。已排空清单（`ast` 全仓扫描，`common/**` + `reg
   stdout ⇒ DebugServer 会话停摆。改为 Popen 处起 drain 线程 + 收尾 `proc.wait()`。
 * **非 live 遗留**（`tests/tmp/`，不参与回归）：`flash_test/tests/tmp/run_capture.py`、
   `otbn_test/tests/tmp/probe_pc.py` —— 保留原样，不再维护。
-* **可执行防线**（防第 5 处）：`tmp/b2fix/scan_pipes.py` —— 扫出所有
+* **可执行防线**（防第 5 处）：`scripts/scan_pipes.py` —— 扫出所有
   `stdout=PIPE` 且所在函数内**没有**任何 `.stdout` / `.communicate` 用法的调用点，
-  非零退出视为缺陷。新增任何 `Popen` 后跑一次即可。
+  非零退出视为缺陷（**退出码 = LIVE 缺陷处数**）。新增任何 `Popen` 后跑一次即可。
+  > **2026-09-24 已迁入 `scripts/`**（原 `tmp/b2fix/scan_pipes.py`）—— 此前"`tmp/` 一旦被清理，
+  > 这条**必做防线**会**静默消失**"。迁移只改根目录推导（`parents[2]` → `parents[1]`），
+  > **新旧输出逐字一致**（98 文件 / 73 个 `stdout=PIPE` 调用点 / 0 处 LIVE，rc 均为 0）。
+  > `--all` 语义不变（仍列 `tests/tmp/` 的非 live 遗留）。
 
 #### 6.11.2 串口是"两方非原子共享"：截断转义不得吞掉证据首字母
 
@@ -1893,7 +1957,7 @@ DONE、或 `rlog_lost() != 0` ⇒ 显式判负（`SECONDARY_SILENT` / `SECONDARY
 
 **背压（先测后改，§6.11.5 的第一风险）**：从核侧的发送重试/阻塞由
 `rlog_stat_tx_*` 全局符号量化（GDB 直读，不依赖调试信息，见
-`tmp/b2impl/read_rlog_stats.py`）。**实测无阻塞**：试点 `i2c_pure_test` 单次上电
+`scripts/read_rlog_stats.py`（2026-09-24 由 `tmp/b2impl/` 迁入））。**实测无阻塞**：试点 `i2c_pure_test` 单次上电
 `tx_lines=9, retries=0, max_retry=0, max_block_ms=0, lost=0`，主核接收环高水位
 4/24（环 24 行）。结构性解释：主核 RX ISR 把帧从 mbox FIFO（8 深）搬进环
 （24 行）⇒ 从核要连发 >32 帧且主核线程不 drain 才可能被压住；ztest 的逐项输出

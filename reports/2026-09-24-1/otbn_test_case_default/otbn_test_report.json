@@ -1,0 +1,111 @@
+{
+  "driver": "otbn_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=420s",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "timestamp": "2026-09-23T22:40:21",
+  "results": {
+    "api_aes_kat": "PASS",
+    "api_rsa2048_kat": "PASS",
+    "api_rsa_keygen_2048": "PASS",
+    "api_rsa_keygen_3072": "PASS",
+    "api_sha224_kat": "PASS",
+    "api_sha256_kat": "PASS",
+    "api_sha256_varlen": "PASS",
+    "api_sha384_kat": "PASS",
+    "api_sha512_kat": "PASS",
+    "api_sm3_kat": "PASS",
+    "api_sm4_kat": "PASS",
+    "mix_ecdsa_sha256_stream": "PASS",
+    "mix_keygen_sha256_keygen": "PASS",
+    "mix_sha256_keygen_seq": "PASS",
+    "mix_sha256_stream_keygen": "PASS",
+    "mix_sha512_stream_keygen": "PASS",
+    "mix_sign_sha256_stream": "PASS",
+    "mix_sm3_stream_keygen": "PASS",
+    "api_ecdsa_p256_kat": "PASS",
+    "api_ecdsa_p384": "PASS",
+    "api_ecdsa_sm2": "PASS",
+    "perf_ecdsa_p256": "PASS",
+    "perf_rsa2048_sign": "PASS",
+    "perf_sha256_64k": "PASS",
+    "api_rsa_keygen_4096": "PASS"
+  },
+  "infos": {
+    "api_rsa_keygen_2048": {
+      "nbits": "2048",
+      "time_ms": "3864"
+    },
+    "api_rsa_keygen_3072": {
+      "nbits": "3072",
+      "time_ms": "7190"
+    },
+    "mix_keygen_sha256_keygen": {
+      "keygen1_ms": "2456",
+      "keygen2_ms": "1274"
+    },
+    "mix_sha256_keygen_seq": {
+      "keygen_ms": "1491"
+    },
+    "mix_sha256_stream_keygen": {
+      "keygen_ms": "1007"
+    },
+    "mix_sha512_stream_keygen": {
+      "keygen_ms": "4202"
+    },
+    "mix_sm3_stream_keygen": {
+      "keygen_ms": "2300"
+    },
+    "perf_ecdsa_p256": {
+      "loops": "10",
+      "sign_ops": "434",
+      "verify_ops": "714"
+    },
+    "perf_rsa2048_sign": {
+      "loops": "5",
+      "avg_us": "67034"
+    },
+    "perf_sha256_64k": {
+      "bytes": "65536",
+      "us": "14178",
+      "kbps": "4622"
+    },
+    "api_rsa_keygen_4096": {
+      "nbits": "4096",
+      "time_ms": "16205",
+      "rng_calls": "14324"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "api_aes_kat": "src=token",
+    "api_rsa2048_kat": "src=token",
+    "api_rsa_keygen_2048": "src=token",
+    "api_rsa_keygen_3072": "src=token",
+    "api_sha224_kat": "src=token",
+    "api_sha256_kat": "src=token",
+    "api_sha256_varlen": "src=token",
+    "api_sha384_kat": "src=token",
+    "api_sha512_kat": "src=token",
+    "api_sm3_kat": "src=token",
+    "api_sm4_kat": "src=token",
+    "mix_ecdsa_sha256_stream": "src=token",
+    "mix_keygen_sha256_keygen": "src=token",
+    "mix_sha256_keygen_seq": "src=token",
+    "mix_sha256_stream_keygen": "src=token",
+    "mix_sha512_stream_keygen": "src=token",
+    "mix_sign_sha256_stream": "src=token",
+    "mix_sm3_stream_keygen": "src=token",
+    "api_ecdsa_p256_kat": "src=token",
+    "api_ecdsa_p384": "src=token",
+    "api_ecdsa_sm2": "src=token",
+    "perf_ecdsa_p256": "src=token",
+    "perf_rsa2048_sign": "src=token",
+    "perf_sha256_64k": "src=token",
+    "api_rsa_keygen_4096": "src=token"
+  }
+}

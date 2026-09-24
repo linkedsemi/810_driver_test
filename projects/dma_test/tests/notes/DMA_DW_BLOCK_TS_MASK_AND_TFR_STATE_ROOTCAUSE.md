@@ -134,7 +134,7 @@ n=4095  只搬 2047 字节              n=3000  只搬 952 字节
 `scripts/dump_results.py` 的 `TEST_NAMES_BY_CASE[case_destructive]` 同步改名
 （链接序实测：改名后仍排末位，顺序不变）。
 
-**验证**（会话 `reports/2026-09-17-dmaC`）：`case_default` **4/4 PASS**、
+**验证**（会话 `reports/2026-09-17-dmaC` —— ⚠️ **该会话已不可得、且从未入库**，见 `SPEC_REFERENCE` §6.4.7「语料可用性声明」）：`case_default` **4/4 PASS**、
 `case_destructive` **6/6 PASS**；mem 兜底（`dump_results.py --json`）与串口直采逐项一致
 （表名同步正确，无错位假结果）。
 

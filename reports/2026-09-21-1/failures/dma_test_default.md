@@ -48,7 +48,7 @@
 
 ## 备注
 
-- **历史对比（非本目录数据，取自工程 notes）**：该 case 在 `projects/dma_test/tests/notes/DMA_DW_BLOCK_TS_MASK_AND_TFR_STATE_ROOTCAUSE.md:108-109` 与 `810_driver_test/OPEN_ITEMS.md:42`（O-5）中记录为 **4/4 PASS**（会话 `reports/2026-09-17-dmaC`）。本次 7 项中 6 项 FAIL，属**明显回归**。
+- **历史对比（非本目录数据，取自工程 notes）**：该 case 在 `projects/dma_test/tests/notes/DMA_DW_BLOCK_TS_MASK_AND_TFR_STATE_ROOTCAUSE.md:108-109` 与 `810_driver_test/OPEN_ITEMS.md:42`（O-5）中记录为 **4/4 PASS**（会话 `reports/2026-09-17-dmaC` —— ⚠️ **该会话已不可得且从未入库**，见 `SPEC_REFERENCE` §6.4.7「语料可用性声明」）。本次 7 项中 6 项 FAIL，属**明显回归**。
 - **当前工作区驱动不在"已修"状态（重要，需人工确认）**：上述 notes 记录的修复在当前磁盘上的 `zephyr/drivers/dma/dma_dw_common.{c,h}`（mtime 2026-09-21 11:30，`git status` 干净）中**均不在位**：
   - 缺陷 2 的修复（"`DW_MASK_TFR` 解除屏蔽移出 else，两种回调模式都解除"）不在位 —— `dma_dw_common.c:507-508` 只在 `complete_callback_en` 分支解 BLOCK/DST_TRAN，`:512` 的 `DW_MASK_TFR` 解除仍在 `else` 分支内（notes `:103`）。
   - 缺陷 1 的修复（`DW_CTLH_BLOCK_TS_MASK` 移入 `#if CONFIG_DMA_DW_2_20A`）不在位 —— `dma_dw_common.h:186-187` 中 `#endif` 已闭合，`MASK(16, 0)` 仍定义在变体 `#if` 之外（notes `:102`）。

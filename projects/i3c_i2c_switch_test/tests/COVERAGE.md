@@ -23,7 +23,7 @@
 | i2c_nack_bad_addr | i2c_ls_transfer NACK 分支（MASTER_NACK_RECEIVED → 返回错误） | 异常参数 | 访问 0x70 返回非 0（预期 NACK） | API 契约 | ✅ |
 | switch_i2c_to_i3c | pinctrl_apply_state(DEFAULT) + 重新 i3c_do_daa + i3c_transfer 复验 | 中断/时序 | 切回后 DAA 重新发现 target，16B 写读一致 | 例程验证 | ✅ |
 | switch_stress | pinctrl_apply_state 双状态循环 ×5 轮（每轮 I3C→I2C→I3C 各一次 16B 写读） | 并发/时序 | 5 轮全部通过（**双核均同 id 粘滞累计**：CTRL `ctrl_failed` 与 TGT `tgt_failed`/`tgt_data_mismatch` 都只在换测试项时清，同 id 子轮不清） | 协议约定（SWITCH_STRESS_ROUNDS=5） | ✅ |
-| broadcast_nack_recovery | i3c_linkedsemi.c ls_i3c_do_ccc 广播帧（RSTACT whole/peripheral、RSTDAA）+ ls_i3c_xfer_reset 残留清理 + EVR BUSY(bit12) 判空 | 异常/恢复 | 'N' 窗口内首帧 RSTACT whole 应 NACK；target 自动切回后 RSTACT peripheral / RSTDAA 应正常；帧末 EVR BUSY=0 | 驱动修复回归（2026-09-09 新增广播 NACK 恢复路径） | ✅ |
+| broadcast_nack_recovery | i3c_linkedsemi.c ls_i3c_do_ccc 广播帧（RSTACT whole/peripheral、RSTDAA）+ ls_i3c_xfer_reset 残留清理 + EVR BUSY(bit12) 判空 | 异常/恢复 | 'N' 窗口内首帧 RSTACT whole **不报错**（原「应 NACK」判据不可达，见下方「已知基线」）；target 自动切回后 RSTACT peripheral / RSTDAA 应正常；帧末 EVR BUSY=0 | 驱动修复回归（2026-09-09）+ **2026-09-24 上板实测裁定** | ✅ |
 
 > 维度对照 §13.1：功能通路（pinctrl_states/i3c_baseline）、边界长度（i2c_rw_1/16/17/100）、
 > 异常参数（i2c_nack_bad_addr）、异常/恢复（broadcast_nack_recovery）、中断/时序（switch 两向 + stress）。
@@ -56,6 +56,42 @@
 >   FAIL 且归因给 DUT）；硬编码 `0x40094000`（`i3c_i2c_controller_test.c:533`，
 >   同文件其它处均用 `DT_REG_ADDR`）；`PROJECT EXECUTION` 标记只反映最后一项
 >   （`ctrl_failed` 每个新 id 的 begin 时被清）。
+---
+
+## 已知基线（裁定项，**不是待修缺陷**）
+
+> 目的：让后来者**不要**把下面这条当成"测试写法有误 / 驱动回归"去反复重开调查。
+> 与 `spif_test::cmd_idx_accessors`、`spi_test::link_probe` 同性质 —— **保持现状是裁定**。
+
+### B-1. `broadcast_nack_recovery` 的「窗口内广播 RSTACT whole 应被 NACK」断言 **在本硬件上不可达**
+
+- **裁定日期**：2026-09-24（上板判别实验，证据见
+  `reports/2026-09-24-1/i3c-b1b2-experiment.md`）。
+- **实测事实（时间扫描 + target 自报窗口标记，两个独立轮次一致）**：
+  NACK 窗口实测为 `[t≈5ms, t≈15ms]`（target 自报 `win=enter/exit`）；**落在窗口内的
+  16B 回读无任何数据被时钟出来**（缓冲区保持 `0xDE` 哨兵），形貌与"读无器件地址
+  `0x70`"完全一致 —— ⇒ **窗口内 target 确实已离开 I3C 总线**（不是"没切走"）。
+  窗口前后同一读稳定回 target 的 `0xAA..0xB9`。
+- **⇒ 该帧确实是"无人应答"，但控制器/驱动对广播帧的同步错误检查不报它**
+  （`ls_i3c_do_ccc` 只看 `EVR.FCF|ERRF`；实测 `SER=0x0`、返回值恒 `0`）。
+  「`r1 != 0`」这一写法**结构上不可能成立**，**不是**用例写错、**不是**驱动回归。
+- **现判据**：窗口内发广播 **不报错、能正常收尾**（`r1 == 0` 判 PASS）；原始返回
+  值仍以 `INFO ... win_broadcast_ret=` 上报串口与报告，**不进判据** —— 保留现场，
+  便于将来若驱动侧改成"异步复查 `SER/ERRF`"时把它重新收紧回 `r1 != 0`。
+- **未动**的断言：RSTACT peripheral / RSTDAA 必须成功、帧末 `EVR.BUSY(bit12)` 必须清零。
+- ⚠️ **不要**为了让这条变绿去放宽其它断言，也不要把它当驱动 bug 重开调查。
+
+### B-2. `broadcast_nack_recovery` 结账前必须重跑一次 DAA（`'E'` 可达性）
+
+- **现象（2026-09-24 定位，同样的既存缺陷）**：第三帧 `RSTDAA` 会清掉 target 的
+  **硬件动态地址 `0x32`**，而 controller 侧 dev list 的 `desc->dynamic_addr` 不同步清
+  ⇒ 紧随其后的结账命令 `'E'` 被打到已不存在的地址上、**target 收不到** ⇒ TGT 侧该项
+  **恒无记账**（`SUMMARY 10/11`、双核判定里 TGT 恒 `MISSING`）⇒ 该 case **结构上不可能
+  双核 11/11**（历史归档中该行 `来源=missing` 即此形貌）。
+- **现处置**：结账前先 `i3c_do_daa()` 恢复 `0x32`（与 `test_main` 收尾处**本来就要做的
+  同一套动作**，只是提前到 `'E'` 之前；幂等、不新增被测行为、判据一字未改）。
+- 实测：`reports/2026-09-24-1/i3c_i2c_switch_test_case_switch_core/` **双核 11/11 PASS**。
+
 ---
 
 ## 独立预期（机器可读）

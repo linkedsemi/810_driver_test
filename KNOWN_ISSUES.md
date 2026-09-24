@@ -3,6 +3,11 @@
 > 本文档记录所有实测沉淀的问题，含一次性/已修复的条目。
 > `CLAUDE.md` §5「常见现象速查」只保留最高频几条（精简版），完整清单在本文档。
 > 新坑先加这里，高频的再精简进 CLAUDE.md。
+>
+> ⚠️ **语料可用性（2026-09-24）**：本文引用的 `reports/` 会话凡**非 `<date>-1`** 者
+> （`2026-09-17~09-20` 全部，及 `2026-09-21-2` / `2026-09-22-2` 等同日其它序号）
+> **均已不可得、且从未入库** ⇒ 相关引用**仅作留痕**（不得据此外出查证，也不得据此再向外指路）；
+> 留存范围与纪律见 `SPEC_REFERENCE` §6.4.7「**语料可用性声明**」。**不要重建或推测缺失报告的内容。**
 
 ---
 
@@ -350,6 +355,13 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
 （41x 提速实际由 `set remotewritesize` 提供）。
 处理：手写 `.gdbcmd` 用正确命令名；排障优先 `-ex` 链或逐条确认命令名不会被静默丢弃。
 跟进：各工程脚本里的 `set memory-write-packet-size` 无效行建议一并改 `set remote ...`（runner 跟进，纯清理）。
+- **增补（2026-09-24，G-O39-4）：破坏面比"报错"更值得记 —— 整段静默、只留一行误导串。**
+  实测：B 段脚本里写了无效的 `set memory-write-packet-size`，导致该段的 `reset` / `restore`
+  **一条都没跑**，而输出里**只留一行 `No symbol table is loaded`**（并没有 `Error in sourced
+  command file:`）⇒ **极易误判成"环境/连接问题"**，白查一轮。**纪律：每段 gdb 脚本收尾都要"断言
+  关键动作真的发生"**（如断言出现 `Restoring binary file` / `Loading section`，否则中止），
+  **不能只看"有没有报错"** —— 静默什么都没做比报错更危险。配比见
+  `reports/2026-09-24-1/o39-nack-log-origin.md` §2.2；速查见 qsh-debug §7。
 
 **62. 按名字杀 python.exe = 自杀：连坐 west/ninja/run_test.py 本体 → 全量回归每个 case 秒级 `BUILD FAILED`**（2026-09-16，极具迷惑性）
 - 场景：回归中途想清残留构建进程，执行 `taskkill //F //IM python.exe`（连带 `west.exe`/`ninja.exe`）。
@@ -605,12 +617,16 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 
 **75. 单核加载流程写 `APP_CPU_SRST=2`（保持 cpu2 复位）⇒ `is_app_cpu_running()` 返回 true ⇒ 带该守卫的驱动 API 全部 `-EBUSY`**（2026-09-17）
 > ⚠️ **更正批注（2026-09-18 硬件验证批次 2 实测；证据来源：`tmp/hw2/` 日志）——本条前提未获实测支持**
+> **证据可得性（2026-09-24）**：`tmp/hw2/`（含 `emmc_fresh_raw.log`）**已随 2026-09-24 的 `tmp/` 清理移除**，
+> 外部不可回溯；下文数值均已**内联**，结论以**本批注正文**为准。被引作反证的 `reports/2026-09-17-4` /
+> `2026-09-17-5` / `2026-09-18-1` **亦不在本仓**（`reports/` 现仅存 09-21 起；这三份从未提交、无法从
+> git 恢复）⇒ 引用本条时**不得再向外指路**。
 > - **寄存器实测（GDB 与固件自读，两路一致）**：`reset` 后 `x/1xw 0x4002200c` = `0x0`；
 >   `set {int}0x4002200c = 2` 之后**回读 = `0x0`**（**并非 `>0`**）；写 `1` 后回读 = `0x3`，
 >   **且写 1 会触发 bootrom 级重启**（写 1 = **释放**，释放后核从 bootrom 起 ⇒ 该输出属正常，见下方措辞更正）。
 > - **固件侧**：emmc `case_block_driver` 用当前源码重新构建后，10 项带 `EMMC_SKIP_IF_GUARDED`
 >   的用例 **SKIP 计数 = 0**，`disk_access_init=0`、读写 PASS ⇒ `is_app_cpu_running()` 为假
->   ⇒ **守卫未生效**。（原始日志 `tmp/hw2/emmc_fresh_raw.log`：`[emmc_block_data] pass=7
+>   ⇒ **守卫未生效**。（原始日志 `tmp/hw2/emmc_fresh_raw.log`（**已随 2026-09-24 `tmp/` 清理移除**）：`[emmc_block_data] pass=7
 >   fail=0 skip=0 total=7`、`[zz_emmc_block_edge] skip=0`，两套件 `skip` 均为 0。）
 > - ⇒ 下文"写 2 ⇒ `>0` ⇒ 守卫误判 ⇒ API 全 `-EBUSY`"的因果链**基于 SDK 注释（`app_cpu_reset`
 >   语义），未获实测支持**；此前"10 项 SKIP"的观测**未留下任何日志证据**（全树 grep 无
@@ -779,6 +795,8 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
 - **不得据此推翻前半与 `broadcast_nack_recovery` 的 FAIL**：双 `PROJECT EXECUTION` 标记（前半，
   已定论）与 `broadcast_nack_recovery` 的 FAIL **真实且稳定复现**，是固定 `k_sleep(6ms)` 抢窗的
   **时序脆弱项**，与"reason 被抹"是两件事。
+  ⚠️ **2026-09-24 更正**：此处"固定 `k_sleep(6ms)` 抢窗 ⇒ 时序脆弱项"的**归因**已被「增补 3」的
+  极端对照证伪（"FAIL 真实且稳定复现"仍成立，"是抢窗造成"不成立）。见下方「增补 3」。
 
 **cpu2 通道（2026-09-21 实测；本项据此消解"缺手段"）**：
 - DebugServer 为 **cpu2 开第二个 TCP 端口 `1026`**（启动日志 `GDB connection command for CPUs(CPU0): …:1025`
@@ -807,8 +825,10 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   （日志文法统一 / 单出口 / `LOG_INF` 路径）**改变了采集与日志落地路径**、可能改变跨核 dispatcher 时延
   ⇒ **框架级改动后时序敏感用例必须重测**，其 PASS→FAIL **不得直接记成驱动回归**（驱动改动后同理）。
   判据补强（本轮）：失败**只在首帧**、后续步骤（r2/r3、EVR BUSY）全好 ⇒ "窗口错过"成立、**恢复路径完好**。
+  ⚠️ **2026-09-24 更正：此"窗口错过"判据已被极端对照证伪**（见下方「增补 3」）—— 后续步骤全好
+  只说明**恢复路径完好**，**不**说明失败源于"窗口错过"。
   归因纪律见 qsh-test-compare §5 第 3 条 / `SPEC_REFERENCE` §6.2.4 归因纪律注。
-- **增补 2（2026-09-23，改动窗口已精确钉到提交级）**：该脆弱项在本轮三份会话
+- **增补 2（2026-09-23，改动窗口已精确钉到提交级）** ⚠️ **其归因已被 2026-09-24 的「增补 3」证伪，见下**：该脆弱项在本轮三份会话
   （`2026-09-21-1` / `2026-09-22-1` / `2026-09-23-1`）**恒定 `FAIL 10/11`**、reason 恒为
   `rstact_whole_should_nack`（**首帧被 ACK**，`i3c_i2c_controller_test.c:566-572`）。
   抢窗用的**固定 `k_sleep(K_MSEC(6))` 是 09-15 的旧代码**（`9c808e9`）；但 `43b232e`
@@ -819,6 +839,91 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   已不在 I2C 窗口"；对照 `2026-09-21-1` 执行于 `43b232e` 之后 2 小时）。
   ⇒ 处置在**用例侧**（复跑取众数 / 把 6ms 调大 / 改为等 target 状态信号），
   **不要在驱动侧改 `i3c_linkedsemi.c`**。见 qsh-test-compare §5 第 3 条。
+  ⚠️ **（2026-09-24 更正，勿静默并存）本段"抢窗"归因与其处置口径已被「增补 3」的极端对照证伪**
+  —— 仍成立的只有"PASS→FAIL 与 `43b232e` 相关"这一**观测**；"窗口位置/抢窗"这一**机制**不成立。
+
+- **增补 3（2026-09-24，极端对照证伪了"抢窗"归因）**：`broadcast_nack_recovery` 的 FAIL
+  **不是** target 侧 NACK 窗口位置问题。做了一次**极端**对照（非"抢窗"式微调）：
+  `NACK_WINDOW_MS` 10 → **500**（target 切 I2C 保持 500ms）、controller 等待 10 → **250ms**
+  （深插窗口内部，比任何 dispatcher 抖动量级大 **40 倍**）、窗口后等待 12 → 600ms
+  ⇒ 结果**逐字相同**的 FAIL（`CTRL:rstact_whole_should_nack`、10/11），两次复测一致
+  （**2/2 确定性，非偶发**）⇒ **"到得太早/太晚"的时序推演被证伪** —— 在 500ms 宽窗口内、250ms
+  时刻深插，该帧**仍被判"被 ACK"**。
+- **关键否定证据（同轮）**：整个 broadcast 段 CTRL 串口**无任何驱动错误日志** —— 既无
+  `No response to broadcast address`，也无 `CCC[0x%02x] broadcast error, SER=0x%X`
+  （`zephyr/drivers/i3c/i3c_linkedsemi.c` 的广播分支**只在 `EVR & ERRF` 时才置 `-EIO`**）
+  ⇒ `ls_i3c_do_ccc` 按设计返回 0，**不是"驱动把 NACK 吞了"**。后续三帧
+  （RSTACT peripheral / RSTDAA / EVR.BUSY 清零）**全部 PASS** ⇒ 总线本身工作正常。
+  ⚠️ **2026-09-24 推论边界更正（G-B1B2-3，勿把"无日志"读成"硬件不置位"）**：上面"无任何驱动
+  错误日志"只证明**同步检查看不到**，**不**证明"控制器硬件不锁存"。同一轮实测：一次窗口内
+  **直接地址**读失败后**约 15 ms** 才出现 `<err> i3c: … Address NACK`，而该笔的 **API 返回值早已是 0**
+  ⇒ **硬件确实锁存了 ANACK，只是跨时钟域晚同步**；`ls_i3c_do_ccc` 只看 `EVR.FCF|ERRF`、
+  `ls_i3c_request_transfer_flag` 复查 `SER.ANACK`，**两者都是"同步"复查** ⇒ **结构性错过**。
+  ⇒ 本条**不能**据"无日志"断言"控制器硬件判该帧正常收尾"；正确表述是**"同步检查窗口内看不到"**。
+  ⚠️⚠️ **2026-09-24 二次更正 —— 上面这条边界批注自己的依据已被推翻（勿静默并存）**：
+  "实测 ANACK **晚 ~15 ms** 到位 ⇒ 硬件确实锁存、只是跨时钟域晚同步"**不成立**：
+  ① **日志模式**：本工程 `projects/i3c_i2c_switch_test/cpu0_i3c_controller/prj.conf:2` =
+  `CONFIG_LOG_MODE_DEFERRED=y` ⇒ **日志行的位置/先后不可信**（deferred 只延迟格式化与输出；
+  **但自带时间戳仍 = 生成时刻**，见下「纪律收紧」）；
+  ② **实证**：`reports/2026-09-24-1/i3c-b1b2-probe-run6.log`（同 `-run7.log`）第 118–119 行那条 `<err>`
+  **被劈开、插进了后一行 `B1B2PROBE:S t=28ms …` 的中间** —— deferred 日志线程与 `printk` 抢串口的
+  典型形貌 ⇒ 它是**打印晚了**，不是"错误位晚置位"（**位置不可信**）；
+  ③ **更硬的矛盾**：通用路径 `ls_i3c_request_transfer_flag()`（`zephyr/drivers/i3c/i3c_linkedsemi.c:1161` 段）
+  检出错误会 `msg_state = LS_I3C_MSG_ERR` 并 **`return -EIO`**，而该笔实测 **`ret = 0`** ⇒ 那条日志
+  **不是从通用路径来的**，其**来源未确定**。
+  ⇒ **"ANACK 晚到"不成立**；**"驱动检查窗口过窄"与"硬件无锁存能力"两侧均无据** —— 该问题**回到"未定"**，
+  **不得据此裁定驱动**。
+- **★ 2026-09-24 纪律收紧（勿把"位置不可信"读成"时刻不可定"）**：deferred **只延迟格式化与输出**，
+  **不延迟时间戳采集** —— `LOG_ERR()` 宏**在调用线程内**就完成打包并提交（`zephyr/include/zephyr/logging/log_msg.h:375`
+  `z_log_msg_finalize` → `zephyr/subsys/logging/log_msg.c:51 z_log_msg_commit(msg)` →
+  `zephyr/subsys/logging/log_core.c:690 msg->hdr.timestamp = timestamp_func();`），时间戳在这一刻写入。
+  ⇒ 正确表述是 **"串口行的位置不可信、自带时间戳 = 生成时刻"**，**不是**"生成时刻未定"（上一版写过头了）。
+  可复用纪律：**判硬件时序读该行的时间戳、别看它在串口里排第几**；"位置 / 时间戳 / 来源"是**三件独立的事**
+  （见 `debug-knowledge/common/deferred-log-timestamp-not-generation-time.md`）。
+- **真问题（重新界定，2026-09-24 已部分回答）**：窗口内那笔直接读 `ret = 0`，却留有一条 `Address NACK`
+  日志 —— **它由哪个调用点产生、生成于何时？** O-39 断点定位实验（GDB 软断点打在 `ls_i3c_log_err_type`
+  五个候选调用点，两次独立跑共 **40 次命中**）实测：**`SER.ANACK` 从未置位**、**通用路径 `:1161` 零命中**；
+  命中只落在 `:2364`（37 次，均 `SER = 0`，每个用例项起始的 ISR ERR）与 `:1761`（3 次，启动期
+  `i3c_ccc_do_getmrl` 收 `SER.PERR`）⇒ **当前（B2 修复后）树里不存在能置 `SER.ANACK` 的操作**，
+  那条日志**不可复现**（**结构性推断**：属当时存在、现已不在树中的一次操作 —— **非观测**，本实验未
+  直接观测到那次 ANACK）。见 `reports/2026-09-24-1/o39-nack-log-origin.md`。全文与处置见 `OPEN_ITEMS.md` O-39。
+- **剩下两条独立线索（未决，裁定权在驱动侧）**：① target 切 I2C 引脚复用后，I3C 广播在总线上
+  **是否真的无应答** —— 需示波器看窗口内 `PJ08/PJ09` 的 **ACK 位**（`embedded-debug` §3.3：
+  寄存器全对 ≠ 总线没问题）；② 本 SoC 控制器在**广播地址无人应答**时**是否在某个（同步窗口之后
+  的）时刻置位 ERRF/`SER.ANACK`** —— **不能由"同步检查无日志"推断**（~~晚同步已实测~~，
+  **该"已实测"已按上游二次更正撤回 —— 回到未定**）；须用**延迟复查**（读标志前先等足够量级，
+  或由 ISR 侧异步复查）取证，但**"等 ≥15 ms"这一具体量级同样来自已被推翻的观测，不得当依据**。若确认该位
+  **永不置位**，则 `r1 != 0` 判据在此硬件上**本身不可达**（属**判据**问题，**不得擅自放宽**，
+  须驱动侧裁定；**驱动侧是否改成异步复查 `SER/ERRF` 属未决**，若改，应把本用例判据**收紧回
+  `r1 != 0`** —— 用例已用 `INFO … win_broadcast_ret=` 保留现场）。
+- 证据：`reports/2026-09-24-1/board-2026-09-24.md`「事项 ①」（探针已完整回退、镜像已重建）；
+  边界更正与晚同步实测见 `reports/2026-09-24-1/i3c-b1b2-experiment.md` §2.4 / §3.2 / §8、
+  `i3c-erff-experiment.md` §5（推论已收紧）。
+  ⚠️ 其中"晚同步实测"一节**已于同日二次更正撤回**（依据不成立）—— 见上述二次更正批注，各落点均已挂批注。
+- **★ 与「增补」/「增补 2」的更正关系（不得静默并存）**：增补 2 的归因
+  "**用例自身时序竞态 + 框架改造扰动**"（连同增补里"'窗口错过'成立"的判据）**因本轮极端对照而被
+  证伪** ⇒ 其**处置口径（"处置在用例侧、不要在驱动侧改"）随之失效** —— 被证伪的正是**唯一指向用例侧
+  的证据**。**仍成立的只有**"PASS→FAIL 与 `43b232e` 相关"这一**观测**；**"窗口位置/抢窗"这一
+  *机制* 不成立**。**"框架级改动后时序敏感用例必须重测"这条通则不变**（它不依赖本例机制）。
+
+**118. `broadcast_nack_recovery` 的结账命令 `'E'` 在 `RSTDAA` 之后不可达 ⇒ 对端该项恒 `MISSING`、case 结构上不可能双核 PASS**（2026-09-24 实测）
+- 现象：按 B2 改完判据后上板，**CTRL 侧判 PASS，整 case 仍 FAIL** —— TGT 列恒 `MISSING`；
+  target 自己的 `SUMMARY:END` = `10/11`、`DONE:FAIL`，且 TGT 日志里**只有
+  `START:broadcast_nack_recovery`、没有对应 `PASS/FAIL`**。
+- 根因：第三帧 `RSTDAA` 清掉 target 的**硬件动态地址 `0x32`**，而 controller 侧 dev list 的
+  `desc->dynamic_addr` **不同步清** ⇒ 紧随其后的结账命令 `'E'` 被打到**已不存在的地址**上、
+  target 收不到 ⇒ TGT 侧该项**恒无记账** ⇒ 该 case **结构上不可能双核 11/11**。
+  **历史归档该行 `来源=missing` 就是这个形貌 —— 既存缺陷，与本轮判据改动无关**。
+- 处置（已落地）：结账前先 `i3c_do_daa()` 恢复 `0x32`（与 `test_main` 收尾处**本来就要做的同一套
+  动作**，仅提前到 `'E'` 之前；**幂等、不新增被测行为、判据一字未改**）。回退该条只影响
+  `broadcast_nack_recovery` 的 TGT 记账可达性，回退后退回"CTRL 11/11 但整体 FAIL(TGT MISSING)"旧形貌。
+- **可复用纪律**：**会让从机丢失自身地址的测试项（`RSTDAA` / 复位类）之后不得直接结账** ——
+  结账命令本身要走总线，必须先恢复寻址（重跑 DAA / HJ 重连 / SETNEWDA）。生成期规则见
+  qsh-test-gen §1.6 第 10 条；检查项见 qsh-test-validate §1.10x。
+- 关联：#51 / #52（本工程恢复域）· #98（同一实验场，本项即该实验 §4.2 定位）·
+  `projects/i3c_i2c_switch_test/tests/COVERAGE.md`「已知基线」B-2。
+- 证据：`reports/2026-09-24-1/i3c-b1b2-experiment.md` §4.2 / §4.3（修复后 `case_switch_core`
+  双核 11/11 PASS，连跑两次一致）。
 
 ---
 
@@ -941,6 +1046,59 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   （ELF magic + `e_entry` 对照该 case 的 `objdump`）→ 是 ⇒ 查固件；否 ⇒ 镜像从未被搬运上电。
 - 关联：#47-#49（flash boot 流程 / 引导头 / GDB halt 阻止 bootrom）· SPEC_REFERENCE §6.7.3/§6.7.4 ·
   qsh-debug `ref-flash-variants.md` §2 · qsh-test-run §8。
+
+**117. `acquire.iwdg()` 的采集窗口下界 = `clear()` 与采集线程的竞态；窗口过短 ⇒ 混入上一轮残片 / 静默假 PASS（判定对退化完全不敏感，只有归档完整性抓得到）**（2026-09-24）
+
+`common/acquire.py::iwdg()` 两遍烧录法：prime 轮 → `ctrl_cap.clear()` → capture 轮。
+**下界由 `clear()` 与采集线程之间的竞态决定，与判定逻辑无关**：窗口过短时，prime 轮的**收尾行**
+会在 `clear()` **之后**才到达采集缓冲 ⇒ 混进本轮归档。
+- **实测下界 = 11s**（两侧各复现 2 次）：**10s 两轮复现 BAD**（归档第 1 行 = 孤立的
+  `PROJECT EXECUTION SUCCESSFUL`（prime 轮尾巴），第 3 行才是本轮 boot banner）；**11s 两轮干净**。
+- **8s 更严重 = 静默假 PASS**：归档 = `[prime 轮完整残片 64 行] + [本轮：boot banner / ZT_BOOT /
+  1 行 START]`，**本轮 capture 只跑到第 1 项**（末行 = `START - test_feed_within_window_no_reset`）；
+  报告却按 **prime 轮残片**判 `PASS (18/18)`、两核 `SUCCESSFUL`。**被判定的是 prime 轮，capture 轮
+  根本没跑。**
+- **★ 本项真正的教训 = "判定对退化完全不敏感"**：`--case-timeout` 从 120s 一路压到 8s，**三个 case
+  的 PASS/NOTE/MISSING 逐项结果一字未变**（全 PASS）⇒ **"逐项与基线一致"这条判据抓不到任何东西**；
+  **只有归档完整性**能暴露退化。
+- **归档完整性三判据**（每核独立，要求归档是「**一次、完整、从头到尾**」的运行）：**H1 头部完整** ——
+  第一条 ztest 信号行必须是 `ZT_BOOT`（其前若出现 `START/PASS/FAIL/SKIP/INFO` 行 = "尾片段"）；
+  **H2 唯一性** —— `ZT_BOOT <CORE>` / `Running TESTSUITE` / `PROJECT EXECUTION` 各**恰好 1 次**
+  （>1 = 夹带了上一轮残留）；**H3 尾部完整** —— 最后一条非空行必须是 `PROJECT EXECUTION SUCCESSFUL`
+  （否则窗口到点把收尾截断了）。判据脚本 `scripts/check_archive.py`（2026-09-24 迁出 `tmp/`；已**正反自测**：对既有
+  `baseline120`(COMPLETE) 与 `probe8`/`probe10`(BAD) 的判定与人工读串口一致）。
+- **增补（2026-09-24，单核适用性 · G-O35-1）**：`ARCHIVE: BAD` 有**两类**成因，引用前须先分清 ——
+  ① **内容退化**（H1/H2/H3 真出问题，本项要抓的）；② **脚本口径误报**（**旧版** `tmp/check_archive.py`，
+  **已于 2026-09-24 修复**）：**写死 `("CTRL","TGT")` 两口**、并把"`serial_<CORE>.log` 不存在"一律计 BAD，而**单核工程**的 case
+  目录**本就只有** `serial_TGT.log`（`projects/<工程>/` 下 `cpu*` 子目录数 **1 = 单核**，cpu1=target；
+  **2 = 双核**才有 `serial_CTRL.log`(cpu2)）⇒ **单核恒报 `[CTRL] MISSING` / `ARCHIVE: BAD`**，
+  与归档是否干净无关。**判据**：应核几口由**工程核数**决定（**脚本现已自动判定**，见末句），**单核只核
+  TGT**（H1/H2/H3 本身不因单核失效）；**"判 BAD 先分成因"仍是要做的动作**。实测 `reports/2026-09-24-1/i2cf_test_case_default` = `[CTRL] MISSING` + `[TGT] OK
+  lines=86` ⇒ 整体 BAD；基线快照 `tmp/o35_base/i2cf_test_case_default` **同形貌** ⇒ 属 ② 非 ①。
+  **危害**：24 个工程中 **19 个是单核** ⇒ 会把其正常归档**一律误判为坏归档**，进而诱使放弃在这些
+  工程上做归档核验 —— 而那是本项**唯一**的退化探测器。**已修（2026-09-24）**：脚本迁至
+  `scripts/check_archive.py`，**核集合由工程决定**（1 = 单核只核 TGT）、解析不出工程时退回按实际
+  日志枚举并打 `[NOTE]`、**零日志 fail-closed**（`[ERR]`/rc=2，不再静默判 `COMPLETE`）；**上述误报
+  现象留痕不删**。**仍存的口径边界**：按 ztest **原生 D1 文法**核 ⇒ **D2 token 型**工程仍会一律报
+  BAD，须按工程文法人工核。操作面见 `qsh-test-run` §4.2。来源：`reports/2026-09-24-1/o35-hw-discriminator.md` §4.2。
+  **增补 2（2026-09-24，崩溃与 BAD 同码 —— 已修）**：迁移后曾暴露两条缺陷，**均已修**（现象留痕不删）：
+  ① **编码**：非 UTF-8 输出通道（重定向 / 管道 / 被捕获 ⇒ `sys.stdout.encoding` = `gbk/cp936`）下打印
+  含 `⇒` 的 `[工程] …` 行抛 `UnicodeEncodeError`、**无判定输出**（无参数打印 `__doc__` 亦崩）；现存以
+  `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` 一处覆盖两条路径（同 **#91** 家族）。
+  ② **★ 更要紧的：退出码语义**。原脚本 **rc=1 = `BAD`**，而 Python 未捕获异常**默认退 1** ⇒
+  **崩溃与"真判到 BAD"同码、不可区分**（现由 `try/except BaseException` 兜住）。**定案四分**：
+  `0 = COMPLETE` / `1 = BAD` / `2 = 用法·零证据` / **`3 = 内部错误`**（`[ERR] 内部错误（非判定结果）`
+  走 stderr）。**判据：见 `rc=3` 即"没判"**，不得采信、不得当日归档结论用。
+- **处置（本轮，只本工程）**：`projects/app_iwdg_cpu2_test/tests/run_test.py` 的 `--case-timeout`
+  `default` **120 → 30**（= 实测下界 11s 的 ~3 倍，留裕量）；回归耗时 **12.3 → 3.1 min**。
+  **`common/` 未改**（按既定口径"只调本工程默认值，不动公共层"）。
+- **待评估（本项的核心悬置项）**：走"**两遍烧录 + `clear()`**"的**其它工程同样有该竞态** —— 只是
+  它们的采集窗远大于自身用例时长、**尚未暴露**。**建议另立事项评估公共层 `clear()` 是否要加
+  "清空后确认无残留"**（治本），而非逐个工程调默认值。
+- **可复用教训**：窗口取值**贴边界不可靠**（它是竞态，11s 只是"本次两轮都干净"）⇒ 取实测下界的
+  数倍；且**跨轮对比前先核归档完整性**（H1/H2/H3），别只看"逐项结果一致"。
+- 关联：#100/#102（本工程"采集窗按标称值设"的同族）· #88（产物/证据新鲜度同族）· `qsh-test-run` §4.2 ·
+  `reports/2026-09-24-1/board-2026-09-24.md`「事项 ②」。
 
 ---
 
@@ -1087,6 +1245,13 @@ deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 �
   `CONFIG_LOG_PROCESS_THREAD_STACK_SIZE` 提到 2048（150 字符行在 log 线程里格式化，默认 1024 偏紧）。
 - ⚠ 这是"**最需要证据的时候报告最像好消息**"的同族坑（与内存兜底假 PASS —— INBOX G-P6-1 / G-D1，已由哨兵门修复 —— 同源）：
   报告缺行不会报错，只会静默少内容。
+- ⚠ **衍生纪律（2026-09-24，同日收紧）：deferred 下"行的位置不可信、自带时间戳 = 生成时刻"** ——
+  日志被 log 线程延迟排出、甚至**跨行插入**（同族但独立于"丢消息"：本例消息没丢，是**位置/顺序**不可信）。
+  **区分两件事**：① **行的物理位置/先后** ⇒ 不可信，**禁止**用"日志出现的先后"推硬件事件次序；
+  ② **该行自带的时间戳** ⇒ **= 生成时刻，可用**（`LOG_ERR` 宏在调用线程内打包并提交，deferred 只延迟
+  格式化/输出；源码路径见 `log_msg.h:375 → log_msg.c:51 → log_core.c:690`）。⇒ **判硬件时序读时间戳、
+  别看行排第几**。此前"打印时刻 ≠ 生成时刻 ⇒ 生成时刻不可定"的写法**过头了**，已更正 —— 见
+  `debug-knowledge/common/deferred-log-timestamp-not-generation-time.md`。
 
 **86. `io_probe_test` 首跑矩阵是下三角 artifact —— 驱动过的脚没还原，整张矩阵不可信**（2026-09-18）
 - 实测：`links=2862 / asym=2624`（75 脚无向对数上限 2775，links 已超上限）。逐行统计 block1 的 `#`
@@ -1181,6 +1346,11 @@ deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 �
 即抛 `UnicodeEncodeError: 'gbk' codec can't encode character '↔'` ⇒ **脚本当场退出 rc=1**，
 后续 RAW 输出全丢（SUMMARY 因先打印而幸存）。
 - 影响面：任何固件日志含非 GBK 字符（箭头/数学符号/生僻汉字）的工程。
+- **同族复发（2026-09-24，脚本侧）**：已修 `scripts/check_archive.py`（见 #117 增补 2）；**待修**：
+  `scripts/dump.py`（`--all` 的 `⇒`）、`scripts/normgroup.py`（`»`）、`tmp/a2/hw_cmp.py`（`✓`/`✘`）。
+  三者**同形**：输出被重定向 / 管道（`sys.stdout.encoding` = `gbk/cp936`）即抛 `UnicodeEncodeError`
+  —— `check_archive` 还叠了"**崩溃 rc=1 与它自己的 `BAD` 同码**"的加倍风险。
+  **纪律**：脚本输出避开非 GBK 字符，或统一起手 `sys.stdout.reconfigure(encoding="utf-8")`。
 - 修法（模板统一，全 23 份 `dbg_run.py`）：启动时
   `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`，或把 `print` 包在
   `try/except UnicodeEncodeError`。已固化 qsh-test-gen §1.5 + ref-gen-errors。
@@ -1257,7 +1427,7 @@ deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 �
   `if state == MEM_OK and not note:`（`:127`）才走裸标签 —— `ok` **且 note 非空**时照常拼接。
   向后兼容（`ok` 且无 note 的常规路径输出**逐字不变**）已离线验证：
   四种输入（`ok+note` / `ok 无 note` / `invalid` / `no_sentinel_symbol`）渲染控制台 / `.md` / `.json`，
-  仅 `ok+note` 变化，其余三种 `new == old`；脚本 `tmp/emmcfix/verify_mem_state_line.py`。
+  仅 `ok+note` 变化，其余三种 `new == old`；脚本 `scripts/verify_mem_state_line.py`（2026-09-24 由 `tmp/emmcfix/` 迁入）。
   ⚠ **残留缺口**：`projects/eth_test/tests/run_test.py` 的**控制台** `print_report()`（:360-373）
   只打印 `mem={mem_state}`，**不经** `mem_state_line()` ⇒ 该工程控制台仍看不到 note
   （`.md`（:393）/ `.json` 已可见）。H12② 的症状恰来自 eth_test；补齐需改该工程（不在本轮写域）。
@@ -1325,6 +1495,9 @@ SUMMARY 恒为 `ZT_BOOT seen`。同轮 GDB 读 RAM：`test_results[0] = TR_PASS`
 - **残留（待 runner 推广）**：其余工程多由同一模板复制、**同缺陷**；`run_test.py`（正式回归）自带
   stdout drain 线程、**不受影响**。未修的工程仍以 `dump_results.py --json` 内存兜底为准
   （qsh-test-compare §3），修好串口判读前勿据此判驱动挂死。
+- **证据文件说明（2026-09-24）**：本条引用的 `tmp/hw4/`（`cap_ts2.txt` / `cap_ts2_run.log` /
+  `cap_ts_r1.txt` / `i2c_fix_r1.log` / `i2c_final_r1.log`）**已随 2026-09-24 的 `tmp/` 清理移除**；
+  关键数值已**内联于正文**，结论以正文为准。
 - 关联：qsh-test-run §3/§6 · qsh-debug §7 · qsh-test-compare §3 · qsh-test-gen §1.5（模板须带 drain）。
 
 **99. `i2c_pure_test` 的 `i2c_wave` 整轮实测 ≈ 10.28s —— 源码注释正确（原"≥40s"结论已撤回）**（2026-09-19，**2026-09-19 更正**）
@@ -1335,7 +1508,8 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   造成的测量假象（窗口被 `load` 占用），**不是固件变慢**。源码注释 `~10s` / `≈10.1s` **正确，不改**。
 - 处置：`--timeout` 不必因"变慢"加大，但**采集窗须留够 = 用例时长 + `load`（~4s）**；
   该 case 拿不到尾部证据的真因是 #97 的管道缺陷（与耗时正交），修 `dbg_run.py` 后串口可正常判读。
-- 证据：`tmp/hw4/cap_ts_r1.txt`（逐轮时间戳）· `tmp/hw4/load_timing_nopkt.log`（load 4s）。
+- 证据：`tmp/hw4/cap_ts_r1.txt`（逐轮时间戳）· `tmp/hw4/load_timing_nopkt.log`（load 4s）。（**均已随
+  2026-09-24 的 `tmp/` 清理移除**；数值已内联于正文。）
 - 关联：qsh-test-run §6 · KNOWN_ISSUES #97。
 
 ---

@@ -28,10 +28,13 @@ import re
 import sys
 from pathlib import Path
 
-#: 汇总表行：`| [<名>](<链接>) | PASS|FAIL | <计数> |`
+#: 汇总表行：`| [<名>](<链接>) | PASS|FAIL[ <标记>] | <计数> |`
+#: 结果词后可有**可选的可视标记**（`FAIL ❌` / `ENV-ABORT ⚠️`，见
+#: `report_dir._mark_result`）。标记是纯渲染，本解析器**只当它不存在**，
+#: 旧格式（无标记）与带标记格式都能解析 —— 两者都必须认，否则历史归档解析会静默丢行。
 SUMMARY_ROW_RE = re.compile(
     r"^\|\s*\[(?P<name>[^\]]+)\]\((?P<link>[^)]+)\)\s*\|"
-    r"\s*(?P<verdict>PASS|FAIL)\s*\|\s*(?P<count>[^|]+?)\s*\|\s*$")
+    r"\s*(?P<verdict>PASS|FAIL)(?:\s+\S+)?\s*\|\s*(?P<count>[^|]+?)\s*\|\s*$")
 
 #: 报告头部字段：`- 工程: xxx`
 HEADER_RE = re.compile(r"^-\s*(?P<key>[^:：]+)[:：]\s*(?P<val>.*)$")
@@ -54,7 +57,13 @@ def _sync_summary_pointer(session: Path, n_fail: int) -> None:
     这一步是纯机械的，不该靠人记。
 
     ⚠️ 只在**末尾追加/替换该前缀行**，绝不触碰 case 行（那是
-    `common/report_dir.py::update_summary` 的写域）—— 两者的写入面不重叠。
+    `common/report_dir.py::update_summary` 的写域）。
+
+    ⚠️ **写入面确有交叠**：`update_summary` 是**整文件重写**，若它不保留末尾注记，
+    本函数写的指针行会被静默抹掉（2026-09-24 实证过一次，见 `OPEN_ITEMS O-38`）。
+    现行契约 = **`update_summary` 负责保留尾行之后的注记**（`_read_trailing_notes`），
+    本函数只负责写。改动任一侧都要同时改另一侧 + 跑 `common/test_report_dir.py`
+    的 O-38 回归断言。
     """
     p = session / "summary.md"
     try:

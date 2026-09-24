@@ -389,9 +389,16 @@ static void tgt_apply_switch(bool to_i2c)
 }
 
 /* NACK 窗口：切 I2C pinmux 让 target 不响应 I3C 广播（CE2），延时
- * NACK_WINDOW_MS 后自动切回 I3C（不产生 I2C 帧，无需 'Y' 命令）。 */
+ * NACK_WINDOW_MS 后自动切回 I3C（不产生 I2C 帧，无需 'Y' 命令）。
+ *
+ * ⚠️ 必须先延时 TGT_SWITCH_DELAY_MS 再切，与 TGT_EVT_SWITCH 同款：
+ *   controller 侧按「dispatcher(~1ms) + TGT_SWITCH_DELAY_MS(5ms) ⇒ 窗口起点 ~6ms」
+ *   的模型决定何时发广播 NACK。若这里不延时，窗口实际落在 [~1, ~3]ms，
+ *   而 controller 到 ~6ms 才发 ⇒ 到达时 target 早已切回 I3C ⇒
+ *   `broadcast_nack_recovery` 收不到期望的 NACK（实测 3/3 确定性失败）。 */
 static void tgt_enter_nack_window(void)
 {
+	k_sleep(K_MSEC(TGT_SWITCH_DELAY_MS));	/* 与 controller 的时序模型对齐 */
 	tgt_apply_switch(true);		/* 切 I2C，不响应 I3C 广播 */
 	k_sleep(K_MSEC(NACK_WINDOW_MS));
 	tgt_apply_switch(false);	/* 自动切回 I3C */

@@ -39,6 +39,7 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 离线旁路（不碰板子）
   regression/replay.py     读 L0 归档 → 喂回同一条 L2（主路径猴补 L1 / --l2-direct 直调）
                            SPEC_REFERENCE §6.4.7 / §6.4.8 / §6.10.1
+                           ⚠️ "不碰板子"有已知漏洞（PORTS_DICT 族 11 工程 / OPEN_ITEMS O-40）
   common/expect_check.py   读 COVERAGE.md 的「独立预期」段 → 校验归档 INFO 实测值
                            （独立预期；文法/判定/两条纪律 → SPEC_REFERENCE §6.5.6）
 ```
@@ -82,7 +83,31 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 | 环境预检 / 擦除 / DebugServer | 必须上板 | — | §6.4.9 ① |
 
 **确定性断言（可被上表推翻）**：只要改动不落到「L1 采集段 / mem 兜底 / 固件」三者之一，
-就不需要上板（§6.4.9 ⑦）。一键离线复跑：`bash tmp/a1/verify_all.sh`（A1）、`tmp/a2/`（A2）。
+就不需要上板（§6.4.9 ⑦）。一键离线复跑：`bash tmp/a1/verify_all.sh`（A1 —— ⚠️ 自述与实测不符，见下注）、`tmp/a2/`（A2）。
+
+> ℹ️ **`tmp/a2/` 不是"一键离线"入口（2026-09-24 核实）**：该目录**没有单一入口脚本**（无 `verify_all` /
+> `run_all` 之类）。**纯离线四件套已于 2026-09-24 迁入 `scripts/`** —— `equiv.py`（静态等价）/
+> `l1survey.py`（现状盘点）/ `dump.py` / `normgroup.py`（+ 快照 `scripts/equiv_before/`），须**逐个点名**运行；
+> **未迁的 `tmp/a2/hw_cmp.py` 自述"抽样上板"**。**勿把 `tmp/a2/` 当作离线一键复跑。**
+
+> ⚠️ **"自述"两个方向都别信（2026-09-24）**：`tmp/a2/hw_cmp.py` 自述"抽样上板"，但**脚本体零硬件调用**
+> （只读两个目录）⇒ 自述**夸大**；`tmp/a1/harness.py` / `verify_all.sh` 自述"离线不碰板子"却**会落到
+> 真硬件入口** ⇒ 自述**缩小**。**判据看代码与实测，不看文件头自述。**
+
+> ⚠️ **以下 `tmp/` 脚本**不要搬运、也不要 `import`（2026-09-24 核实）：
+> **`tmp/a2/patch_equiv{1..4}.py` 无 `__main__` 守卫** —— 顶层**直接**调 `common/acquire.py` 与
+> `equiv.py` 的 `write_text`，路径是 cwd 相对 ⇒ **运行、甚至只是被误 `import`，就会改写公共源码**
+> （同类：`insert_spec.py` / `apply_shells.py`，一次性 + 破坏性）。**碰硬件（一票否决、勿复跑）**：
+> `tmp/a1/{verify_all.sh, abrun.py, harness.py, coverage.py}`；**依赖被否模块**：`tmp/a1/synthgen.py`
+> （`import harness`）。
+
+> ⚠️ **`tmp/a1/verify_all.sh` 的"离线复跑"自述与实测不符（2026-09-24）** —— 其 **`after` 子树会走到
+> 真硬件入口**（PORTS_DICT 族工程触发 `DebugServer 前置检查` / `CAPTURE FAILED`，路径是通的）；且其
+> 第 7 步输入 `reports/2026-09-20-4` **已不可得** ⇒ **勿据其自述在无人看管时运行**。该三件套属**未迁**
+> 的 `tmp/` 线束；详见 `SPEC_REFERENCE` §6.4.9 ⑥ 注 · `reports/2026-09-24-1/scripts-promotion-2026-09-24.md` §2.1/§4.2。
+
+> ⚠️ **"离线重放"本身也有已知洞（2026-09-24）**：隔离网漏收 `ensure_debugserver_alive` ⇒ **PORTS_DICT
+> 族 11 个工程**重放**可能真探 1025 / 重启 DebugServer**；**自检 PASS ≠ 无洞**。见 `OPEN_ITEMS` **O-40**。
 
 **抽样面选取**（确实要抽样时）：按"被改动触及的公共代码路径"选，不按工程选；7 判定家族各 ≥1、
 5 个 L1 适配器组各 ≥1、单双核各 ≥1、异常路径（mem 兜底 / 零 token / truncated / 标记矛盾）各 ≥1
@@ -111,7 +136,7 @@ L2  处理   common/process.py       run() / process_archive() / read_archive()
 | 链路级预检 | `python regression/precheck/run_precheck.py [--session-dir d] [--timeout 40]` | §6.4.6 |
 | 跑单工程 | `cd projects/<p>/tests && python run_test.py [--case case_x]` | §6.4.8 · `qsh-test-run` §4.2 |
 | 跑单 case（调试） | `cd projects/<p>/tests && python scripts/dbg_run.py --case case_x --timeout 35` | `qsh-test-run` §3 |
-| **离线重放**（不碰板子） | `python regression/replay.py --session reports/<d> [--list] [--case X] [--project P --limit N] --l2-direct★ [--render-from-json] [--freeze-time]` | §6.4.7 · §6.4.8 · §6.10.1 · `qsh-test-compare` §4 |
+| **离线重放**（⚠️ "不碰板子"有洞：PORTS_DICT 族 11 工程 → `OPEN_ITEMS` O-40） | `python regression/replay.py --session reports/<d> [--list] [--case X] [--project P --limit N] --l2-direct★ [--render-from-json] [--freeze-time]` | §6.4.7 · §6.4.8 · §6.10.1 · `qsh-test-compare` §4 |
 | **查/审独立预期** | `python common/expect_check.py --session reports/<d>`（`--audit` 全库覆盖率，`--json`） | §6.5.6 |
 | 查某工程预期 | `projects/<p>/tests/COVERAGE.md` 的 `## 独立预期（机器可读）` 段 | §6.5 |
 | **查坑** | `KNOWN_ISSUES.md`（按域分节） | — |
