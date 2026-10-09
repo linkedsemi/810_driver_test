@@ -337,6 +337,181 @@ static void ctrl_test_pinctrl_states(void)
 	ctrl_test_end(TEST_PINCTRL_STATES, false);
 }
 
+#if DT_PROP(DT_NODELABEL(i3c5), no_bus_init)
+/* ============ no-bus-init 开关验证（A/B） ============
+ *
+ * **本段只在控制器 DTS 写了 `no-bus-init;` 时编译进来**（DT 属性门控，
+ * 不用 Kconfig：本工程 cpu0 无应用 Kconfig 根，加一个会改 KCONFIG_ROOT，
+ * 属对既有 case 的潜在爆炸半径；DT 门控天然与"开关被配置"同频）。
+ *
+ * ⚠️ 门控必须写 `#if DT_PROP(node, no_bus_init)`，**不能**写
+ * `#if DT_NODE_HAS_PROP(node, no_bus_init)`：后者展开成
+ * `IS_ENABLED(<node>_P_no_bus_init_EXISTS)`，而**boolean 属性一旦在 binding
+ * 里声明，所有实例的 `_EXISTS` 恒为 1**（实测：同族未设值的 `is_secondary`
+ * 也是 `_EXISTS 1` / 值 0）⇒ 门控恒真、A/B 会在既有 case 里也跑起来并误判
+ * FAIL。真正的"写了没有"在**值宏**里（`DT_PROP` = 0/1）。
+ *
+ * 前置事实（开关生效的必要条件）：`&i3c5` 有 i3ctarget6 子节点 ⇒
+ * `num_i3c == 1` ⇒ 驱动 init 里的守卫 `num_i3c > 0` 成立。若 num_i3c == 0，
+ * 驱动**本来就不调** i3c_bus_init()，本用例无判别力 ⇒ 显式判失败。
+ *
+ * A/B 两半缺一不可：
+ *   ① 负控制：非枚举态下 target 必须"够不到"（传输失败 + 无动态地址）；
+ *   ② 恢复：应用显式调 i3c_bus_init() 后，同一 target 必须恢复可达。
+ * 分开跑没意义 —— 只有"同一硬件 ①失败 / ②成功"才把结论钉在开关上，
+ * 而不是钉在"接线不通/板子坏了"。
+ *
+ * ⚠️ 本工程 target 侧校验是**通用**的（'B'/'E' + 写 pattern 逐字节），
+ * 不为本段新增 target 侧代码；靶向证据由 ② 之后的正常 'B'/16B 写读/'E'
+ * 产生。⇒ 本段**不引入新的测试项名**：`run_test.py::TEST_NAMES` 是**全局**
+ * 表，新增项会让既有 case_switch_core 因该项在两核皆 MISSING 而判 FAIL。
+ */
+
+/* 控制器侧取 dev_list：i3c.h 明文契约"struct i3c_driver_config 是所有 I3C
+ * 驱动 config 的**首成员**"⇒ 该向下转换是文档化用法，不是私有结构体 hack
+ * （i3c_common.c 的 i3c_dev_list_i3c_addr_find() 内部做的也是同一转换）。 */
+static const struct i3c_dev_list *ctrl_dev_list(void)
+{
+	const struct i3c_driver_config *cfg =
+		(const struct i3c_driver_config *)ctrl_i3c_dev->config;
+
+	return &cfg->dev_list;
+}
+
+/* ①/② 的判决暂存：本段跑在 ctrl_test_begin() **之前**（① 期间总线不可达，
+ * 'B' 命令帧发不出去），而 begin 会按 id 清 ctrl_failed ⇒ 不能直接用
+ * ctrl_set_fail，先存这里，begin 之后再并入本项。 */
+/* 判决暂存：**首次失败保留**（后写覆盖先写会丢掉根因线索——多个断言同时不成立时，
+ * 第一个才是源头）。nbi_failed 照常置位，只冻结 reason。
+ * 数值一律由 nbi_info 全量上报（不受本策略影响）。 */
+static bool nbi_failed;
+static char nbi_reason[TR_REASON_LEN];
+static char nbi_info[192];
+
+static void nbi_set_fail(const char *fmt, ...)
+{
+	va_list ap;
+
+	if (!nbi_failed) {
+		va_start(ap, fmt);
+		vsnprintk(nbi_reason, sizeof(nbi_reason), fmt, ap);
+		va_end(ap);
+	}
+	nbi_failed = true;
+}
+
+static void ctrl_nobusinit_ab(void)
+{
+	const struct i3c_dev_list *dl = ctrl_dev_list();
+	const struct i3c_device_id tgt_id =
+		I3C_DEVICE_ID_DT(DT_NODELABEL(i3ctarget6));
+	struct i3c_device_desc *desc;
+	uint8_t wr = CMD_WRITE_PATTERN;
+	uint8_t rd[16];
+	int neg_xfer = 0, probe_ret = 0, init_ret = 0;
+	size_t probe_act = 0;
+	unsigned neg_dyn = 0, after_dyn = 0;
+
+	nbi_failed = false;
+	nbi_reason[0] = '\0';
+	nbi_info[0] = '\0';
+
+	/* 前提自检：num_i3c > 0（守卫生效条件） */
+	if (dl->num_i3c == 0U) {
+		nbi_set_fail("premise_num_i3c_0");
+		snprintk(nbi_info, sizeof(nbi_info), "num_i3c=0");
+		return;
+	}
+
+	/* ---------- ① 负控制：驱动 init 跳过了 i3c_bus_init() ---------- */
+
+	/* PID 查表（不依赖动态地址）：拿到驱动自己的 desc。
+	 * desc->bus 是编译期 DT 派生的 ⇒ 非枚举态下也可安全用于传输。 */
+	desc = i3c_dev_list_find(dl, &tgt_id);
+	if (desc == NULL) {
+		nbi_set_fail("neg_desc_not_found");
+	} else {
+		neg_dyn = desc->dynamic_addr;
+	}
+
+	/* 主判据 1：**没有动态地址**。dynamic_addr 只可能由 DAA/SETDASA 写入，
+	 * 二者都在被跳过的 i3c_bus_init() 里 ⇒ 非 0 即"开关没生效"。 */
+	if (desc != NULL && desc->dynamic_addr != 0U) {
+		nbi_set_fail("neg_dynaddr_%u", desc->dynamic_addr);
+	}
+	/* 主判据 2：附着表（DAA 期间填充）必须为空 —— 与判据 1 互为独立证据 */
+	if (i3c_dev_list_i3c_addr_find(ctrl_i3c_dev, I3C_SWITCH_TARGET_ADDR) != NULL) {
+		nbi_set_fail("neg_attached");
+	}
+	/* 主判据 3：非枚举态下的传输必须失败，且错误码**确定**
+	 * （驱动 ls_i3c_transfer 对 dynamic_addr==0 直接返回 -EINVAL，确定性，
+	 *  不依赖总线 NACK 是否被上报）。原样上报 0 = 串口会记 neg_xfer=0。 */
+	if (desc != NULL) {
+		neg_xfer = ctrl_i3c_write(desc, &wr, sizeof(wr));
+		if (neg_xfer != -EINVAL) {
+			nbi_set_fail("neg_xfer_ret_%d", neg_xfer);
+		}
+	}
+
+	/* 总线级旁证：把动态地址临时设成"它将会获得的 0x32"再发一笔读。
+	 * 此刻 target 硬件侧 DAVALID=0（从未被赋址）⇒ 总线上无人应答。
+	 * 判据取**安全形**（与 i3c_dualcore_test::nack_bad_addr 同口径）：
+	 * 本硬件上"地址 NACK 是否被上报"随总线时序变化
+	 * ⇒ 硬性要求 = "没返回数据"（ret!=0 或 actual==0），
+	 *    原始 ret/actual 走 INFO 上报供报告分析。
+	 * 只读副本，不改驱动 desc 的任何状态。 */
+	if (desc != NULL) {
+		struct i3c_device_desc probe = *desc;
+		struct i3c_msg msg = {
+			.buf = rd,
+			.len = sizeof(rd),
+			.flags = I3C_MSG_READ | I3C_MSG_STOP,
+			.hdr_mode = 0,
+			.hdr_cmd_code = 0,
+			.num_xfer = 0,
+		};
+
+		probe.dynamic_addr = I3C_SWITCH_TARGET_ADDR;
+		probe_ret = i3c_transfer(&probe, &msg, 1);
+		probe_act = msg.num_xfer;
+		if (!(probe_ret != 0 || probe_act == 0U)) {
+			nbi_set_fail("neg_probe32_data");
+		}
+	}
+
+	/* ---------- ② 恢复：应用显式调 i3c_bus_init() ---------- */
+
+	init_ret = i3c_bus_init(ctrl_i3c_dev, dl);
+	if (init_ret != 0) {
+		nbi_set_fail("init_ret_%d", init_ret);
+	} else {
+		if (desc != NULL) {
+			after_dyn = desc->dynamic_addr;
+			if (desc->dynamic_addr != I3C_SWITCH_TARGET_ADDR) {
+				nbi_set_fail("recover_dynaddr_%u", desc->dynamic_addr);
+			}
+		}
+		if (i3c_dev_list_i3c_addr_find(ctrl_i3c_dev,
+					       I3C_SWITCH_TARGET_ADDR) == NULL) {
+			nbi_set_fail("recover_not_attached");
+		}
+	}
+
+	/* 数值留档（进报告「实际」列；判据在上面的 nbi_set_fail） */
+	snprintk(nbi_info, sizeof(nbi_info),
+		 "num_i3c=%u,nbi_neg_dyn=%u,nbi_neg_xfer=%d,nbi_probe32_ret=%d",
+		 dl->num_i3c, neg_dyn, neg_xfer, probe_ret);
+	printk(I3C_I2C_TOKEN_PREFIX ":CTRL:INFO:%s:%s\n",
+	       i3c_i2c_test_names[TEST_I3C_BASELINE], nbi_info);
+	snprintk(nbi_info, sizeof(nbi_info),
+		 "nbi_probe32_act=%u,nbi_init_ret=%d,nbi_after_dyn=%u,nbi_verdict=%s",
+		 (unsigned)probe_act, init_ret, after_dyn,
+		 nbi_failed ? "FAIL" : "PASS");
+	printk(I3C_I2C_TOKEN_PREFIX ":CTRL:INFO:%s:%s\n",
+	       i3c_i2c_test_names[TEST_I3C_BASELINE], nbi_info);
+}
+#endif /* DT_PROP(DT_NODELABEL(i3c5), no_bus_init) */
+
 static void ctrl_test_i3c_baseline(void)
 {
 	/* 先 DAA 再发 'B'：'B' 经 I3C 帧发送需要 target_desc 已就绪
@@ -348,15 +523,31 @@ static void ctrl_test_i3c_baseline(void)
 		return;
 	}
 
+#if DT_PROP(DT_NODELABEL(i3c5), no_bus_init)
+	/* no-bus-init A/B（见上方 ctrl_nobusinit_ab）：必须在 begin 之前跑 ——
+	 * ① 期间总线不可达，'B' 命令帧发不出去。判决存 nbi_*，begin 之后并入。 */
+	ctrl_nobusinit_ab();
+#endif
+
 	target_desc = ctrl_wait_for_target();
 	if (target_desc == NULL) {
 		ctrl_test_begin(TEST_I3C_BASELINE, false);
+#if DT_PROP(DT_NODELABEL(i3c5), no_bus_init)
+		if (nbi_failed) {
+			ctrl_set_fail("nbi:%s", nbi_reason);
+		}
+#endif
 		ctrl_set_fail("daa_timeout");
 		ctrl_test_end(TEST_I3C_BASELINE, false);
 		return;
 	}
 
 	ctrl_test_begin(TEST_I3C_BASELINE, true);
+#if DT_PROP(DT_NODELABEL(i3c5), no_bus_init)
+	if (nbi_failed) {
+		ctrl_set_fail("nbi:%s", nbi_reason);
+	}
+#endif
 	ctrl_basic_rw();
 	ctrl_test_end(TEST_I3C_BASELINE, true);
 }

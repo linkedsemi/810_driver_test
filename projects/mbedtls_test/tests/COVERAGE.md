@@ -38,8 +38,10 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 | sha384_kat | mbedtls_sha512_*（is384=1；软件/HW/OTBN 路由） | 功能通路+边界长度 | 4 短向量 + 百万'a' | FIPS 180-4 + hashlib | ✅ |
 | sha512_kat | mbedtls_sha512_*（is384=0） | 功能通路+边界长度 | 4 短向量 + 百万'a' | FIPS 180-4 + hashlib | ✅ |
 | sm3_kat | mbedtls_sm3_starts/update/finish（OTBN/HW ALT 路由） | 功能通路+边界长度 | 4 短向量 + 百万'a' | GM/T 0004-2012 附录 A + hashlib(sm3) | ✅ |
-| sha256_bad_params | mbedtls_sha256_starts/update/finish 异常参数 | 异常参数 | NULL ctx/input 返回非 0；len=0 合法；reset 后再 update 正常 | API 契约 | ✅ |
-| sha384_bad_params | mbedtls_sha512_starts/update/finish 异常参数 | 异常参数 | NULL 返回非 0 | API 契约 | ✅ |
+| sha256_bad_params | mbedtls_sha256_starts/update/finish 异常参数 | 异常参数 | **is224=2 返回非 0**（文档化）；len=0 合法；reset 后再 update 正常 | API 契约 | ✅ |
+| sha384_bad_params | mbedtls_sha512_starts/update 异常参数 | 异常参数 | **is384=2 返回非 0**（文档化）；合法 starts+update 正常 | API 契约 | ✅ |
+| **sha256_alt_null_params**（仅 SHA256 ALT case 编入） | sha256_starts(NULL) / update(NULL, ilen>0) | **ALT 加固（超出 mbedtls 契约）** | 两项均须**返回非 0**而非崩溃 | 本驱动加固承诺（contract） | ⏳ 新增 |
+| **sha512_alt_null_params**（仅 SHA512 ALT case 编入） | sha512_starts(NULL) / update(NULL, ilen>0) | **ALT 加固（超出 mbedtls 契约）** | 同上 | 同上 | ⏳ 新增 |
 
 ### 对称加密
 
@@ -47,6 +49,14 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 |--------|--------------------|------|----------|----------|------|
 | aes128_cbc | mbedtls_aes_setkey_enc/dec + mbedtls_aes_crypt_cbc（ENC/DEC；HW 经 `MBEDTLS_CIPHER_AES_LINKEDSEMI`） | 功能通路+异常参数 | 4 块加密向量 + 解密回环 | NIST SP800-38A F.2.1 | ✅ |
 | aes128_ctr | mbedtls_aes_setkey_enc + mbedtls_aes_crypt_ctr | 功能通路 | 4 块 CTR 向量 + 解密回环 | NIST SP800-38A F.5.1 | ✅ |
+| **aes_ecb_order** | mbedtls_aes_crypt_ecb vs crypt_cbc(单块,IV=0) vs crypt_ctr(单块,counter=明文) 三路互比 | **契约（数据字节序）** | 三路输出均须逐字节等于 FIPS-197 C.1 的 `69C4E0D8…C55A` | FIPS-197 附录 C.1（golden） | ⏳ 新增 |
+| **aes128_ctr_seg** | mbedtls_aes_crypt_ctr 分段调用状态（`nc_off`/`nonce_counter`/`stream_block`） | **契约（调用状态）** | 7+16+41 分段与单次 64B 逐字节等价；调用后 `nc_off`=7/7/0、`nonce_counter`=CNT1/CNT2、`stream_block`=对应 keystream 块 | NIST F.5.1 + mbedtls CTR 契约（golden+contract） | ⏳ 新增 |
+| **aes128_ctr_len** | mbedtls_aes_crypt_ctr 非整块长度 1/15/17/31 | **边界 + 越界** | 密文等于 NIST CT 前 N 字节；缓冲区两侧哨兵 0xA5 不得被改写 | NIST F.5.1（golden） | ⏳ 新增 |
+| **aes128_ctr_inplace** | mbedtls_aes_crypt_ctr（input == output） | 别名 | 原地结果与非原地/标准向量一致 | NIST F.5.1（golden） | ⏳ 新增 |
+| **aes128_ctr_unaligned** | mbedtls_aes_crypt_ctr（输入输出各偏移 1 字节） | 对齐 | 不触发未对齐异常，结果等于 NIST CT | NIST F.5.1（golden） | ⏳ 新增 |
+| **aes128_xts** | mbedtls_aes_xts_setkey_enc/dec + crypt_xts（含 55B ciphertext stealing） | 功能通路+边界 | IEEE P1619/D16 向量 1-3 加密 KAT + 用 KAT 密文解回明文 + 55B 回环（且密文≠明文） | mbedtls `test_suite_aes.xts.data`（golden，出处 pdf00086.pdf） | ⏳ 新增 |
+| **aes128_xts_multi_ctx** | 两个 aes_xts context 绑不同密钥后**交错使用** | **契约（多 context 隔离）** | 各自仍等于自己的 KAT | 同上（golden） | ⏳ 新增 |
+| **aes_alt_null_params**（仅 ALT case 编入） | setkey/crypt_cbc/crypt_ecb/crypt_ctr 传 NULL ctx/key/in/out/nc_off | **ALT 加固（超出 mbedtls 契约）** | 七项均须**返回非 0**而非崩溃 | 本驱动加固承诺（contract） | ⏳ 新增 |
 | aes128_gcm | mbedtls_gcm_setkey + gcm_crypt_and_tag | 功能通路+AEAD tag | 2 块 ciphertext + 16B tag + 解密回环 | NIST GCMVS（OpenSSL 复核） | ✅ |
 | sm4_ecb | mbedtls_sm4_setkey + sm4_ecb_encrypt/decrypt（HW） | 功能通路 | 32B 加密向量 + 解密回环 | draft-ribose-cfrg-sm4-10 A.2.1.1 | ✅ |
 | sm4_cbc | 测试层 CBC 组合（sm4_alt 无 CBC API） | 组合语义 | 32B CBC 向量 + 解密回环 | GB/T 32907（OpenSSL 复核） | ✅ |
@@ -181,6 +191,103 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 
 ---
 
+## 修订（2026-09-29，客户反馈 AES-CTR ALT 契约）
+
+### 背景
+客户反馈 `CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI=y` 下
+`modules/crypto/mbedtls/library/aes_alt.c:358` 的 `mbedtls_aes_crypt_ctr()`
+未实现 mbedtls 要求的 CTR 调用状态管理（`nc_off` / `stream_block` /
+`nonce_counter` **三个状态参数一个都没用**），且循环体假定长度是 16 的整数倍、
+输入输出 4 字节对齐 ⇒ 分段调用状态丢失（CTR keystream 复用）、非整块输入越界读写。
+
+### 原覆盖为何漏掉它
+原 `aes128_ctr` 只覆盖「单次调用 + 64 字节（4 个整块）+ `iv_off=0`」这一条
+**恰好可能正确**的路径，且**只断言密文**，`iv_off` / `nonce_counter` /
+`stream_block` 调用后状态一个都没检查 ⇒ 对该缺陷零覆盖。该 ✅ 属实但无判别力。
+
+### 新增 5 项（全部编入**每个** case，故 `case_sw_baseline` 与硬件 case 构成 A/B 对照）
+`aes_ecb_order`（数据字节序契约）、`aes128_ctr_seg`（分段等价 + 调用状态）、
+`aes128_ctr_len`（1/15/17/31 + 越界哨兵）、`aes128_ctr_inplace`（原地）、
+`aes128_ctr_unaligned`（未对齐）。
+
+**`aes_ecb_order` 的判定逻辑**：`aes_alt.c` 三条路径对同一组 DATA/RES 寄存器用了
+**互相矛盾**的字节序约定 —— ECB(`:149-159`) 不做转换且是唯一传 `CRYPT_TYPE=0x2` 的，
+CBC(`:200-211`) 与 CTR(`:383-393`) 做 `__builtin_bswap32` 且传 `CRYPT_TYPE=0x0`。
+同一硬件不可能两种约定都对。本项用「单块 CBC(IV=0)」与「单块 CTR(counter=明文, 明文=0)」
+都必须等于 AES-ECB(同一块)」这一**与硬件字节序无关的不变量**去判别。
+注意 mbedtls 3.6.2 的 GCM 经 `block_cipher.c:189` 落到 `mbedtls_aes_crypt_ecb`，
+故 ECB 的判定同时决定 GCM/CFB/OFB/XTS 是否正确。
+
+### 向量来源（生成器自校验）
+`tests/tmp/gen_cipher_vectors.py` 扩展后重新生成 `expected/cipher_vectors_extra.h`：
+新增 `MT_AES128ECB_{KEY,PT,CT}`（FIPS-197 C.1，生成器内 assert 比对公开值）、
+`MT_AES128CTR_KS`（keystream = PT XOR CT）、`MT_AES128CTR_CNT1/CNT2`（递增后 counter）。
+已 diff 确认**只有新增、无既存宏漂移**。
+
+### 同轮修复的其余 ALT 缺陷（O-42，客户未报告，经审计发现后按用户"有问题都要修"裁定一并处理）
+
+同一轮契约审计在同一文件查出另 4 类缺陷，均已修（`modules/crypto/mbedtls/library/aes_alt.c`）：
+
+| 缺陷 | 原状 | 修法（对齐上游 `library/aes.c`） | 新增门禁 |
+|---|---|---|---|
+| CBC 用断言代替错误码 | `__ASSERT_NO_MSG(length % 16 == 0)`；`CONFIG_ASSERT=n` 时断言消失，循环按 16B 整块读写 ⇒ **越界读写** | 返回 `MBEDTLS_ERR_AES_INVALID_INPUT_LENGTH` | 既有 `aes_bad_params` 现可真正生效 |
+| CBC `length == 0` | 丢了上游的早退；加密分支 `memcpy(iv, output-16, 16)` **读调用方缓冲区之前 16 字节**，解密分支把**未初始化栈**写进 `iv` | 补 `if (length == 0) return 0;` | 同上 |
+| `aes_hw_setkey` 非法 keybits | 静默 `return 0`、`CRYPT_AESKS` 落 0 ⇒ **用上一次遗留的 KEY 寄存器**算 128 位 AES 并报成功；且 `keybits/8` 未校验，>256 时 `memcpy` 溢出 `ctx->key[32]` | 返回 `MBEDTLS_ERR_AES_INVALID_KEY_LENGTH`；`setkey_enc` 补 `ctx/key` 空指针守卫 | 既有 `aes_bad_params` |
+| XTS key1 存文件级全局量 | 只存**指向调用者缓冲的指针** ⇒ 多 context 互踩 / 悬垂 | 存进 `ctx->crypt`（同上游）；去掉每块重复 setkey | **新增** `aes128_xts` / `aes128_xts_multi_ctx` |
+| key 装载强转 `uint32_t*` | 假定调用者 key 缓冲 4 字节对齐，未对齐在本核 fault | 改 `MBEDTLS_GET_UINT32_BE` 按字节读（LE 上等价，且对齐安全） | 既有全部 AES KAT |
+
+> **未处理（登记在 `OPEN_ITEMS.md` O-42）**：`aes_free` 不清硬件 KEY 寄存器、忙等无超时。
+>
+> **➕ 第二轮补修（2026-09-29，板级首验后）**：
+> ① **共享寄存器互斥**（原 O-42⑤）：新增文件级 `K_MUTEX_DEFINE(aes_hw_lock)`，
+> 把「重装 key → 写 DATA → GO → 轮询」作为**一个事务**包住（只锁单次寄存器写不够 ——
+> 别的用户的密钥仍会落在我们的 setkey 与 GO 之间）。`crypt_ctr` 内部改调**不带锁**的
+> `aes_hw_ecb_block()`，否则会重复获取同一把不可重入的 `k_mutex` 而死锁。
+> 注意：`k_mutex` 是睡眠锁 ⇒ **AES 不可在 ISR 中调用**。
+> ② **NULL 入参加固**：`crypt_cbc`/`crypt_ecb`/`crypt_ctr` 补 NULL 守卫
+> （板级首验发现 `aes_bad_params` 的故障点只是**移位**到了
+> `crypt_cbc` 的 `memcpy(last_input_block, NULL, 16)` —— 原先只守了 setkey）。
+> ③ **数据访问对齐安全**：ECB/CBC 的数据读写也改字节访问器（原先强转 `uint32_t*`）。
+> 注意两条路径用的访问器**相反**且都必须如此 —— ECB 走硬件 BYTE_SWAP 模式用
+> `*_LE`（不手动换序），CBC 走 NOT_SWAPPED 用 `*_BE`（硬件不换、软件换）。
+> ④ **`aes_bad_params` 拆分**：它原先混入两条**超出 mbedtls 契约**的 NULL 断言，
+> 而上游 `mbedtls_aes_setkey_enc()` 对 ctx/key 不做 NULL 检查（`library/aes.c` 直接解引用），
+> **软件基线必然崩溃** ⇒ 纯软件 case 因一条它永远无法满足的断言而失败。
+> 已把 NULL 加固移到仅 ALT 编入的新用例 `aes_alt_null_params`，共享用例只留契约断言
+> （错误 keybits → 错误码）。**覆盖没有丢，只是换了归属**。
+
+### ⚠️ 判定链同期变更（`common/`，影响全部 810 工程）
+`common/ztest_report.py` + `common/judge.py` 新增 R9：**测试项执行窗口内出现 `ZEPHYR FATAL ERROR` 的判 FAIL**。
+原先 ztest 的 `test_result` 停在初值、异常吞成假 PASS。本工程受影响的 4 项中
+`aes_bad_params` 已由上面的 NULL 守卫消除异常；其余三项（`sha256_bad_params` / `sha384_bad_params` /
+`ecdsa_tamper_verify`）的 NULL 解引用在 `sha256_alt.c` / `sha512_alt.c` / `ecdsa.c`，
+R9 落地后曾由"假 PASS"转为**真 FAIL**（那是暴露既有缺陷，不是回归）。
+
+> **✅ 后续处置（2026-09-29，用户裁定"拆测试 + 只守自己的 ALT"）**：
+> 复核 `include/mbedtls/*.h` 发现 —— mbedtls **逐函数**声明哪些入参允许 NULL
+> （如 `sha256_free` 写 "may be NULL"），而 `starts`/`update` 的 ctx 写的是
+> **"must not be NULL"**；上游实现对 NULL ctx 不做检查、直接解引用。
+> ⇒ `robustness_test.c` 里那一族 NULL 断言**断言的是 mbedtls 明令禁止的调用方式**，
+> **软件基线必然崩溃**，它们此前"通过"纯粹是异常被吞成假 PASS。
+> **处置**：把 NULL 断言从共享用例移出，共享用例只断言**文档化**契约
+> （`is224/is384` 非法 → 错误码；`len=0` 合法；正常路径不变），
+> NULL 加固移入 **ALT 专属用例**（`aes_alt_null_params` / `sha256_alt_null_params` /
+> `sha512_alt_null_params`，按 `config-linkedsemi-alt.h` 的同一条件门控）。
+> **覆盖没有丢，只是换了归属。**
+> 我们的 ALT 文件保留全部 NULL 守卫（`aes_alt.c` / `sha256_alt.c` / `sha512_alt.c` / `ecdsa_alt.c`）；
+> **vendor 文件（`library/ecdsa.c` 等）的守卫已回退**，不向上游 mbedtls 分叉。
+> ⚠️ 未覆盖：OTBN ECDSA ALT 的 NULL 守卫（`ecdsa_alt.c`）**没有对应用例** ——
+> 它在非 OTBN ECC 的 case 里不参与编译，无法用统一门控表达，属已知缺口。
+
+
+### ⚠️ 计数表状态
+上文「case 与 Kconfig 路由」表的 `cipher×N` 各格**在本轮新增 7 项后已全部偏小**，
+且该表原有数字与本文件源码实际编入项**本就不一致**（例：`case_sw_baseline` 标
+`cipher×1`，而 `cipher_test.c` 里 `aes128_cbc`/`aes128_ctr`/`aes128_gcm` 三项
+无条件编入）。**故不按推算改数**，待本轮实测报告出来后按实际项数重新导出。
+
+---
+
 ## 独立预期（机器可读）
 
 > 格式 / 判定口径 / 伪独立识别规则见 `common/expect_check.py` 文件头。
@@ -191,10 +298,13 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 > 未上报 —— 那时判定为 `NO_ACTUAL`，属"有预期但观测不到"的缺口，与"无预期"不同）；
 > 断言是"多子返回值合取"或"结构性质"的项一律写 `!none`，不硬凑。
 >
-> ★ 已知缺陷（**非本次修复范围**）：`rsa_test.c:233/263` 的
-> `ZT_INFO("rsa%d_modexp", ...)` 把**格式串当成了名字字面量** ⇒ `rsa3072_modexp` 与
-> `rsa4096_modexp` 的 INFO 都落在同一个键 `rsa%d_modexp` 上（后写覆盖前写），
-> 两项在报告里恒为 `-`。修掉该行即可让这两项的预期生效。
+> ✅ **已修（2026-09-29 复核）**：本条原记 "`rsa_test.c:233/263` 的 `ZT_INFO("rsa%d_modexp", ...)`
+> 把格式串当名字字面量 ⇒ 两项恒为 NO_ACTUAL"。**该记载已过期**：当前源码
+> `rsa_test.c:193` 的 `rsa_modexp_kat(const char *ztest_name, int bits, ...)` 已把名字
+> 作为参数传入，`:233`/`:263` 用的是 `ZT_INFO(ztest_name, ...)`，调用点
+> `:274`/`:287` 分别传 `"rsa3072_modexp"` / `"rsa4096_modexp"`。
+> 报告侧亦已能取到值（`case_hw_all` 见 `rsa3072_modexp us=…`、`rsa4096_modexp us=…`）。
+> ⇒ 这两项的预期**不是** NO_ACTUAL，已可正常判定；下方 expect 行里的 ★ 标注一并删除。
 
 ```expect
 # 测试项 | 断言 | 来源标签:说明
@@ -205,6 +315,14 @@ sha512_kat | algo == sha512; vecs == 5; long_bytes == 1000000 | handcalc:同上�
 sm3_kat | algo == sm3; vecs == 5; long_bytes == 1000000 | handcalc:GM/T 0004 附录 A 4 组 + 百万 'a'
 aes128_cbc | algo == aes-128-cbc; bytes == 64 | handcalc:NIST SP800-38A F.2.1 四块 × 16B = 64
 aes128_ctr | algo == aes-128-ctr; bytes == 64 | handcalc:NIST SP800-38A F.5.1 四块 × 16B = 64
+aes_ecb_order | ecb_eq_nist == 1; cbc_eq_nist == 1; ctr_eq_nist == 1 | golden:FIPS-197 附录 C.1 —— 三路各以不同参数形态还原同一块 ECB，必须都等于标准密文
+aes128_ctr_seg | seg_eq_nist == 1; state_after7 == 1; state_after23 == 1; nc_off_final == 0 | golden:NIST F.5.1 —— 分段只改变 XOR 切分、不改变 keystream；状态量由公开 counter 序列推出
+aes128_ctr_len | len1 == 1; len15 == 1; len17 == 1; len31 == 1; guard_ok == 1 | golden:NIST F.5.1 密文前 N 字节 + 缓冲区哨兵不被改写
+aes128_ctr_inplace | inplace_eq_nist == 1 | golden:NIST F.5.1
+aes128_ctr_unaligned | unaligned_eq_nist == 1 | golden:NIST F.5.1
+aes128_xts | kat1 == 1; kat2 == 1; kat3 == 1; dec1 == 1; dec2 == 1; dec3 == 1; steal55 == 1 | golden:IEEE P1619/D16 向量 1-3（mbedtls test_suite_aes.xts.data）+ 55B 回环
+aes128_xts_multi_ctx | ctx_a_eq_kat == 1; ctx_b_eq_kat == 1 | golden:同上 —— 两 context 交错后各须等于自己的 KAT
+aes_alt_null_params | setkey_null_ctx != 0; setkey_null_key != 0; cbc_null_in != 0; cbc_null_out != 0; ecb_null_in != 0; ecb_null_out != 0; ctr_null_ncoff != 0 | contract:ALT 加固承诺（超出 mbedtls 契约，故仅 ALT case 编入）—— 每项须返回错误码而非崩溃
 aes128_gcm | algo == aes-128-gcm; bytes == 32 | handcalc:NIST GCMVS 两块 × 16B = 32
 sm4_ecb | algo == sm4-ecb; bytes == 32 | handcalc:draft-ribose-cfrg-sm4-10 A.2.1.1 两组 × 16B
 sm4_cbc | algo == sm4-cbc; bytes == 32 | handcalc:GB/T 32907 两组 × 16B
@@ -214,8 +332,8 @@ p256_keygen | curve == p256; mode == keygen_sign_verify | spec:同上
 p384_keygen | curve == p384; mode == keygen_sign_verify | spec:同上
 rsa2048_keygen | algo == rsa2048; keylen == 2048; exponent == 65537 | handcalc:RSA-2048 + F4 指数（FIPS 186-5 常用取值）
 rsa2048_modexp | algo == rsa2048; stage == signverify | handcalc:2048-bit modexp 的 sign/verify 段
-rsa3072_modexp | algo == rsa3072; stage == signverify | handcalc:3072-bit 段（★INFO 名写成字面量 ⇒ 恒为 NO_ACTUAL）
-rsa4096_modexp | algo == rsa4096; stage == signverify | handcalc:4096-bit 段（★与 3072 撞同一键、且被覆盖 ⇒ 恒为 NO_ACTUAL）
+rsa3072_modexp | algo == rsa3072; stage == signverify | handcalc:3072-bit 段（INFO 名已按调用点传入，可取值）
+rsa4096_modexp | algo == rsa4096; stage == signverify | handcalc:4096-bit 段（INFO 名已按调用点传入，可取值）
 concurrent_hash_ecdsa | loops == 5; sha_ret == 0; ecdsa_ret == 0 | contract:THREADING_ALT 互斥下的并发返回码
 heap_stress_keygen | loops == 16; max_after <= first_after | handcalc:16 轮 keygen 后逐轮占用不得单调上涨（内存不泄漏的不变量）
 ecdsa_tamper_verify | ret != 0 | contract:API 契约——篡改签名必须验签失败（★无 INFO 通道 ⇒ NO_ACTUAL）
@@ -230,6 +348,8 @@ pointops_point_add_bad | ret != 0 | contract:API 契约（★无 INFO 通道 ⇒
 concurrent_otbn_hash_ecc | sha_ret == 0; ecdsa_ret == 0 | contract:THREADING_ALT 互斥下的并发返回码（★无 INFO 通道时 ⇒ NO_ACTUAL）
 sha256_bad_params | !none | !none:契约是多个子返回值的**合取**，落不到单个标量上，不硬凑
 sha384_bad_params | !none | !none:同上
+sha256_alt_null_params | starts_null_ctx != 0; update_null_input != 0 | contract:ALT 加固承诺（超出 mbedtls 契约，仅 SHA256 ALT case 编入）
+sha512_alt_null_params | starts_null_ctx != 0; update_null_input != 0 | contract:同上（SHA512 ALT）
 aes_bad_params | !none | !none:同上
 sm4_bad_params | !none | !none:同上
 field_bytes | !none | !none:按调用上下文返回 32/48/66，非单值断言

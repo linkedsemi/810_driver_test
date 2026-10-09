@@ -245,3 +245,62 @@ ZTEST(hash, sm3_kat)
 	MT_RUN_HASH(hash, &mt_sm3_ops, mt_sm3_vecs, "sm3_kat");
 }
 #endif /* MT_HAVE_SM3 */
+
+/* ---- ALT NULL 入参加固（只在 LINKEDSEMI SHA ALT 下编入） ----
+ *
+ * 这是**超出 mbedtls 契约**的加固承诺：mbedtls 在头文件里逐函数写明哪些入参
+ * 允许为 NULL（例如 `free` 明确写 may be NULL），而 `starts`/`update` 的 ctx
+ * 写的是 "must not be NULL"；上游实现对 NULL ctx 不做检查、直接解引用。
+ * 因此"NULL 入参返回错误码"只由 LINKEDSEMI 的 ALT 提供，跑在纯软件 case 上
+ * 无意义 —— 故按 config-linkedsemi-alt.h 定义 MBEDTLS_SHA256_ALT /
+ * MBEDTLS_SHA512_ALT 的同一条件门控。
+ *
+ * 覆盖原先混在 robustness_test.c 的 `sha*_bad_params` 里，导致纯软件 case 因
+ * 一条它永远无法满足的断言而失败；现拆到此处（见该文件的说明注释）。
+ *
+ * 判据：每项必须**返回非 0**，而不是把测试线程打死。若驱动解引用 NULL，
+ * 线程被内核杀掉、ztest 结果停在初值，由判定链 R9 兜住，不会假通过。
+ */
+#if defined(CONFIG_MBEDTLS_SHA224_SHA256_LINKEDSEMI_HARDWARE_ALT) || \
+	defined(CONFIG_MBEDTLS_SHA224_SHA256_LINKEDSEMI_OTBN_ALT)
+ZTEST(hash, sha256_alt_null_params)
+{
+	mbedtls_sha256_context ctx;
+	int r_starts_null, r_update_null;
+
+	r_starts_null = mbedtls_sha256_starts(NULL, 0);
+	mbedtls_sha256_init(&ctx);
+	r_update_null = mbedtls_sha256_update(&ctx, NULL, 4);
+	mbedtls_sha256_free(&ctx);
+
+	ZT_INFO("sha256_alt_null_params", "starts_null_ctx=%d,update_null_input=%d",
+		r_starts_null, r_update_null);
+
+	zassert_not_equal(r_starts_null, 0,
+			  "sha256_starts(NULL) must return an error, not fault");
+	zassert_not_equal(r_update_null, 0,
+			  "sha256_update(NULL, ilen>0) must return an error, not fault");
+}
+#endif
+
+#if defined(CONFIG_MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT) || \
+	defined(CONFIG_MBEDTLS_SHA384_SHA512_LINKEDSEMI_OTBN_ALT)
+ZTEST(hash, sha512_alt_null_params)
+{
+	mbedtls_sha512_context ctx;
+	int r_starts_null, r_update_null;
+
+	r_starts_null = mbedtls_sha512_starts(NULL, 1);
+	mbedtls_sha512_init(&ctx);
+	r_update_null = mbedtls_sha512_update(&ctx, NULL, 4);
+	mbedtls_sha512_free(&ctx);
+
+	ZT_INFO("sha512_alt_null_params", "starts_null_ctx=%d,update_null_input=%d",
+		r_starts_null, r_update_null);
+
+	zassert_not_equal(r_starts_null, 0,
+			  "sha512_starts(NULL) must return an error, not fault");
+	zassert_not_equal(r_update_null, 0,
+			  "sha512_update(NULL, ilen>0) must return an error, not fault");
+}
+#endif

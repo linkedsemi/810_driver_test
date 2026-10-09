@@ -46,18 +46,17 @@ ZTEST(robustness, sha256_bad_params)
 	unsigned char md[32];
 	int ret;
 
-	/* NULL context：starts 不应写入/崩溃，返回非 0 */
-	ret = mbedtls_sha256_starts(NULL, 0);
-	zassert_not_equal(ret, 0, "sha256_starts NULL should fail");
-
-	/* NULL input with len>0 */
+	/* An is224 flag that is neither 0 nor 1 is the documented bad-input case:
+	 * mbedtls_sha256_starts() is specified to return
+	 * MBEDTLS_ERR_SHA256_BAD_INPUT_DATA for it. */
 	mbedtls_sha256_init(&ctx);
-	ret = mbedtls_sha256_starts(&ctx, 0);
-	zassert_equal(ret, 0, "sha256_starts init ret=%d", ret);
-	ret = mbedtls_sha256_update(&ctx, NULL, 4);
-	zassert_not_equal(ret, 0, "sha256_update NULL should fail");
+	ret = mbedtls_sha256_starts(&ctx, 2);
+	zassert_not_equal(ret, 0,
+			  "sha256_starts(is224=2) should fail (MBEDTLS_ERR_SHA256_BAD_INPUT_DATA)");
 
 	/* len=0 合法（空 update） */
+	ret = mbedtls_sha256_starts(&ctx, 0);
+	zassert_equal(ret, 0, "sha256_starts init ret=%d", ret);
 	ret = mbedtls_sha256_update(&ctx, NULL, 0);
 	zassert_equal(ret, 0, "sha256_update len=0 ret=%d", ret);
 
@@ -70,6 +69,15 @@ ZTEST(robustness, sha256_bad_params)
 	zassert_equal(ret, 0, "sha256 finish ret=%d", ret);
 
 	mbedtls_sha256_free(&ctx);
+
+	/* NOTE (2026-09-29): NULL-ctx / NULL-input assertions were removed from
+	 * this shared case. mbedtls documents ctx as "must not be NULL"
+	 * (include/mbedtls/sha256.h) and only whitelists NULL for the few
+	 * functions that say so (e.g. free); upstream mbedtls_sha256_starts()
+	 * therefore dereferences it unchecked, so the *software baseline* -- this
+	 * suite's reference -- crashes rather than returning an error. The
+	 * LinkedSemi ALT does reject NULL; that extra guarantee is covered by
+	 * `sha_alt_null_params` in hash_test.c, compiled only when the ALT is on. */
 }
 
 /* ---- SHA-384 异常参数 ---- */
@@ -78,45 +86,61 @@ ZTEST(robustness, sha384_bad_params)
 	mbedtls_sha512_context ctx;
 	int ret;
 
-	ret = mbedtls_sha512_starts(NULL, 1);
-	zassert_not_equal(ret, 0, "sha384_starts NULL should fail");
-
+	/* An is384 flag that is neither 0 nor 1 is the documented bad-input case
+	 * for mbedtls_sha512_starts(). */
 	mbedtls_sha512_init(&ctx);
+	ret = mbedtls_sha512_starts(&ctx, 2);
+	zassert_not_equal(ret, 0,
+			  "sha384_starts(is384=2) should fail (MBEDTLS_ERR_SHA512_BAD_INPUT_DATA)");
+
 	ret = mbedtls_sha512_starts(&ctx, 1);
 	zassert_equal(ret, 0, "sha384_starts init ret=%d", ret);
-	ret = mbedtls_sha512_update(&ctx, NULL, 4);
-	zassert_not_equal(ret, 0, "sha384_update NULL should fail");
+	ret = mbedtls_sha512_update(&ctx, (const unsigned char *)"abc", 3);
+	zassert_equal(ret, 0, "sha384 update abc ret=%d", ret);
 
 	mbedtls_sha512_free(&ctx);
+
+	/* NOTE (2026-09-29): the NULL-ctx / NULL-input assertions that used to be
+	 * here were removed for the same reason as in sha256_bad_params -- mbedtls
+	 * documents ctx as "must not be NULL", so the software baseline faults
+	 * instead of returning an error. See sha_alt_null_params (hash_test.c). */
 }
 
 /* ---- AES 异常参数 ---- */
 ZTEST(robustness, aes_bad_params)
 {
 	mbedtls_aes_context ctx;
-	unsigned char key[16], iv[16], pt[16], ct[16];
+	unsigned char key[16];
 	int ret;
 
 	memset(key, 0xab, sizeof(key));
-	memset(iv, 0, sizeof(iv));
-	memset(pt, 0, sizeof(pt));
 
-	/* NULL ctx setkey */
-	ret = mbedtls_aes_setkey_enc(NULL, key, 128);
-	zassert_not_equal(ret, 0, "aes setkey NULL should fail");
-
-	/* 错误 keybits */
+	/* Wrong key length is the ONLY bad-input case mbedtls actually promises:
+	 * mbedtls_aes_setkey_enc() is specified to return
+	 * MBEDTLS_ERR_AES_INVALID_KEY_LENGTH for anything other than 128/192/256
+	 * (include/mbedtls/aes.h). */
 	mbedtls_aes_init(&ctx);
 	ret = mbedtls_aes_setkey_enc(&ctx, key, 64);
-	zassert_not_equal(ret, 0, "aes setkey bad bits should fail");
+	zassert_not_equal(ret, 0,
+			  "aes setkey bad bits should fail (MBEDTLS_ERR_AES_INVALID_KEY_LENGTH)");
 
-	/* 正常 setkey 后 CBC NULL in/out */
+	/* A valid key length must still succeed. */
 	ret = mbedtls_aes_setkey_enc(&ctx, key, 128);
 	zassert_equal(ret, 0, "aes setkey ret=%d", ret);
-	ret = mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, 16, iv, NULL, ct);
-	zassert_not_equal(ret, 0, "aes cbc NULL input should fail");
 
 	mbedtls_aes_free(&ctx);
+
+	/* NOTE (2026-09-29): the previous version of this case also asserted
+	 * NULL-pointer robustness here (NULL ctx to setkey_enc, NULL input to
+	 * crypt_cbc). Those assertions were moved out, because they demand
+	 * behaviour mbedtls does not specify: upstream mbedtls_aes_setkey_enc()
+	 * dereferences ctx and key with no NULL check (library/aes.c), so the
+	 * software baseline -- the reference this suite compares against --
+	 * faults instead of returning an error. Asserting it here made the
+	 * software case fail on a requirement it can never meet.
+	 * The LinkedSemi ALT *does* guarantee NULL-safety; that stronger,
+	 * ALT-specific guarantee is covered by `aes_alt_null_params` in
+	 * cipher_test.c (compiled only when the ALT is enabled). */
 }
 
 /* ---- SM4 异常参数 ---- */
@@ -208,18 +232,19 @@ ZTEST(robustness, ecdsa_tamper_verify)
 		hash[0] ^= 0x01;
 	}
 
-	/* NULL ctx（group 为空） */
-	if (ret != 0) {
-		ret = 0; /* reset so test can continue */
-	}
-	ret = mbedtls_ecdsa_verify(NULL, hash, sizeof(hash), &Q, &r, &s);
-	zassert_not_equal(ret, 0, "ecdsa verify NULL grp should fail");
-
 	mbedtls_ecp_group_free(&grp);
 	mbedtls_ecp_point_free(&Q);
 	mbedtls_mpi_free(&d);
 	mbedtls_mpi_free(&r);
 	mbedtls_mpi_free(&s);
+
+	/* NOTE (2026-09-29): a "verify with NULL group must fail" assertion used to
+	 * be here. It was removed because mbedtls documents grp as an initialised
+	 * group -- NULL is a caller contract violation, not an error path -- and
+	 * upstream mbedtls_ecdsa_verify_restartable() dereferences it unchecked
+	 * (library/ecdsa.c), so the software baseline faults instead of returning
+	 * an error. The LinkedSemi OTBN ECDSA ALT does reject NULL; that extra
+	 * guarantee belongs with the ALT-gated hardening coverage, not here. */
 }
 
 /* ---- RSA 异常/负例 ---- */

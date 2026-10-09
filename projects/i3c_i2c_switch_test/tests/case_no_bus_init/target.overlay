@@ -1,0 +1,3 @@
+#include "../../cpu1_i3c_target/app.overlay"
+
+/* no-bus-init case：target 侧无差异（未被枚举期它只是"没被寻址"，行为不变）。 */

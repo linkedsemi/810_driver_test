@@ -14,7 +14,7 @@
 | 测试项 | 驱动路径(函数+分支) | 维度 | 预期数据 | 预期来源 | 状态 |
 |--------|--------------------|------|----------|----------|------|
 | pinctrl_states | pinctrl_apply_state 配置表（i3c5/i3c6 节点 states[0]=default、states[1]=pinmux_i2c） | 功能通路 | state_count==2 且 states[1].id==PINCTRL_STATE_PRIV_START | 例程 i3c_i2c_exchange 配置约定（app.overlay pinctrl-names） | ✅ |
-| i3c_baseline | i3c_do_daa（DAA 分配 0x32）+ i3c_transfer 私有 WRITE/READ（I3C_MSG_STOP） | 功能通路 | 写 0x00..0x0F 16B；读 0xAA..0xB9 16B | 协议约定（pattern 定义） | ✅ |
+| i3c_baseline | i3c_do_daa（DAA 分配 0x32）+ i3c_transfer 私有 WRITE/READ（I3C_MSG_STOP）；**case_no_bus_init 另加**：i3c_dev_list_find（PID 查表）+ ls_i3c_transfer 的 `dynamic_addr==0 → -EINVAL` 守卫 + 应用侧 i3c_bus_init() | 功能通路 / 复位掉电（未枚举态） | 写 0x00..0x0F 16B；读 0xAA..0xB9 16B；case_no_bus_init 另需 nbi_neg_dyn=0、nbi_neg_xfer=-22、nbi_init_ret=0、nbi_after_dyn=50（=0x32） | 协议约定（pattern 定义）；case_no_bus_init 的 A/B 判据见下方「no-bus-init 开关验证」节 | ✅ |
 | switch_i3c_to_i2c | pinctrl_apply_state(PINMUX_I2C)（i3c5 节点 pinctrl-1 配置 I2C5_scl/sda_PJ10/11） | 中断/时序 | 切换后 i2c5↔i2c6 回连 16B 写读（target 侧 100ms 延时先行） | 例程验证 + 协议时序（CTRL_SWITCH_DELAY>TGT） | ✅ |
 | i2c_rw_1 | i2c_ls_transfer / i2c_ls_write_fifo / RXNE 读（单字节路径） | 边界长度 | 写 1B 读 1B（0xAA） | API 契约 | ✅ |
 | i2c_rw_16 | i2c_ls 写读 FIFO 主路径（16=FIFO 深度上限） | 边界长度 | 写 0x00..0x0F，读 0xAA..0xB9 | API 契约 | ✅ |
@@ -94,6 +94,64 @@
 
 ---
 
+## no-bus-init 开关验证（`case_no_bus_init`，2026-09-28 新增）
+
+**被测改动**：`zephyr/drivers/i3c/i3c_linkedsemi.c` 的 DTS 布尔属性 `no-bus-init`
+（binding：`zephyr/dts/bindings/i3c/linkedsemi,i3c.yaml`）。**opt-out 语义** —— 控制器写了它，
+`ls_i3c_init()` 里 `if(!dev_config->no_bus_init && dev_config->common.dev_list.num_i3c > 0)`
+守卫为假 ⇒ 驱动 init **不调** `i3c_bus_init()`（跳过 RSTDAA / DISEC / SETDASA / DAA / SETAASA），
+改由应用自行调用。不写该属性时行为与改动前逐字相同。
+
+**前提（用例判别力的必要条件，固件里显式自检）**：`&i3c5` 有 `i3ctarget6` 子节点
+⇒ `dev_list.num_i3c == 1` ⇒ 守卫里的 `num_i3c > 0` 成立。若为 0，驱动本来就不调
+`i3c_bus_init()` ⇒ 开关无可观测差异，用例无判别力（固件判 `nbi:premise_num_i3c_0`）。
+
+**落点与形状**：case 差异只在 `controller.overlay`（`&i3c5 { no-bus-init; }`）+ 固件里
+一段受 `#if DT_PROP(DT_NODELABEL(i3c5), no_bus_init)` 门控的 A/B 代码。
+**不用 Kconfig 门控**：本工程 cpu0 无应用 Kconfig 根，新增一个会改 `KCONFIG_ROOT`
+（qsh-test-gen §2「变体」注里点名的爆炸半径）；DT 属性门控天然与"开关被配置"同频，
+且既有 case_switch_core 的固件**逐字节不变**。
+⚠️ 门控**必须**用 `DT_PROP` 而非 `DT_NODE_HAS_PROP`：boolean 属性一旦在 binding 声明，
+所有实例的 `_EXISTS` 恒为 1（实测同族未设值的 `is_secondary` 也是 `_EXISTS 1`）
+⇒ `DT_NODE_HAS_PROP` 门控恒真，A/B 会在既有 case 里也跑起来并误判 FAIL。
+真正的"写了没有"在值宏里（`DT_PROP` = 0/1）。首次实现即踩此坑，静态复核 ELF 后修正
+（见「已知基线」上方本节的实现说明）。
+
+**A/B 折进 `i3c_baseline` 项**（不新增测试项名）：`run_test.py::TEST_NAMES` 是**全局**表，
+新增项会让既有 case_switch_core 因该项在两核皆 `MISSING` 而判 FAIL（`evaluate_case` 里
+`test_pass = CTRL==PASS and TGT==PASS`）。本工程 target 侧校验是**通用**的
+（'B'/'E' + 写 pattern 逐字节），故 ② 之后的正常 'B'/16B 写读/'E' 直接给出 TGT 侧证据，
+**target 侧固件零改动**。
+
+**判据（两半缺一不可；分开跑无意义 —— 只有"同一硬件 ①失败 / ②成功"把结论钉在开关上）**：
+
+| 半 | 断言 | 形态 | 为什么可辩护 |
+|----|------|------|--------------|
+| ① | `nbi_neg_dyn == 0` | 驱动 desc 的 `dynamic_addr` 为 0 | `dynamic_addr` 只由 DAA / SETDASA 写入，二者都在被跳过的 `i3c_bus_init()` 里 ⇒ 非 0 即"开关没生效"。**确定性**判据 |
+| ① | `nbi_neg_xfer == -22`（`-EINVAL`） | `i3c_transfer()` 对 `dynamic_addr==0` 的 desc | 驱动 `ls_i3c_transfer` 里 `if (target->dynamic_addr == 0U) return -EINVAL;` —— **确定性**、不碰总线，不依赖"NACK 是否被上报"。原样上报，串口可见 0 值即失败 |
+| ① | 附着表为空 | `i3c_dev_list_i3c_addr_find(dev, 0x32) == NULL` | 与上一条互为独立证据（附着表在 DAA 期间填充） |
+| ① | `nbi_probe32_ret` / `nbi_probe32_act` | 动态地址临时设成 `0x32` 后发一笔 16B 读 | **总线级**旁证：此刻 target 硬件侧 `DAVALID=0`（从未被赋址）⇒ 无人应答。判据取**安全形** `ret != 0 \|\| actual == 0`（与 `i3c_dualcore_test::nack_bad_addr` 同口径 —— 本硬件上"地址 NACK 是否被上报"随总线时序变化），原始值走 INFO 上报 |
+| ② | `nbi_init_ret == 0` | 应用显式调 `i3c_bus_init(dev, dev_list)` | API 契约；`dev_list` 经 `i3c.h` 明文契约取（`struct i3c_driver_config` 是所有 I3C 驱动 config 的**首成员**） |
+| ② | `nbi_after_dyn == 50`（`0x32`） | `i3c_bus_init()` 后 desc 的动态地址 | DT `assigned-address = <0x32>` + DAA 赋址；随后 `ctrl_basic_rw()` 的 16B 写读必须通过（这也给出 TGT 侧证据） |
+
+**判失败的理由串**（进 CTRL 侧 `i3c_baseline` 的 FAIL token，前缀 `nbi:`）：
+`premise_num_i3c_0` / `neg_desc_not_found` / `neg_dynaddr_<n>` / `neg_attached` /
+`neg_xfer_ret_<n>` / `neg_probe32_data` / `init_ret_<n>` / `recover_dynaddr_<n>` /
+`recover_not_attached`。
+
+**证据来源标注（2026-09-28 上板实测后更新）**：① 的"应失败"与 ② 的"应恢复"原为 ③级软件位映射
+推断（从驱动守卫与 DT 属性读出），**已在 `reports/2026-09-28-1/` 上板实测坐实**：`case_no_bus_init`
+双核 11/11 PASS，CTRL INFO 实测 `num_i3c=1,nbi_neg_dyn=0,nbi_neg_xfer=-22,nbi_probe32_ret=-5,
+nbi_probe32_act=0,nbi_init_ret=0,nbi_after_dyn=50`。判读规则与三次问答见该会话目录的
+`i3c-no-bus-init-ab.md`（含"探针混淆"standing 判读规则）。**本次 n=1**，长期结论未成立。
+
+**已知风险（standing，须保留）**：① 的总线级探针会向无人地址发一笔读 —— 若该笔 NACK
+留在控制器里影响紧接的 ② `i3c_bus_init()`，则 ② 失败会**误归因给驱动**。
+**本次未触发**（② 通过）。将来若 ② 转红，**先按会话目录 §0 的 standing 规则排除探针**
+（把 ① 的探针段 `#if 0` 掉重跑，两次结果都进报告），再谈驱动。
+
+---
+
 ## 独立预期（机器可读）
 
 > 格式 / 判定口径 / 伪独立识别规则见 `common/expect_check.py` 文件头。
@@ -105,6 +163,11 @@
 
 ```expect
 # 测试项 | 断言 | 来源标签:说明
+# 注：i3c_baseline 在 case_no_bus_init 下另含 A/B 的标量键（nbi_neg_dyn / nbi_neg_xfer /
+#     nbi_init_ret / nbi_after_dyn）。本表**按测试项名**登记且被两个 case 共用，而
+#     case_switch_core 不产出这些键 ⇒ 登记在此会把既有 case 从 NO_EXPECTATION 翻成
+#     NO_ACTUAL（同类覆盖缺口、纯噪音）。故暂留 !none，A/B 的预期值记在上文
+#     「no-bus-init 开关验证」节（含义、来源与可辩护性逐条写明）。
 pinctrl_states | !none | !none:state_count/states[1].id 的合取（结构性质）
 i3c_baseline | !none | !none:16B pattern 写读，非标量
 switch_i3c_to_i2c | !none | !none:切换后回连 16B 写读，非标量

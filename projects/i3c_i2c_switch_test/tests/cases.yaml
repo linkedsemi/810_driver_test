@@ -18,3 +18,6 @@ meta:
 # 新增 case：在 `tests/` 下建目录并在此登记（不登记 = 不跑）。
 cases:
   - case_switch_core
+  # 控制器侧 `&i3c5 { no-bus-init; };`：驱动 init 跳过总线枚举，应用显式
+  # i3c_bus_init() 补回。A/B 折进 i3c_baseline 项（见 COVERAGE.md）。
+  - case_no_bus_init

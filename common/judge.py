@@ -43,6 +43,8 @@ __all__ = [
     "MEM_NOEVID", "MEM_WEAK_NOTE", "MEM_WEAK_ITEM_NOTE",
     "mem_noevid_source", "mem_noevid_value", "mem_weak_note", "evidence_gaps",
     "mem_noevid_cell",
+    # R9（2026-09-29）: 执行期间致命异常 ⇒ 不得判 PASS（理由串唯一真源）
+    "FATAL_ITEM_NOTE", "fatal_item_note",
     "sentinel_state", "mem_state_of_payload", "mem_state_line",
     "missing_evidence", "truncation_evidence", "exec_label",
     "NO_EVIDENCE_STATES",
@@ -327,6 +329,41 @@ def evidence_gaps(declared, status_by_name):
         elif st in NO_EVIDENCE_STATES:
             missing.append(n)
     return missing, memn
+
+
+# ================================ R9（2026-09-29）: 执行期间致命异常 fail-closed
+#
+# 触发来源：`reports/2026-09-29-1/mbedtls_test_case_hw_all/serial_TGT.log` 里
+# `aes_bad_params` 等的**假 PASS** —— 串口原文（该文件 L104-134）：
+#
+#     START - aes_bad_params
+#     ... mcause: 7, Store/AMO access fault / mtval: 0 ...
+#     >>> ZEPHYR FATAL ERROR 0: CPU exception on CPU 0
+#     Current thread: 0x100874f8 (aes_bad_params)
+#     not Halting system
+#      PASS - aes_bad_params in 0.173 seconds      ← 异常之后判了 PASS
+#
+# 机理：ztest 的逐项结果**初值是 PASS**，只有显式调用 `ztest_test_fail()` 才置
+# FAIL；CPU 异常把测试线程打断 ⇒ `ztest_test_fail()` 从未被调用 ⇒ 结果停在初值
+# PASS。即"最需要证据的时候报告最像好消息"，与本模块既有的零证据守卫（`all([])`
+# 假 PASS）、R7/R8（mem 非证据）是同一类缺陷的又一截面。
+#
+# 判据位置：**解析层**（`common/ztest_report.py::parse_ztest`）—— 那里才有
+# "`START - <name>` 与该项结果行之间夹了致命异常"这个窗口信息。本模块只提供
+# **理由串的唯一真源**（与 R8 的 `MEM_WEAK_NOTE` 同款约定），避免 24 份
+# `run_test.py` 各写各的文案。
+#
+# ★ 为什么不在固件层堵：异常本身是**被测驱动的缺陷**（负例/鲁棒性用例专用于
+#   证明错误处理，其"绿"等于没验证）；在固件层注入"崩溃即判 FAIL"会把异常
+#   证据一起藏掉，而且 24 个工程各有一份固件。解析层是唯一收口。
+#
+# ★ 理由串的**文本真源在 `common/ztest_report.py`**（它才是合成该 reason 的地方，
+#   且 `parse_ztest` 与它必须同源）。这里只**转出**给判定链用，保持
+#   「判定链 import judge」这一既有约定 —— 反向（ztest_report → judge）会破坏
+#   `scripts/harness.py` 的 A/B 线束：那条线束把 `sys.modules["judge"]` 换成
+#   `scripts/before/judge.py` 快照，而 `ztest_report` 始终是 live 的一份，
+#   于是"改动前"那棵树会在 import 期直接 ImportError。
+from ztest_report import FATAL_ITEM_NOTE, fatal_item_note  # noqa: F401  (R9 转出)
 
 
 # 截断接受判据里的"无确定结果"状态集（★ 2026-09-18 A 组审计追补）。

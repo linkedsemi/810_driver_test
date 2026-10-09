@@ -1,0 +1,16 @@
+#include "../../cpu0_i3c_controller/app.overlay"
+
+/*
+ * no-bus-init case：控制器侧写 `no-bus-init;`
+ *
+ * ⇒ 驱动 ls_i3c_init() 里的守卫跳过 i3c_bus_init()
+ *   （即不做 RSTDAA / DISEC / SETDASA / DAA / SETAASA 这套总线枚举），
+ *   总线保持"未枚举"态，由应用显式调 i3c_bus_init() 补回来。
+ *
+ * 开关能生效的前提：本节点有 i3ctarget6 子节点 ⇒ dev_list.num_i3c == 1
+ * （守卫是 `!no_bus_init && num_i3c > 0`；num_i3c == 0 时驱动本来就不调，
+ *  用例无判别力）。固件侧 ctrl_nobusinit_ab() 会显式自检 num_i3c > 0。
+ */
+&i3c5 {
+    no-bus-init;
+};
