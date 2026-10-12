@@ -216,6 +216,25 @@ HAL**；`-DCONFIG_PICOLIBC=y` 命令行覆盖可非侵入验证假设。`NEWLIB_
   GPIO / 读复位前后寄存器复现），再怀疑 PHY 型号或 MDIO 时序。
 - 状态：**未修**（`zephyr/` 下上游文件禁改）；是否上报上游 / 测试侧加防护待裁定（OPEN_ITEMS O-16）。
 
+**119. 非 810 工程（采样工程 `samples/mbedtls_throughput`）在当前工作树不可构建 —— 两处互相独立的既有破损，`-p auto` 必现**（2026-09-29 / 2026-10-09 两度实测）
+现象：`west build -p auto -b lsqsh_evb@1os/lsqsh/cpu1 linkedsemi_zephyr_project/samples/mbedtls_throughput`
+失败，且两处原因**都与本次改动无关**（`-p auto` 触发 pristine ⇒ 必现；非 pristine 增量可能因缓存 `.obj` "假通过"）：
+- ① **源树自身悬挂引用（未提交改动孤儿）**：`src/main.c`（未提交的改动）调
+  `ls_otbn_rng_timing_{reset,cycles,isrs,words}()`，该组符号**全树无实现**（`HEAD:main.c` 不含）⇒
+  调用方成孤儿。属 **#108** 家族（未提交的工作区改动被静默冲掉、调用方成孤儿）。
+- ② **共享树在别处配置下的既有限制**：`modules/hal/linkedsemi/soc/rv32/qsh/platform.c:350` 的
+  `rtc_timer_set_time()` 调 `mktime()`，而该工程 `CONFIG_MINIMAL_LIBC` 的 `time.h` **不给原型**
+  ⇒ GCC 14.1.1 把隐式声明判 **error**（与 **#58** 同源同报错，只是本工程配置不在 810 手上、
+  "libc 三件套"修法不适用）。
+- **诊断迷惑点**：报错落在**共享树**（`modules/hal/...`），不在你改的模块里 ⇒ **别按"自己改坏了
+  共享树"排查**（#58 / #115）。
+- **绕法（不改任何他人文件，两度实测有效）**：`west build ... -- -DEXTRA_CFLAGS="-Wno-error=implicit-function-declaration"`
+  （把 `mktime` 隐式声明降级；`rtc_timer_set_time` 无调用者 ⇒ `--gc-sections` 丢弃、链接无未定义）。
+  09-29 曾用垫片绕法（`-include <tmp>/rng_timing_shim.h`：给孤儿符号 no-op `static inline` 存根 +
+  `mktime` 原型），实测垫片对 `aes_alt.c` 编译产物逐位无影响。**修根**：删 `src/main.c` 孤儿调用 +
+  `platform.c` 补 `mktime` 原型。
+- 关联：**#58**（mktime / MINIMAL_LIBC）· **#108 / #115**（未提交改动 / 游离损坏）· `qsh-test-run` §6。
+
 ---
 
 ## 串口与解析
@@ -1351,6 +1370,13 @@ deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 �
   三者**同形**：输出被重定向 / 管道（`sys.stdout.encoding` = `gbk/cp936`）即抛 `UnicodeEncodeError`
   —— `check_archive` 还叠了"**崩溃 rc=1 与它自己的 `BAD` 同码**"的加倍风险。
   **纪律**：脚本输出避开非 GBK 字符，或统一起手 `sys.stdout.reconfigure(encoding="utf-8")`。
+- **同族复发（2026-09-29，`dbg_run.py`）**：`dbg_run.py` 顶部**无** `reconfigure`（与 `check_archive.py`
+  不同）⇒ 非 tty（重定向 / 管道，`sys.stdout.encoding` = `gbk/cp936`）通道下打印 **R9** 的 FAIL reason
+  时，reason 串里的全角 `⇒`(U+21D2) 即触发 `UnicodeEncodeError` ⇒ **SUMMARY 摘要循环中断、其后的 `--raw`
+  段整个不打印**（原始串口行随之丢失）。**状态 = 部分修复（2026-09-29）**：R9 理由串的 `⇒` 改 `=>`
+  （它是该串里**唯一**编不进 gbk 的字符）⇒ 原触发消失、离线复算 gbk 下各项仍判 FAIL 且与归档逐字相同
+  （仅箭头变）；**兜底缺口未修** —— `dbg_run.py` 仍无 reconfigure ⇒ 非 tty 下凡非 ASCII 仍会崩。
+  **处置**：跑前 `PYTHONIOENCODING=utf-8`（或给 23 份 `dbg_run.py` 补 reconfigure）。见 `OPEN_ITEMS` O-47 · `qsh-test-run` §4.2。
 - 修法（模板统一，全 23 份 `dbg_run.py`）：启动时
   `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`，或把 `print` 包在
   `try/except UnicodeEncodeError`。已固化 qsh-test-gen §1.5 + ref-gen-errors。
@@ -1660,3 +1686,29 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   （断言层）。同工程、**症状不同源**，排查时**不得并案**。
 - 处置：单次 FAIL 先**重跑排除瞬态**（`qsh-test-compare` §5 第 4 条）；跨轮对比须**同 timeout**（#63）。
 
+---
+
+## mbedtls 配置互斥（2026-10-10 登记）
+
+**120. `MBEDTLS_ECP_RESTARTABLE` 与 Linkedsemi ECC ALT 硬冲突，构建必失败**（2026-10-10，客户报障）
+客户在自己侧 `#define MBEDTLS_ECP_RESTARTABLE` 后，构建报：
+`check_config.h:195: #error "MBEDTLS_ECP_RESTARTABLE defined, but it cannot coexist with an alternative ECP implementation"`。
+- **冲突两边**：`zephyr/modules/mbedtls/configs/config-linkedsemi-alt.h:9-11` 在
+  `CONFIG_MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT` **或**
+  `CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT` 为 y 时定义
+  `MBEDTLS_ECDSA_{SIGN,VERIFY,GENKEY}_ALT`；而 `check_config.h:187-195` 禁止它与 `ECP_RESTARTABLE` 共存。
+- **不可调和，不是 bug**：`RESTARTABLE` 要求 ECP 实现**可中断/可恢复**；Linkedsemi 的 OTBN 硬件路径
+  与代理路径**都是阻塞式**（本地直接等 OTBN；代理 `k_sem_take(..., K_FOREVER)`）。
+- ⚠ **易错点（已实测五组组合）**：`config-linkedsemi-alt.h:11` 那个 `||DELEGATION_CLIENT` ⇒
+  **只关 `..._OTBN_ALT` 不够**，只要还在用代理客户端就照样触发，且报错点一样，容易误判成"我已经关了加速"。
+  - 实测：`RESTARTABLE`+`DELEGATION_CLIENT` → 报错；`RESTARTABLE`+`..._OTBN_ALT` → 报错；
+    `RESTARTABLE` 单独 → 不报错；`DELEGATION_CLIENT` 单独 → 不报错；`DELEGATION_SERVER` 单独 → 不报错。
+  - `DELEGATION_SERVER` 本身不触发，但 server 的板级 conf 通常**同时**开了 `..._OTBN_ALT=y`
+    （见 `samples/crypto/otbn/delegation/mbedtls_server/boards/lsqsh_evb_cpu1.conf`）⇒ server 侧也会撞。
+- **处置（二选一，无第三条路）**：去掉客户自己的 `MBEDTLS_ECP_RESTARTABLE`；或关掉上述两个 Linkedsemi 开关
+  走纯软件 ECP（**失去 OTBN 加速**，ECDSA 性能大幅下降）。
+- **已加提前拦截**：`config-linkedsemi-tls.h` 末（`MBEDTLS_CONFIG_FILE` 链末端）新增 `#error`，
+  会**指名冲突开关**，比 mbedtls 的通用报错好定位；触发范围见上五组实测。
+  ⚠ 局限：`MBEDTLS_USER_CONFIG_FILE` 在本文件**之后**才处理（`build_info.h:115/130/192`），
+  放在那里的定义只会被 `check_config.h` 拦下 —— 两种放置**最终都会被拦，不会漏过**。
+- 备份：`tmp/config-linkedsemi-tls.h.orig-2026-10-10`、`tmp/config-linkedsemi-alt.h.orig-2026-10-10`。

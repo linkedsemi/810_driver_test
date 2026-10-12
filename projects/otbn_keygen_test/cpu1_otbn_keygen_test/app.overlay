@@ -1,0 +1,22 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * OTBN RSA 密钥生成单核测试 overlay（片内测试，无外部接线）。
+ * 本工程的 keygen 候选源是测试内注入的确定性 RNG（非 TRNG），故不引 entropy、
+ * 不使能 trng1；只需 dmac2（OTBN/mbedtls 硬件路径）。
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;   /* 串口输出（ztest token 采集源） */
+	};
+};
+
+&dmac2 {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）：
+ * 使能 GPIOA（PA05/PA07 翻转线程所在端口），label 调整只改公共文件。
+ * GPIO toggle 仅 cpu1 使用，cpu2 侧固件不编入 gpio_toggle.c、不 include 本片段。 */
+#include "../../../common/gpio_toggle.dtsi"

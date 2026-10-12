@@ -1,0 +1,4 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_no_server: the client's channel is left ENABLED (unlike
+ * case_dead_channel) -- only the peer is absent, see target.conf. */

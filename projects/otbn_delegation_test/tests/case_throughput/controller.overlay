@@ -1,0 +1,4 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_throughput: no DT difference; the benchmark surface is selected by
+ * -DOTBN_DELEG_BENCH=1 in test.sh (client measures the proxy path). */

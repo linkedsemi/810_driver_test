@@ -57,11 +57,16 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 | **aes128_xts** | mbedtls_aes_xts_setkey_enc/dec + crypt_xts（含 55B ciphertext stealing） | 功能通路+边界 | IEEE P1619/D16 向量 1-3 加密 KAT + 用 KAT 密文解回明文 + 55B 回环（且密文≠明文） | mbedtls `test_suite_aes.xts.data`（golden，出处 pdf00086.pdf） | ⏳ 新增 |
 | **aes128_xts_multi_ctx** | 两个 aes_xts context 绑不同密钥后**交错使用** | **契约（多 context 隔离）** | 各自仍等于自己的 KAT | 同上（golden） | ⏳ 新增 |
 | **aes_alt_null_params**（仅 ALT case 编入） | setkey/crypt_cbc/crypt_ecb/crypt_ctr 传 NULL ctx/key/in/out/nc_off | **ALT 加固（超出 mbedtls 契约）** | 七项均须**返回非 0**而非崩溃 | 本驱动加固承诺（contract） | ⏳ 新增 |
+| **aes_ecb_cbc_unaligned** | ECB/CBC 的输入、输出、IV 各偏移 1 字节 | 对齐（回退分支） | ECB 等于 FIPS-197 C.1；CBC 前 2 块等于 NIST F.2.1 | golden | ⏳ 新增 |
+| **aes128_ctr_carry** | mbedtls_aes_crypt_ctr，计数器跨 32 位字进位 | **契约（硬件计数器语义）** | 单次 / 分段 / 回环三种形态均等于期望密文 | golden（生成器显式 counter 序列 + AES-ECB 算出） | ⏳ 新增 |
+| **aes_concurrent_ctx** | 两个 AES context 交错使用同一硬件引擎（线程 A 长 CBC 被线程 B 的一次 ECB 抢占） | **并发（共享寄存器互斥）** | A 的密文仍等于单线程参考值 | contract | ⏳ 新增 |
+| **aes192_256_kat** | mbedtls_aes_setkey_enc/crypt_ecb/crypt_cbc，密钥 192/256 位 | 功能通路（**密钥装载分支**） | ECB 等于 FIPS-197 C.2/C.3；CBC 前 2 块等于 NIST F.2.2/F.2.3；解密回环 | golden | ⏳ 新增 |
+| **aes_cbc_len_contract** | mbedtls_aes_crypt_cbc 的 length 契约 | **边界（错误码 vs 断言）** | `length==0` 返回 0 且**不触碰** `iv`/`output`；`length=17` 返回非 0 而非断言/越界 | API 契约（对齐上游 aes.c） | ⏳ 新增 |
 | aes128_gcm | mbedtls_gcm_setkey + gcm_crypt_and_tag | 功能通路+AEAD tag | 2 块 ciphertext + 16B tag + 解密回环 | NIST GCMVS（OpenSSL 复核） | ✅ |
 | sm4_ecb | mbedtls_sm4_setkey + sm4_ecb_encrypt/decrypt（HW） | 功能通路 | 32B 加密向量 + 解密回环 | draft-ribose-cfrg-sm4-10 A.2.1.1 | ✅ |
 | sm4_cbc | 测试层 CBC 组合（sm4_alt 无 CBC API） | 组合语义 | 32B CBC 向量 + 解密回环 | GB/T 32907（OpenSSL 复核） | ✅ |
 | sm4_ctr | mbedtls_sm4_setkey + setiv + sm4_ctr_crypto（HW） | 功能通路 | 32B CTR 向量 + 解密回环 | draft-ribose-cfrg-sm4-10 A.2.5.1（OpenSSL 复核） | ✅ |
-| aes_bad_params | mbedtls_aes_setkey_enc/crypt_cbc 异常参数 | 异常参数 | NULL ctx/input、错误 keybits 返回非 0 | API 契约 | ✅ |
+| aes_bad_params | mbedtls_aes_setkey_enc/crypt_cbc 异常参数 | 异常参数 | **仅断言文档化契约**：错误 keybits 返回非 0；合法 setkey 返回 0（NULL 断言已移入 `aes_alt_null_params`，见 2026-09-29 修订） | API 契约 | ✅ |
 | sm4_bad_params | mbedtls_sm4_setiv/ctr_crypto（经 HAL）+ ecb_encrypt/ecb_decrypt（内联寄存器）异常参数 | 异常参数 | NULL ctx/in/out、len=0、非 16 整块返回非 0；合法入参仍返回 0 | API 契约 | ✅ |
 
 ### ECC / ECDSA
@@ -320,6 +325,11 @@ aes128_ctr_seg | seg_eq_nist == 1; state_after7 == 1; state_after23 == 1; nc_off
 aes128_ctr_len | len1 == 1; len15 == 1; len17 == 1; len31 == 1; guard_ok == 1 | golden:NIST F.5.1 密文前 N 字节 + 缓冲区哨兵不被改写
 aes128_ctr_inplace | inplace_eq_nist == 1 | golden:NIST F.5.1
 aes128_ctr_unaligned | unaligned_eq_nist == 1 | golden:NIST F.5.1
+aes_ecb_cbc_unaligned | ecb_unaligned_ok == 1; cbc_unaligned_ok == 1 | golden:FIPS-197 C.1（ECB）/ NIST F.2.1 前 2 块（CBC）—— in/out/iv 各偏移 1 字节
+aes128_ctr_carry | single_ok == 1; segmented_ok == 1; roundtrip_ok == 1 | golden:计数器 00000000_00000000_FFFFFFFF 跨 32 位字进位，期望值由生成器显式 counter 序列 + AES-ECB 算出
+aes_concurrent_ctx | interleaved_eq_single_threaded == 1 | contract:两个 AES context 交错使用同一引擎时，各路密文仍须等于单线程参考值
+aes192_256_kat | ecb192 == 1; cbc192 == 1; dec192 == 1; ecb256 == 1; cbc256 == 1; dec256 == 1 | golden:FIPS-197 C.2/C.3（ECB）+ NIST SP800-38A F.2.2/F.2.3（CBC）
+aes_cbc_len_contract | zero_len_ok == 1; bad_len_ok == 1 | contract:length==0 返回 0 且不触碰 iv/output；非整块长度返回 INVALID_INPUT_LENGTH 而非断言/越界
 aes128_xts | kat1 == 1; kat2 == 1; kat3 == 1; dec1 == 1; dec2 == 1; dec3 == 1; steal55 == 1 | golden:IEEE P1619/D16 向量 1-3（mbedtls test_suite_aes.xts.data）+ 55B 回环
 aes128_xts_multi_ctx | ctx_a_eq_kat == 1; ctx_b_eq_kat == 1 | golden:同上 —— 两 context 交错后各须等于自己的 KAT
 aes_alt_null_params | setkey_null_ctx != 0; setkey_null_key != 0; cbc_null_in != 0; cbc_null_out != 0; ecb_null_in != 0; ecb_null_out != 0; ctr_null_ncoff != 0 | contract:ALT 加固承诺（超出 mbedtls 契约，故仅 ALT case 编入）—— 每项须返回错误码而非崩溃

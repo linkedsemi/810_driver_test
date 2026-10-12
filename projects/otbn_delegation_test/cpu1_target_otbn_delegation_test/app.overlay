@@ -1,0 +1,13 @@
+/*
+ * cpu1 (target = delegation SERVER) devicetree overlay.
+ *
+ * Console (uart1) comes from the board dts; no cpu2-style overlay is needed.
+ * GPIO toggle (PA05/PA07) is compiled into the cpu1 side only, so enable GPIOA
+ * through the shared fragment (SPEC_REFERENCE §6.1.9 reuse convergence).
+ */
+#include "../../../common/gpio_toggle.dtsi"
+
+/*
+ * No external wiring: the delegation runs over the pre-existing
+ * `mbox_consumer_otbn_crypto` node (board dts).
+ */

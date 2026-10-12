@@ -95,6 +95,7 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `rtc_ls_test` | 单核 | 否 | RTC (rtc_ls) 计数/闹钟/日历进位 |
 | `otbn_test` | 单核 | 否 | OTBN 点运算 / RSA / hash |
 | `otbn_selftest` | 单核 | 否 | mbedtls selftest 全量套件 |
+| `otbn_keygen_test` | 单核 | 否 | OTBN RSA 密钥生成（确定性/三尺寸/正确性/mbedtls hook） |
 | `mbedtls_test` | 单核 | 否 | 软件/硬件/OTBN 混合加密配置 |
 | `adc_temper_test` | 单核 | 否 | 片内 ADC 温感 (ch13) 读取 |
 | `dma_test` | 单核 | 否 | DMA (dmac1) M2M 传输 |

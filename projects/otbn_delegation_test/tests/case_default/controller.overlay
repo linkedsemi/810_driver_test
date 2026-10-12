@@ -1,0 +1,4 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_default: no per-case DT difference -- the delegation is on-chip over
+ * the pre-existing otbn_crypto mbox node (board dts). */

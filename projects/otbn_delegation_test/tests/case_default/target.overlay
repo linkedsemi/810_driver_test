@@ -1,0 +1,3 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_default: no per-case DT difference (see controller.overlay). */

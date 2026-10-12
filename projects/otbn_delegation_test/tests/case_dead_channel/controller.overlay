@@ -1,0 +1,10 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/*
+ * case_dead_channel: the client's channel is disabled AT RUN TIME by t16
+ * (mbox_set_enabled(false)), not in the device tree -- disabling the
+ * vnd,mbox-consumer node breaks mbedtls_otbn_crypto_mbox.c's own
+ * DEVICE_DT_GET() at build time. The case is selected by
+ * -DOTBN_DELEG_DEAD_CHANNEL=1 in test.sh.
+ */
+

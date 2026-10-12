@@ -1,0 +1,4 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_no_server: the server's delegation callback is simply never registered
+ * (SERVER=n in target.conf); no DT change needed. */

@@ -1,0 +1,3 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_throughput: no DT difference; the same benchmark runs locally here. */

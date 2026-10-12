@@ -1,0 +1,10 @@
+/*
+ * cpu2 (controller = delegation CLIENT) devicetree overlay.
+ *
+ * Console (uart5) and memory layout come from the common overlays injected by
+ * CMakeLists.txt (cpu2_console_uart5.overlay / cpu2_mem_layout.overlay).
+ *
+ * No external wiring: OTBN ECDSA delegation runs entirely on-chip over the
+ * pre-existing `mbox_consumer_otbn_crypto` node (board dts) -- nothing to
+ * mux or connect here.
+ */

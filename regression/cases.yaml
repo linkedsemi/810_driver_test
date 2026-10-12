@@ -18,6 +18,7 @@ cases:
   - projects\rtc_timer_ls_test
   - projects\otbn_test
   - projects\otbn_selftest
+  - projects\otbn_keygen_test
   - projects\i2c_pure_test
   - projects\i3c_i2c_switch_test
   - projects\i3c_dualcore_test
@@ -36,6 +37,7 @@ cases:
   - projects\emmc_test
   - projects\pwm_test
   - projects\app_iwdg_cpu2_test
+  - projects\otbn_delegation_test
 
 
 

@@ -80,10 +80,13 @@ def evaluate_case(case_name, tgt_lines):
     # 零证据守卫（2026-09-18）：items 为空 ⇒ 一个测试项 token 都没捕到 ⇒
     # **不得判 PASS**（`all([]) == True` 会把"根本没测"读成"全过"，与上一轮
     # "5/5 全 PASS[mem]"假 PASS 同类）。判据收敛在 common/judge.py::has_evidence。
+    # G3（SPEC_REFERENCE §6.2.4 判定规则总表，冻结）：`SKIP`（ztest_test_skip()，
+    # 本工程 = EMMC_SKIP_IF_GUARDED 宏）是**主动跳过 = 确定结果** ⇒ 既不是失败、
+    # 也不计入分母；"含 SKIP（其余 PASS）→ PASS"。此前 `== "PASS"` 把 SKIP 当 FAIL。
     all_pass = (execution == "SUCCESSFUL" and has_evidence(items)
-                and all(i["result"] == "PASS" for i in items))
+                and all(i["result"] in ("PASS", "SKIP") for i in items))
     if (not all_pass and trunc_ok and has_evidence(items)
-            and all(i["result"] == "PASS" for i in items)):
+            and all(i["result"] in ("PASS", "SKIP") for i in items)):
         all_pass = True
         truncated = True
     # 零证据时报告要一眼看出"一个项都没捕到"，不能拿空表冒充正常（F2 同款要求）
@@ -100,7 +103,7 @@ def print_report(results):
         status = r.get("result", "UNKNOWN")
         items = r.get("items", [])
         passed = sum(1 for i in items if i.get("result") == "PASS")
-        total = len(items)
+        total = sum(1 for i in items if i.get("result") != "SKIP")   # G3: SKIP 不计分母
         print(f"## {r['case']}: {status} ({passed}/{total})")
         for item in items:
             name = item.get("name", "?")
@@ -118,7 +121,7 @@ def write_markdown_report(cdir, result):
     base = cdir / f"{REPORT_BASE}.md"
     items = result.get("items", [])
     passed = sum(1 for it in items if it.get("result") == "PASS")
-    total = len(items)
+    total = sum(1 for it in items if it.get("result") != "SKIP")   # G3: SKIP 不计分母
     status = result.get("result") or "FAIL"
     _core_exec = ", ".join(f"{k.upper()}={result[k]}"
                            for k in ("ctrl_execution", "tgt_execution") if result.get(k))
@@ -166,7 +169,7 @@ def l2_spec(facts=None):
         summary=lambda judged: (
             judged[0].get("result") or "FAIL",
             sum(1 for it in judged[0].get("items", []) if it.get("result") == "PASS"),
-            len(judged[0].get("items", []))),
+            sum(1 for it in judged[0].get("items", []) if it.get("result") != "SKIP")),
     )
 
 

@@ -1,0 +1,4 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_dead_channel: the server core is unchanged -- only the client's channel
+ * is disabled (see controller.overlay). */

@@ -842,8 +842,8 @@ ZTEST(cipher, aes_alt_null_params)
 	mbedtls_aes_context ctx;
 	unsigned char key[16], iv[16], in[16], out[16];
 	unsigned char nc[16], sb[16];
-	int r_setkey_ctx, r_setkey_key, r_cbc_in, r_cbc_out;
-	int r_ecb_in, r_ecb_out, r_ctr;
+	size_t off = 0;
+	int r;
 
 	memset(key, 0xab, sizeof(key));
 	memset(iv, 0, sizeof(iv));
@@ -855,28 +855,56 @@ ZTEST(cipher, aes_alt_null_params)
 	zassert_equal(mbedtls_aes_setkey_enc(&ctx, key, 128), 0,
 		      "baseline setkey failed");
 
-	r_setkey_ctx = mbedtls_aes_setkey_enc(NULL, key, 128);
-	r_setkey_key = mbedtls_aes_setkey_enc(&ctx, NULL, 128);
-	r_cbc_in = mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, 16, iv, NULL, out);
-	r_cbc_out = mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, 16, iv, in, NULL);
-	r_ecb_in = mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT, NULL, out);
-	r_ecb_out = mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT, in, NULL);
-	r_ctr = mbedtls_aes_crypt_ctr(&ctx, 16, NULL, nc, sb, in, out);
+	/* 每次调用后**立即**打一行 INFO。
+	 * 理由：这些调用一旦有哪个漏了 NULL 守卫，测试线程会被内核异常直接打死，
+	 * 其后所有代码（包括末尾的汇总 INFO）都不会执行 —— 那样报告里只剩一个
+	 * "FAIL 无 reason"，看不出是哪个入参漏了。逐条即时打印后，**故障前的
+	 * 结果全部留在报告里**，直接指认漏守卫的那一个。 */
+	r = mbedtls_aes_setkey_enc(NULL, key, 128);
+	ZT_INFO("aes_alt_null_params", "setkey_null_ctx=%d", r);
+	zassert_not_equal(r, 0, "setkey(NULL ctx) must return an error, not fault");
+
+	r = mbedtls_aes_setkey_enc(&ctx, NULL, 128);
+	ZT_INFO("aes_alt_null_params", "setkey_null_key=%d", r);
+	zassert_not_equal(r, 0, "setkey(NULL key) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_ecb(NULL, MBEDTLS_AES_ENCRYPT, in, out);
+	ZT_INFO("aes_alt_null_params", "ecb_null_ctx=%d", r);
+	zassert_not_equal(r, 0, "crypt_ecb(NULL ctx) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT, NULL, out);
+	ZT_INFO("aes_alt_null_params", "ecb_null_in=%d", r);
+	zassert_not_equal(r, 0, "crypt_ecb(NULL input) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT, in, NULL);
+	ZT_INFO("aes_alt_null_params", "ecb_null_out=%d", r);
+	zassert_not_equal(r, 0, "crypt_ecb(NULL output) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_cbc(NULL, MBEDTLS_AES_ENCRYPT, 16, iv, in, out);
+	ZT_INFO("aes_alt_null_params", "cbc_null_ctx=%d", r);
+	zassert_not_equal(r, 0, "crypt_cbc(NULL ctx) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, 16, NULL, in, out);
+	ZT_INFO("aes_alt_null_params", "cbc_null_iv=%d", r);
+	zassert_not_equal(r, 0, "crypt_cbc(NULL iv) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, 16, iv, NULL, out);
+	ZT_INFO("aes_alt_null_params", "cbc_null_in=%d", r);
+	zassert_not_equal(r, 0, "crypt_cbc(NULL input) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, 16, iv, in, NULL);
+	ZT_INFO("aes_alt_null_params", "cbc_null_out=%d", r);
+	zassert_not_equal(r, 0, "crypt_cbc(NULL output) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_ctr(&ctx, 16, NULL, nc, sb, in, out);
+	ZT_INFO("aes_alt_null_params", "ctr_null_ncoff=%d", r);
+	zassert_not_equal(r, 0, "crypt_ctr(NULL nc_off) must return an error, not fault");
+
+	r = mbedtls_aes_crypt_ctr(NULL, 16, &off, nc, sb, in, out);
+	ZT_INFO("aes_alt_null_params", "ctr_null_ctx=%d", r);
+	zassert_not_equal(r, 0, "crypt_ctr(NULL ctx) must return an error, not fault");
 
 	mbedtls_aes_free(&ctx);
-
-	ZT_INFO("aes_alt_null_params",
-		"setkey_null_ctx=%d,setkey_null_key=%d,cbc_null_in=%d,cbc_null_out=%d,ecb_null_in=%d,ecb_null_out=%d,ctr_null_ncoff=%d",
-		r_setkey_ctx, r_setkey_key, r_cbc_in, r_cbc_out,
-		r_ecb_in, r_ecb_out, r_ctr);
-
-	zassert_not_equal(r_setkey_ctx, 0, "setkey(NULL ctx) must return an error, not fault");
-	zassert_not_equal(r_setkey_key, 0, "setkey(NULL key) must return an error, not fault");
-	zassert_not_equal(r_cbc_in, 0, "crypt_cbc(NULL input) must return an error, not fault");
-	zassert_not_equal(r_cbc_out, 0, "crypt_cbc(NULL output) must return an error, not fault");
-	zassert_not_equal(r_ecb_in, 0, "crypt_ecb(NULL input) must return an error, not fault");
-	zassert_not_equal(r_ecb_out, 0, "crypt_ecb(NULL output) must return an error, not fault");
-	zassert_not_equal(r_ctr, 0, "crypt_ctr(NULL nc_off) must return an error, not fault");
 }
 #endif /* CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI */
 
@@ -926,4 +954,344 @@ ZTEST(cipher, aes_ecb_cbc_unaligned)
 
 	zassert_true(ecb_ok, "AES-ECB with unaligned buffers != FIPS-197 C.1");
 	zassert_true(cbc_ok, "AES-CBC with unaligned buffers != NIST F.2.1");
+}
+
+/* ---- CTR 跨 32 位字进位（判定混合 CTR 的成立前提） ----
+ *
+ * 驱动目前的 CTR 是混合实现：**整块交给硬件 CTR 引擎批量算**，再由软件补做
+ * 同样次数的 mbedtls_ctr_increment_counter() 去同步 nonce_counter。
+ * 这要求硬件的计数器递增规则与 mbedtls 的大端 128 位整体递增**逐位一致**。
+ *
+ * 既有 NIST F.5.1 向量的计数器是 …FCFDFEFF，只能压到**字节**进位；
+ * 本项用 00000000_00000000_FFFFFFFF —— 加 1 必须先回绕低 32 位、再向高字进位，
+ * 即进位**跨 32 位字边界**。硬件若在此处规则不同，密钥流会漂。
+ *
+ * 单次整段 + 分段两种调用形态都查：分段那种还能捉到"软件侧补的递增次数
+ * 与硬件实际推进不一致"这类漂移。
+ */
+ZTEST(cipher, aes128_ctr_carry)
+{
+	mbedtls_aes_context aes;
+	unsigned char key[16], cnt0[16], pt[64], exp_ct[64];
+	unsigned char cnt[16], sb[16];
+	unsigned char ct[64], ct_seg[64], dec[64];
+	size_t off;
+	int ret;
+	int single_ok, seg_ok, roundtrip_ok;
+
+	zassert_equal(mt_unhexify(key, MT_AES128CTR_CARRY_KEY), 16, "carry key hex invalid");
+	zassert_equal(mt_unhexify(cnt0, MT_AES128CTR_CARRY_CNT0), 16, "carry cnt hex invalid");
+	zassert_equal(mt_unhexify(pt, MT_AES128CTR_CARRY_PT), 64, "carry pt hex invalid");
+	zassert_equal(mt_unhexify(exp_ct, MT_AES128CTR_CARRY_CT), 64, "carry ct hex invalid");
+
+	/* 确认本向量确实是"跨 32 位字进位"的那一档计数器 */
+	zassert_mem_equal(cnt0 + 12, "\xff\xff\xff\xff", 4,
+			  "carry vector must start with low 32 bits all ones");
+
+	/* 形态 1：一次喂 4 块 */
+	mbedtls_aes_init(&aes);
+	zassert_equal(mbedtls_aes_setkey_enc(&aes, key, 128), 0, "carry setkey failed");
+	memcpy(cnt, cnt0, sizeof(cnt));
+	memset(sb, 0, sizeof(sb));
+	off = 0;
+	ret = mbedtls_aes_crypt_ctr(&aes, 64, &off, cnt, sb, pt, ct);
+	single_ok = (ret == 0) && (memcmp(ct, exp_ct, 64) == 0);
+
+	/* 形态 2：拆成 1 块 + 3 块（跨进位发生在第 2 段；软件侧补递增若与硬件
+	 * 实际推进不符，这里就会错） */
+	memcpy(cnt, cnt0, sizeof(cnt));
+	memset(sb, 0, sizeof(sb));
+	off = 0;
+	ret = mbedtls_aes_crypt_ctr(&aes, 16, &off, cnt, sb, pt, ct_seg);
+	if (ret == 0) {
+		ret = mbedtls_aes_crypt_ctr(&aes, 48, &off, cnt, sb, pt + 16, ct_seg + 16);
+	}
+	seg_ok = (ret == 0) && (memcmp(ct_seg, exp_ct, 64) == 0);
+
+	/* 形态 3：把密文解回明文（对同一计数器流） */
+	memcpy(cnt, cnt0, sizeof(cnt));
+	memset(sb, 0, sizeof(sb));
+	off = 0;
+	ret = mbedtls_aes_crypt_ctr(&aes, 64, &off, cnt, sb, exp_ct, dec);
+	roundtrip_ok = (ret == 0) && (memcmp(dec, pt, 64) == 0);
+
+	mbedtls_aes_free(&aes);
+
+	ZT_INFO("aes128_ctr_carry",
+		"algo=aes-128-ctr,carry=word_boundary,single_ok=%d,segmented_ok=%d,roundtrip_ok=%d",
+		single_ok, seg_ok, roundtrip_ok);
+
+	zassert_true(single_ok, "CTR single-call ciphertext wrong across a 32-bit word carry");
+	zassert_true(seg_ok, "CTR segmented ciphertext wrong across a 32-bit word carry");
+	zassert_true(roundtrip_ok, "CTR round trip wrong across a 32-bit word carry");
+}
+
+/* ---- AES 并发：两个 context 交错使用同一硬件引擎 ----
+ *
+ * ★ 这是**唯一能发现"共享寄存器无互斥"的用例** —— 其余 AES 用例都是单线程顺序
+ *   调用，结构上碰不到这条路径。
+ *
+ * 为什么要这么绕：ztest 的测试线程优先级是 -1（**协作式**），协作式线程不会被
+ * 其它线程抢占，所以"两个线程互相打断"在测试线程里造不出来。办法是把被观察的
+ * 长操作放进一个**可抢占**的独立线程 A，再由测试线程在 A 跑到半途时放行线程 B。
+ *
+ * 时序（tick = 100us，实测 CONFIG_SYS_CLOCK_TICKS_PER_SEC=10000）：
+ *   t0      测试线程创建 B(prio 0) 与 A(prio 5)，然后 k_sleep(2 tick)
+ *   t0+     B 先跑：给自己 setkey，然后阻塞在信号量上
+ *   t0..    A 跑：对 8KB 做 CBC（约 0.5ms = 5 tick，远长于 2 tick）
+ *   t0+2t   测试线程醒（prio -1，高于两者）→ 给出信号量 → join A（阻塞）
+ *   t0+2t   B 就绪且 prio 0 高于 A 的 5 ⇒ **抢占 A**，此刻 A 正处在缓冲区中途
+ *   t0+2t   B 对**另一个 context** 做一次 ECB ⇒ 改写共享的 KEY 与 CR 寄存器
+ *   之后     B 退出 → A 从被打断处继续 ⇒ 其剩余块是在 B 的 KEY/CR 上算的
+ *
+ * 判定：A 的密文必须等于单线程参考值。
+ *   - 当前驱动**没有任何互斥** ⇒ 必然不符（预期 FAIL）
+ *   - 修好后（锁跨越整个 API 调用，或 CBC 改软件链接）⇒ 相符（预期 PASS）
+ *
+ * 本项刻意从**线程**（非 ISR）上下文制造交错，故对"睡眠锁"与"自旋锁"两种修法都有效。
+ *
+ * ⚠️ 诚实声明：若 A 在测试线程醒来之前就跑完（机器更慢/中断干扰），会退化成
+ *    "没交错"从而 PASS。所以 **FAIL 能证明竞态存在，PASS 不能证明它不存在**。
+ *    这里 A 的耗时约为等待窗口的 2.7 倍，留了余量。
+ */
+#define CONC_BYTES 8192
+
+static K_THREAD_STACK_DEFINE(conc_a_stack, 4096);
+static K_THREAD_STACK_DEFINE(conc_b_stack, 4096);
+static struct k_thread conc_a_td, conc_b_td;
+static K_SEM_DEFINE(conc_b_go, 0, 1);
+
+static mbedtls_aes_context conc_ctx_a, conc_ctx_b;
+static unsigned char conc_in[CONC_BYTES]  __attribute__((aligned(4)));
+static unsigned char conc_out[CONC_BYTES] __attribute__((aligned(4)));
+static unsigned char conc_ref[CONC_BYTES] __attribute__((aligned(4)));
+static unsigned char conc_key_a[16], conc_key_b[16], conc_iv[16];
+
+/* A（可抢占，低优先级）：长 CBC —— 给 B 留出足够宽的抢占窗口 */
+static void conc_thread_a(void *p1, void *p2, void *p3)
+{
+	unsigned char iv[16];
+
+	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+	memcpy(iv, conc_iv, sizeof(iv));
+	(void)mbedtls_aes_setkey_enc(&conc_ctx_a, conc_key_a, 128);
+	(void)mbedtls_aes_crypt_cbc(&conc_ctx_a, MBEDTLS_AES_ENCRYPT,
+				    CONC_BYTES, iv, conc_in, conc_out);
+}
+
+/* B（可抢占，优先级高于 A）：被放行后只做**一次 ECB**，就足以改写共享寄存器 */
+static void conc_thread_b(void *p1, void *p2, void *p3)
+{
+	unsigned char blk[16], out[16];
+
+	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+	(void)mbedtls_aes_setkey_enc(&conc_ctx_b, conc_key_b, 128);
+
+	/* 超时兜底：万一 A 先跑完，B 也不能永远挂着 */
+	if (k_sem_take(&conc_b_go, K_MSEC(100)) == 0) {
+		memcpy(blk, conc_key_b, sizeof(blk));
+		(void)mbedtls_aes_crypt_ecb(&conc_ctx_b, MBEDTLS_AES_ENCRYPT,
+					    blk, out);
+	}
+}
+
+ZTEST(cipher, aes_concurrent_ctx)
+{
+	unsigned char iv[16];
+	int same;
+	int i;
+
+	/* 两把不同的密钥 —— 若 B 覆盖成功，A 的密文必然改变 */
+	for (i = 0; i < 16; i++) {
+		conc_key_a[i] = (unsigned char)(0x10 + i);
+		conc_key_b[i] = (unsigned char)(0xA0 + i);
+		conc_iv[i]    = (unsigned char)(0x30 + i);
+		conc_in[i]    = conc_key_a[i];
+	}
+	for (i = 16; i < CONC_BYTES; i++) {
+		conc_in[i] = (unsigned char)(i * 31 + 7);
+	}
+
+	/* 1) 单线程参考值 */
+	mbedtls_aes_init(&conc_ctx_a);
+	zassert_equal(mbedtls_aes_setkey_enc(&conc_ctx_a, conc_key_a, 128), 0,
+		      "reference setkey failed");
+	memcpy(iv, conc_iv, sizeof(iv));
+	zassert_equal(mbedtls_aes_crypt_cbc(&conc_ctx_a, MBEDTLS_AES_ENCRYPT,
+					    CONC_BYTES, iv, conc_in, conc_ref), 0,
+		      "reference cbc failed");
+	mbedtls_aes_free(&conc_ctx_a);
+
+	/* 2) 并发跑：A 长 CBC，中途被 B 的一次 ECB 打断 */
+	mbedtls_aes_init(&conc_ctx_a);
+	mbedtls_aes_init(&conc_ctx_b);
+	memset(conc_out, 0, CONC_BYTES);
+	k_sem_reset(&conc_b_go);
+
+	k_thread_create(&conc_b_td, conc_b_stack,
+			K_THREAD_STACK_SIZEOF(conc_b_stack),
+			conc_thread_b, NULL, NULL, NULL,
+			K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
+	k_thread_create(&conc_a_td, conc_a_stack,
+			K_THREAD_STACK_SIZEOF(conc_a_stack),
+			conc_thread_a, NULL, NULL, NULL,
+			K_PRIO_PREEMPT(5), 0, K_NO_WAIT);
+
+	/* 让 A 跑进缓冲区中途（2 tick = 200us ≪ A 的 ~0.5ms） */
+	k_sleep(K_TICKS(2));
+	k_sem_give(&conc_b_go);
+
+	(void)k_thread_join(&conc_a_td, K_MSEC(500));
+	(void)k_thread_join(&conc_b_td, K_MSEC(500));
+
+	mbedtls_aes_free(&conc_ctx_a);
+	mbedtls_aes_free(&conc_ctx_b);
+
+	same = (memcmp(conc_out, conc_ref, CONC_BYTES) == 0);
+
+	ZT_INFO("aes_concurrent_ctx",
+		"bytes=%d,interleaved_eq_single_threaded=%d", CONC_BYTES, same);
+
+	zassert_true(same,
+		     "two AES contexts interleaved on the shared engine produced wrong ciphertext: "
+		     "the driver has no mutual exclusion around the LSCRYPT registers");
+}
+
+/* ---- AES-192 / AES-256 KAT：覆盖驱动里**独立的密钥装载分支** ----
+ *
+ * `aes_hw_setkey()` 对 192 位（KEY4/KEY5）与 256 位（KEY4..KEY7）各有独立的
+ * 装载代码，而既有回归**只测过 128 位** ⇒ 那两个分支从未被执行过。
+ * 顺序/偏移/CRYPT_AESKS 一旦写错，只有用非 128 位密钥的调用方才踩得到，
+ * 且表现为**静默的错误密文**。
+ *
+ * ECB 真源 FIPS-197 C.2/C.3；CBC 真源 NIST SP800-38A F.2.2/F.2.3（前 2 块）。
+ * 注意两部分用的是**不同的密钥**（两套标准各自选例）。
+ */
+ZTEST(cipher, aes192_256_kat)
+{
+	static const struct {
+		unsigned int keybits;
+		const char *ekey, *ept, *ect;
+		const char *ckey, *civ, *cpt, *cct;
+	} v[2] = {
+		{ 192, MT_AES192_ECB_KEY, MT_AES192_ECB_PT, MT_AES192_ECB_CT,
+		  MT_AES192_CBC_KEY, MT_AES192_CBC_IV, MT_AES192_CBC_PT, MT_AES192_CBC_CT },
+		{ 256, MT_AES256_ECB_KEY, MT_AES256_ECB_PT, MT_AES256_ECB_CT,
+		  MT_AES256_CBC_KEY, MT_AES256_CBC_IV, MT_AES256_CBC_PT, MT_AES256_CBC_CT },
+	};
+	mbedtls_aes_context aes;
+	unsigned char key[32], pt[16], ct[16], exp[16];
+	unsigned char iv[16], iv0[16], cpt[32], cct[32], cdec[32];
+	int ecb_ok[2], cbc_ok[2], dec_ok[2];
+	int i, ret;
+
+	for (i = 0; i < 2; i++) {
+		ecb_ok[i] = cbc_ok[i] = dec_ok[i] = 0;
+
+		/* --- ECB --- */
+		zassert_equal(mt_unhexify(key, v[i].ekey), (int)(v[i].keybits / 8),
+			      "aes%u key hex invalid", v[i].keybits);
+		zassert_equal(mt_unhexify(pt, v[i].ept), 16, "aes%u ecb pt hex", v[i].keybits);
+		zassert_equal(mt_unhexify(exp, v[i].ect), 16, "aes%u ecb ct hex", v[i].keybits);
+
+		mbedtls_aes_init(&aes);
+		ret = mbedtls_aes_setkey_enc(&aes, key, v[i].keybits);
+		if (ret == 0) {
+			ret = mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, pt, ct);
+		}
+		mbedtls_aes_free(&aes);
+		ecb_ok[i] = (ret == 0) && (memcmp(ct, exp, 16) == 0);
+
+		/* --- CBC：加密 KAT + 解密回环 --- */
+		zassert_equal(mt_unhexify(key, v[i].ckey), (int)(v[i].keybits / 8),
+			      "aes%u cbc key hex invalid", v[i].keybits);
+		zassert_equal(mt_unhexify(iv0, v[i].civ), 16, "aes%u cbc iv hex", v[i].keybits);
+		zassert_equal(mt_unhexify(cpt, v[i].cpt), 32, "aes%u cbc pt hex", v[i].keybits);
+		zassert_equal(mt_unhexify(cct, v[i].cct), 32, "aes%u cbc ct hex", v[i].keybits);
+
+		mbedtls_aes_init(&aes);
+		ret = mbedtls_aes_setkey_enc(&aes, key, v[i].keybits);
+		if (ret == 0) {
+			memcpy(iv, iv0, sizeof(iv));
+			ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, 32, iv, cpt, ct);
+		}
+		cbc_ok[i] = (ret == 0) && (memcmp(ct, cct, 32) == 0);
+
+		if (ret == 0) {
+			memcpy(iv, iv0, sizeof(iv));
+			ret = mbedtls_aes_setkey_dec(&aes, key, v[i].keybits);
+		}
+		if (ret == 0) {
+			ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, 32, iv, cct, cdec);
+		}
+		dec_ok[i] = (ret == 0) && (memcmp(cdec, cpt, 32) == 0);
+
+		mbedtls_aes_free(&aes);
+	}
+
+	ZT_INFO("aes192_256_kat",
+		"ecb192=%d,cbc192=%d,dec192=%d,ecb256=%d,cbc256=%d,dec256=%d",
+		ecb_ok[0], cbc_ok[0], dec_ok[0], ecb_ok[1], cbc_ok[1], dec_ok[1]);
+
+	zassert_true(ecb_ok[0], "AES-192 ECB != FIPS-197 C.2 (KEY4/KEY5 load path)");
+	zassert_true(cbc_ok[0], "AES-192 CBC != NIST F.2.2");
+	zassert_true(dec_ok[0], "AES-192 CBC decrypt round trip failed");
+	zassert_true(ecb_ok[1], "AES-256 ECB != FIPS-197 C.3 (KEY4..KEY7 load path)");
+	zassert_true(cbc_ok[1], "AES-256 CBC != NIST F.2.3");
+	zassert_true(dec_ok[1], "AES-256 CBC decrypt round trip failed");
+}
+
+/* ---- CBC 长度契约 ----
+ *
+ * 现驱动用 `__ASSERT_NO_MSG(length % 16 == 0)` 代替错误码：
+ *   - CONFIG_ASSERT=y（本工程）⇒ 非整块长度直接 kernel fatal；
+ *   - CONFIG_ASSERT=n（生产常见）⇒ 断言被编译掉，循环按整块**越界读写**。
+ * 上游 `library/aes.c` 的正确行为是返回 `MBEDTLS_ERR_AES_INVALID_INPUT_LENGTH`。
+ *
+ * 另：`length == 0` 时驱动没有早退，加密分支会读 `output` 之前 16 字节，
+ * 解密分支会把**未初始化的栈**写进调用方的 `iv`。正确行为是返回 0 且
+ * **完全不触碰** `iv` / `output`。
+ *
+ * 注意顺序：先把不涉及断言的 `length==0` 查完并打印 INFO，再做可能触发
+ * kernel fatal 的非整块检查 —— 否则断言一旦发生，测试线程被打死，前面的
+ * 结果就进不了报告。
+ */
+ZTEST(cipher, aes_cbc_len_contract)
+{
+	mbedtls_aes_context aes;
+	unsigned char key[16], iv[16], iv0[16];
+	unsigned char in[32], out[40];
+	int ret, zero_ok, bad_len_ok;
+
+	zassert_equal(mt_unhexify(key, MT_AES128CBC_KEY), 16, "cbc key hex invalid");
+	zassert_equal(mt_unhexify(iv0, MT_AES128CBC_IV), 16, "cbc iv hex invalid");
+	memset(in, 0x11, sizeof(in));
+
+	mbedtls_aes_init(&aes);
+	zassert_equal(mbedtls_aes_setkey_enc(&aes, key, 128), 0, "cbc setkey failed");
+
+	/* 1) length == 0：必须返回 0，且 iv 与 output 原封不动 */
+	memset(out, 0x5A, sizeof(out));
+	memcpy(iv, iv0, sizeof(iv));
+	ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, 0, iv, in, out + 4);
+	zero_ok = (ret == 0) &&
+		  (memcmp(iv, iv0, sizeof(iv)) == 0) &&   /* iv 未被改写 */
+		  (out[4] == 0x5A);                       /* output 未被写入 */
+
+	ZT_INFO("aes_cbc_len_contract", "zero_len_ok=%d", zero_ok);
+
+	/* 2) 非整块长度：必须返回错误码，而不是断言 / 越界 */
+	memset(out, 0xA5, sizeof(out));
+	memcpy(iv, iv0, sizeof(iv));
+	ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, 17, iv, in, out + 4);
+	bad_len_ok = (ret != 0);
+
+	mbedtls_aes_free(&aes);
+
+	ZT_INFO("aes_cbc_len_contract", "bad_len_ok=%d", bad_len_ok);
+
+	zassert_true(zero_ok,
+		     "CBC length==0 must return 0 and leave iv/output untouched");
+	zassert_true(bad_len_ok,
+		     "CBC with length=17 must return MBEDTLS_ERR_AES_INVALID_INPUT_LENGTH, not assert/overrun");
 }
