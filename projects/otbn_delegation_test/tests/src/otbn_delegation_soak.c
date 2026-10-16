@@ -35,6 +35,26 @@
 
 #include "ztest_glue.h"
 
+/*
+ * Interface redirection -- selected by ROLE (same rule as the shared body
+ * otbn_delegation_test.c). The CLIENT soaks the PROXY, so it must call the
+ * explicit mbedtls_ls_otbn_ecdsa_* names: the plain mbedtls_ecdsa_* names only
+ * reach the proxy in the ALT_VIA_DELEGATION config and otherwise resolve to
+ * software/ecdsa_alt.c, which the sequence-wrap soak would not exercise at all.
+ * The SERVER keeps the mbedtls_* names (its local OTBN path).
+ */
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT) && \
+	!defined(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION)
+#include "mbedtls_otbn_ecdsa_mbox.h"
+#define DELEG_GENKEY  mbedtls_ls_otbn_ecdsa_genkey
+#define DELEG_SIGN    mbedtls_ls_otbn_ecdsa_sign
+#define DELEG_VERIFY  mbedtls_ls_otbn_ecdsa_verify
+#else
+#define DELEG_GENKEY  mbedtls_ecdsa_genkey
+#define DELEG_SIGN    mbedtls_ecdsa_sign
+#define DELEG_VERIFY  mbedtls_ecdsa_verify
+#endif
+
 #ifndef SOAK_ITERS
 #define SOAK_ITERS 160          /* 160 * 4 = 640 proxy calls (>= 256 wrap point) */
 #endif
@@ -88,13 +108,12 @@ ZTEST(otbn_deleg, s01_seq_soak)
 		mbedtls_mpi_init(&one);
 		mbedtls_mpi_init(&n);
 
-		zassert_equal(mbedtls_ecp_group_load(&ctx.private_grp,
-				MBEDTLS_ECP_DP_SECP256R1), 0, "iter %d: load", i);
-		zassert_equal(mbedtls_ecdsa_genkey(&ctx, MBEDTLS_ECP_DP_SECP256R1,
+		/* No caller-side curve pre-load: DELEG_GENKEY loads ctx->grp. */
+		zassert_equal(DELEG_GENKEY(&ctx, MBEDTLS_ECP_DP_SECP256R1,
 				test_rng, NULL), 0, "iter %d: genkey rc!=0", i);
 		calls++;
 
-		zassert_equal(mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s,
+		zassert_equal(DELEG_SIGN(&ctx.private_grp, &r, &s,
 				&ctx.private_d, test_hash, sizeof(test_hash),
 				test_rng, NULL), 0, "iter %d: sign rc!=0", i);
 		calls++;
@@ -105,7 +124,7 @@ ZTEST(otbn_deleg, s01_seq_soak)
 			     "iter %d: r/s out of range (silent cross-talk?)", i);
 
 		/* valid signature MUST verify */
-		zassert_equal(mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+		zassert_equal(DELEG_VERIFY(&ctx.private_grp, test_hash,
 				sizeof(test_hash), &ctx.private_Q, &r, &s), 0,
 			"iter %d: valid signature REJECTED (wrong reply accepted?)", i);
 		calls++;
@@ -116,7 +135,7 @@ ZTEST(otbn_deleg, s01_seq_soak)
 		mbedtls_mpi_add_mpi(&rbad, &r, &one);
 		mbedtls_mpi_mod_mpi(&rbad, &rbad, &n);
 		zassert_true(mbedtls_mpi_cmp_mpi(&rbad, &r) != 0, "iter %d: tamper noop", i);
-		zassert_true(mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+		zassert_true(DELEG_VERIFY(&ctx.private_grp, test_hash,
 				sizeof(test_hash), &ctx.private_Q, &rbad, &s) != 0,
 			"iter %d: tampered signature ACCEPTED (stale reply?)", i);
 		calls++;

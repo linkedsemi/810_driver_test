@@ -1,0 +1,5 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_entropy_iso: no DT difference. cpu2 is the HOLD side in this run
+ * (-DOTBN_DELEG_BENCH_HOLD=1): the mbox channel is up but it sends no request,
+ * and it does not touch its own entropy device either. */

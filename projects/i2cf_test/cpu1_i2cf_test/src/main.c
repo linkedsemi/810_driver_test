@@ -52,6 +52,7 @@ void test_main(void)
 
 	i2cf_register_onchip_target();   /* 必须在 zt_run_all 之前：用例依赖它作对端 */
 
+	/* 常规回归：ztest 跑全部用例（含 CONFIG_I2CF_ENUM_MATRIX 时的 i2cf::enum_matrix）。 */
 	zt_init("TGT");
 	zt_run_all();
 }

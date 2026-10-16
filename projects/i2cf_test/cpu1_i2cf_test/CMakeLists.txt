@@ -33,3 +33,9 @@ target_include_directories(app PRIVATE
 
 # 包含公共源文件和配置（test_results.c, ztest_glue.c, gpio_toggle.c）
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
+
+# 枚举矩阵回归用例（case_enum_matrix）：仅 CONFIG_I2CF_ENUM_MATRIX=y 时编入。
+# 默认 n ⇒ 不置位时本文件不存在于构建中，case_default 逐字节不变。
+if(CONFIG_I2CF_ENUM_MATRIX)
+    target_sources(app PRIVATE src/i2cf_enum.c)
+endif()

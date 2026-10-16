@@ -1,0 +1,19 @@
+{
+  "archive_version": 1,
+  "case": "case_entropy_iso",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "CTRL": {
+      "port": "COM18",
+      "lines": 12
+    },
+    "TGT": {
+      "port": "COM16",
+      "lines": 60
+    }
+  },
+  "timeout": 60,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\otbn_delegation_test\\tests\\run_test.py",
+  "script_md5": "90cfb6eafb1747aa567954c864e0c02a",
+  "timestamp": "2026-10-16T16:34:11"
+}

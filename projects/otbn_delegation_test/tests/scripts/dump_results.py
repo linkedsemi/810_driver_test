@@ -132,6 +132,72 @@ _FALLBACK_TEST_NAMES = [
 TEST_NAMES_BY_CASE = {
     "case_throughput": ["b01_throughput"],
     "case_seq_soak": ["s01_seq_soak"],
+    "case_explicit_api": [
+        "t01_genkey_p256",
+        "t02_genkey_p384",
+        "t03_genkey_sm2",
+        "t04_sign_p256",
+        "t05_sign_p384",
+        "t06_sign_sm2",
+        "t07_verify_p256",
+        "t08_verify_p384",
+        "t09_verify_sm2",
+        "t10_reject_unsupported_curve",
+        "t11_sign_blen_lt_n",
+        "t12_sign_blen_gt_n",
+        "t13_verify_r_out_of_range",
+        "t14_verify_s_zero",
+        "t15_concurrent_genkey",
+        "t16a_sign_blen_zero",
+        "t16b_sign_blen_eq_n",
+        "t16c_repeat_channel_init",
+        "t16d_mbedtls_and_explicit_agree",
+        "t17_sign_bad_d_zero",
+        "t19_verify_bad_q_off_curve",
+        "t21_verify_wrong_keypair",
+        "t80_proxy_responds_within_timeout",
+        "t88_sign_bad_d_ge_n",
+        "t89_verify_bad_q_infinity",
+    ],
+    # case_alt_via_proxy = the default matrix (client calls the PLAIN
+    # mbedtls_ecdsa_* names, which ARE the proxy in this config) + t90
+    # (the "plain API is really mailbox-bound" discriminator, client / server
+    # SKIP). t90 sorts last (t90 > t89).
+    "case_alt_via_proxy": [
+        "t01_genkey_p256",
+        "t02_genkey_p384",
+        "t03_genkey_sm2",
+        "t04_sign_p256",
+        "t05_sign_p384",
+        "t06_sign_sm2",
+        "t07_verify_p256",
+        "t08_verify_p384",
+        "t09_verify_sm2",
+        "t10_reject_unsupported_curve",
+        "t11_sign_blen_lt_n",
+        "t12_sign_blen_gt_n",
+        "t13_verify_r_out_of_range",
+        "t14_verify_s_zero",
+        "t15_concurrent_genkey",
+        "t16a_sign_blen_zero",
+        "t16b_sign_blen_eq_n",
+        "t16c_repeat_channel_init",
+        "t17_sign_bad_d_zero",
+        "t19_verify_bad_q_off_curve",
+        "t21_verify_wrong_keypair",
+        "t80_proxy_responds_within_timeout",
+        "t88_sign_bad_d_ge_n",
+        "t89_verify_bad_q_infinity",
+        "t90_plain_api_mailbox_bound",
+    ],
+    # case_rsa_delegation = the RSA family (own source file); r01/r02/r03 are
+    # double-core, r90 is client-assert / server-SKIP.
+    "case_rsa_delegation": [
+        "r01_rsa_modexp_roundtrip_2048",
+        "r02_rsa_modexp_roundtrip_4096",
+        "r03_reject_unsupported_modulus",
+        "r90_rsa_mailbox_bound",
+    ],
 }
 
 # 枚举序必须与 ztest_unit_test 链接序一致；按 --count 截断

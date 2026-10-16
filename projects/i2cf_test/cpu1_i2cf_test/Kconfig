@@ -13,16 +13,22 @@ source "Kconfig.zephyr"
 #       不置位时既有构建逐字节不变（SPEC_REFERENCE §6.4.5 / qsh-test-gen §2 变体）。
 
 config I2CF_SCAN_BURST
-	bool "一次性诊断：filter 拦截扫描时的日志驱逐测量"
+	bool "扫描回归用例 case_scan_burst（逐址扫描 × 三种事务类型）"
 	default n
 	help
 	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_SCAN_BURST` 保护的用例
-	  `i2cf::scan_burst_drain`：白名单清空 → 上游 master 逐址扫 0x08..0x77
-	  （模拟外部 i2cdetect），量化「被拦事件数」与「扫描耗时」，
-	  并打 marker 供采集侧测日志驱逐跨度。
+	  `i2cf::scan_burst_drain`：白名单清空 + filter on → 上游 master 逐址扫
+	  0x08..0x77，对**三种事务类型**各跑一轮并断言「每址恰好一次上报」：
+	    ① 1 字节写（基线对照）
+	    ② 0 长度 quick command（**真正的 i2cdetect / Zephyr `i2c scan` 形态**）
+	    ③ 读
+	  另断言扫描本身耗时在粗上界内（实测 112 址 ≈ 16 ms）。
 
-	  ★ 这是**一次性诊断**用例，不登记进 regression/cases.yaml，
-	    用完可整体删除（本文件 + i2cf_test.c 的该块 + tests/case_scan_burst/）。
+	  BEGIN/END 两条 marker 保留，供采集侧测**日志驱逐跨度**（打印慢的量化值）——
+	  该跨度随 UART/日志后端变化，**只作观测、不作断言**（见该用例文件头说明）。
+
+	  ★ 正式回归用例，已登记进 tests/cases.yaml（case_scan_burst）与
+	    run_test.py 的 TEST_NAMES_BY_CASE。不置位时不编入，case_default 逐字节不变。
 
 config I2CF_FILTEROFF_PROBE
 	bool "一次性判别实验：无违规前置下 filter off 是否放行（H1 vs H2）"
@@ -39,3 +45,19 @@ config I2CF_FILTEROFF_PROBE
 	  ★ 只做判别、**不置任何 zassert 判据**（结论由 ZT_INFO 记录）。
 	    一次性诊断，不登记进 regression/cases.yaml，用完可整体删除
 	    （本文件 + i2cf_test.c 的该块 + tests/case_filteroff_probe/）。
+
+config I2CF_ENUM_MATRIX
+	bool "I2CF 状态枚举矩阵回归用例（白名单内外 × 读/写 × 有/无器件 × 滤波开关）"
+	default n
+	help
+	  开启后编入 src/i2cf_enum.c 的 `ZTEST(i2cf, enum_matrix)`：跑满 9 格 × 读/写两方向，
+	  每格前 cold_reset + 关全部通道（单变量 + 组间复位），逐格用成对 LOG_INF marker
+	  （EM_BEGIN/EM_END）包住 3 笔事务，**逐格断言** ret / ISR 增量合计 / SMBF_NONWHITELIST
+	  锁存（判据全部来自 reports/2026-10-15-3 实测，22 轮零方差）。
+
+	  覆盖：「白名单内/外 × 读/写 × 有/无器件 × 滤波器开/关 → 反馈状态」。
+	  核心结论（C2 白名单内+无器件 isr=0 ↔ C4 白名单外+无器件 isr=1）= 上报只由
+	  「地址是否在白名单内」决定，与总线应答(ACK/NACK)无关、与读/写方向无关。
+
+	  ★ 正式回归用例，已登记进 tests/cases.yaml（工程 case_enum_matrix）与
+	    run_test.py 的 TEST_NAMES_BY_CASE。不置位时不编入，case_default 逐字节不变。

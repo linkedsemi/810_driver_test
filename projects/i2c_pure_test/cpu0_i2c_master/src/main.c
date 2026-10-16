@@ -14,6 +14,11 @@
  * 总时长 ~10s。套件 after 钩子无条件发 'P'（成败路径均下发）让 slave
  * 判定并结束其套件。
  *
+ * 速率两态（CONFIG_I2C_PURE_WAVE_ALT_RATE，由 case 的 controller.conf 选）：
+ *   - 默认 n（case_pure_i2c_400k）：固定 400K；
+ *   - =y（case_pure_i2c_alt_100k_400k）：逐轮交替 100K/400K，并分组计时
+ *     上报 100K/400K 平均传输耗时与比值（自证运行时速率切换生效）。
+ *
  * ztest 原生框架版：test_main 打印角色 banner 后 zt_init + zt_run_all
  * （common/ztest_glue），套件内 ZTEST(i2c_pure_ctrl, i2c_wave) 为唯一
  * 测试项；结果记账由 ztest_glue 的 zt_run_all 按 ztest stats 自动完成，
@@ -26,6 +31,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/time_units.h>	/* k_cyc_to_us_floor32 */
 #include <zephyr/ztest.h>
 
 #include "ztest_glue.h"
@@ -66,12 +72,37 @@ ZTEST(i2c_pure_ctrl, i2c_wave)
 	int ret;
 
 	/* 传输前显式配置速率/模式（官方样例做法：ls-i2c 按 dev_data->config
-	 * 的速率档计算总线分频，应用层必须调用 i2c_configure） */
+	 * 的速率档计算总线分频，应用层必须调用 i2c_configure）。
+	 * 注意 i2c_runtime_configure 只记账（i2c_ls.c），真正的 TIMINGR 在
+	 * 每次 i2c_ls_transfer 的 i2c_reenable(dev, true) 里按该速率档刷写
+	 * ⇒ i2c_configure 是延迟生效，"每轮改一次速率"在机制上成立。 */
 	ret = i2c_configure(master_i2c_dev,
 			    I2C_SPEED_SET(I2C_SPEED_FAST) | I2C_MODE_CONTROLLER);
 	zassert_equal(ret, 0, "i2c_configure rc=%d", ret);
 
+#if defined(CONFIG_I2C_PURE_WAVE_ALT_RATE)
+	/* 逐轮交替 100K/400K（偶数轮 100K、奇数轮 400K），并逐轮掐
+	 * i2c_write+i2c_read 的传输周期数，按速率分组累计 —— 比值是
+	 * "运行时速率切换是否真正生效"的自证（只调 i2c_configure 不算证据）。
+	 * k_cycle_get_32 在 600MHz 下回绕周期 7.16s，单轮传输 < 10ms ⇒
+	 * 32 位差值足够。 */
+	uint32_t cyc_100k = 0, cyc_400k = 0;
+	uint32_t n_100k = 0, n_400k = 0;
+#endif
+
 	for (int round = 0; round < I2C_WAVE_ROUNDS; round++) {
+#if defined(CONFIG_I2C_PURE_WAVE_ALT_RATE)
+		/* 每轮先把速率档切到本轮目标值（下一次 transfer 生效）。 */
+		uint32_t speed = (round & 1) ? I2C_SPEED_FAST
+					     : I2C_SPEED_STANDARD;
+		uint32_t t0;
+
+		ret = i2c_configure(master_i2c_dev,
+				    I2C_SPEED_SET(speed) | I2C_MODE_CONTROLLER);
+		zassert_equal(ret, 0, "i2c_configure round=%d rc=%d",
+			      round, ret);
+		t0 = k_cycle_get_32();
+#endif
 		ctrl_wbuf[0] = CMD_WRITE_PATTERN;
 		ctrl_wbuf[1] = I2C_WAVE_LEN;
 		for (size_t i = 0; i < I2C_WAVE_LEN; i++) {
@@ -94,11 +125,50 @@ ZTEST(i2c_pure_ctrl, i2c_wave)
 				      TGT_READ_PATTERN_BASE + i);
 		}
 
+#if defined(CONFIG_I2C_PURE_WAVE_ALT_RATE)
+		{
+			uint32_t dt = k_cycle_get_32() - t0;
+
+			if (speed == I2C_SPEED_STANDARD) {
+				cyc_100k += dt;
+				n_100k++;
+			} else {
+				cyc_400k += dt;
+				n_400k++;
+			}
+		}
+#endif
 		k_sleep(K_MSEC(I2C_WAVE_ROUND_DELAY_MS));
 	}
 
+#if defined(CONFIG_I2C_PURE_WAVE_ALT_RATE)
+	/* 分组平均传输耗时（us）与 100K/400K 比值上报；ZT_INFO 第一参必须是
+	 * 字符串字面量（qsh-test-gen §1.4）。 */
+	uint32_t avg_us_100k = n_100k ? k_cyc_to_us_floor32(cyc_100k / n_100k) : 0;
+	uint32_t avg_us_400k = n_400k ? k_cyc_to_us_floor32(cyc_400k / n_400k) : 0;
+	uint32_t ratio_x100 = avg_us_400k ?
+		(uint32_t)(((uint64_t)avg_us_100k * 100U) / avg_us_400k) : 0;
+
+	ZT_INFO("i2c_wave",
+		"rounds=%d,delay_ms=%d,rate_khz=100alt400,n_100k=%u,n_400k=%u,"
+		"avg_us_100k=%u,avg_us_400k=%u,ratio_100k_over_400k=%u.%02u",
+		I2C_WAVE_ROUNDS, I2C_WAVE_ROUND_DELAY_MS,
+		n_100k, n_400k, avg_us_100k, avg_us_400k,
+		ratio_x100 / 100U, ratio_x100 % 100U);
+
+	/* 自证：100K 组传输耗时必须明显大于 400K 组，比值落在 [2.5, 6.0]
+	 * （理论 ~4；每笔传输的固定软件开销会稀释比值，下界 2.5 已放宽）。
+	 * 超界 = 运行时速率切换未真正生效，须查根因，不放松本判据。 */
+	zassert_true(avg_us_100k > avg_us_400k,
+		     "100K avg_us=%u not > 400K avg_us=%u",
+		     avg_us_100k, avg_us_400k);
+	zassert_true(ratio_x100 >= 250U && ratio_x100 <= 600U,
+		     "100K/400K transfer-time ratio %u.%02u out of [2.50,6.00]",
+		     ratio_x100 / 100U, ratio_x100 % 100U);
+#else
 	ZT_INFO("i2c_wave", "rounds=%d,delay_ms=%d,rate_khz=400",
 		I2C_WAVE_ROUNDS, I2C_WAVE_ROUND_DELAY_MS);
+#endif
 }
 
 void test_main(void)

@@ -80,6 +80,17 @@ TEST_NAMES = [
     "scl_hold_time_roundtrip", "slave_addr_scan", "switch_master_filter",
 ]
 
+# 按 case 取测试项表（G-RUNTEST-MULTICASE-ITEMSET，2026-10-13 框架修复的本地化）：
+#   · case_default 只编 src/i2cf_test.c ⇒ 18 项（= TEST_NAMES）；
+#   · case_enum_matrix 多编 src/i2cf_enum.c（CONFIG_I2CF_ENUM_MATRIX=y）⇒ +enum_matrix；
+#   · case_scan_burst 多编 i2cf_test.c 的 CONFIG_I2CF_SCAN_BURST 保护块 ⇒ +scan_burst_drain。
+# 未列出的 case 回退 TEST_NAMES。判定用**名字查找**（顺序无关），故此处用 sorted 即可；
+# dump_results.py 的 mem 映射需**链接序**（另按 nm 核对，见该文件 TEST_NAMES_BY_CASE）。
+TEST_NAMES_BY_CASE = {
+    "case_enum_matrix": sorted(TEST_NAMES + ["enum_matrix"]),
+    "case_scan_burst": sorted(TEST_NAMES + ["scan_burst_drain"]),
+}
+
 
 def log(msg):
     print(msg, flush=True)
@@ -235,14 +246,16 @@ def l2_spec(facts=None):
 
     def _judge(ci):
         mem = ci.mem
+        # 按 case 取测试项表（G-RUNTEST-MULTICASE-ITEMSET）：单跑与批量走同一路径。
+        tn = TEST_NAMES_BY_CASE.get(ci.case, TEST_NAMES)
         mem_state, mem_note = mem_state_of_payload(mem)
         results, infos, reasons, notes, execution = evaluate_case(
-            ci.case, ci.lines["TGT"], TEST_NAMES, mem)
-        passed = sum(1 for n in TEST_NAMES if results[n] == PASS)
+            ci.case, ci.lines["TGT"], tn, mem)
+        passed = sum(1 for n in tn if results[n] == PASS)
         # R8：mem 非证据项不计入 ran（分子分母两端同时摘掉）
-        ran = sum(1 for n in TEST_NAMES
+        ran = sum(1 for n in tn
                   if results[n] not in (NOT_RUN, SKIP, MEM_NOEVID))
-        n_skip = sum(1 for n in TEST_NAMES if results[n] == SKIP)
+        n_skip = sum(1 for n in tn if results[n] == SKIP)
         mem_line_before = mem_state_line(mem_state, mem_note)
         # R7：全项证据都来自 mem ⇒ 不得判 PASS；理由串挂 mem_note（三处同源）
         mem_only = mem_only_evidence(notes.values())
@@ -252,12 +265,12 @@ def l2_spec(facts=None):
         # 无证据项按成因拆开：真"没测到"（missing）与"mem 有值但不算证据"
         # （mem_noevid）—— 判定效果相同（都进 missing_evidence ⇒ 不得判 PASS），
         # 但理由串必须分开，不能把 mem 有值说成"token 与内存兜底都没有值"。
-        _missing, _mem_noevid = evidence_gaps(TEST_NAMES, results)
+        _missing, _mem_noevid = evidence_gaps(tn, results)
         _weak = mem_weak_note(
             [f"{n}(mem={mem_noevid_value(notes.get(n, ''))})" for n in _mem_noevid])
         if _weak:
             mem_note = ((mem_note + "；") if mem_note else "") + _weak
-        verdict = judge_case(results, passed, ran, execution, TEST_NAMES)
+        verdict = judge_case(results, passed, ran, execution, tn)
         return {"case": ci.case, "mem_none": mem is None,
                 "mem_state": mem_state, "mem_note": mem_note,
                 "mem_line": mem_state_line(mem_state, mem_note),
@@ -265,6 +278,7 @@ def l2_spec(facts=None):
                 "results": results, "infos": infos, "reasons": reasons,
                 "notes": notes, "execution": execution, "passed": passed,
                 "ran": ran, "n_skip": n_skip, "verdict": verdict,
+                "test_names": tn,
                 "exec_report": verdict["exec"], "missing": _missing,
                 "case_ok": verdict["ok"] and not mem_only}
 
@@ -274,7 +288,7 @@ def l2_spec(facts=None):
             log("[run] memory backfill: mem-unavailable (串口 token 缺失时按 §12.3 判 FAIL)")
         log(f"[run] {b['mem_line_before']}")
         log(f"--- {b['case']} results ---")
-        for name in TEST_NAMES:
+        for name in b["test_names"]:
             tag = f"  {name:<24} {b['results'][name]}"
             if b["reasons"].get(name):
                 tag += f"  ({b['reasons'][name]})"
@@ -341,7 +355,10 @@ def main():
         archive=not args.no_archive, script=__file__,
         src_dir="cpu1_i2cf_test", build_subdir="target",
         build_progress="auto", build_timeout=900,
-        build_conf=False, pre_erase=True, hold_cpu2=True,
+        # 按 case 检测 <case>/case.conf：有则拼 `prj.conf;<case>/case.conf`，
+        # 无（case_default）则只 prj.conf —— 与 spec 字段既有语义一致（acquire.west_build）。
+        build_conf=(SAMPLE_ROOT / "tests" / args.case / "case.conf").exists(),
+        pre_erase=True, hold_cpu2=True,
         session=lambda: session_dir or (
             Path(args.session_dir) if args.session_dir
             else allocate_session_dir(REPORTS_ROOT, date_str)))

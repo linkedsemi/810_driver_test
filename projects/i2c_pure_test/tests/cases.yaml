@@ -18,3 +18,4 @@ meta:
 # 新增 case：在 `tests/` 下建目录并在此登记（不登记 = 不跑）。
 cases:
   - case_pure_i2c_400k
+  - case_pure_i2c_alt_100k_400k

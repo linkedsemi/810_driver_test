@@ -26,6 +26,13 @@ if(OTBN_DELEG_BENCH)
 elseif(OTBN_DELEG_SOAK)
     target_sources(app PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_soak.c)
+elseif(OTBN_DELEG_RSA)
+    # case_rsa_delegation (-DOTBN_DELEG_RSA=1): the RSA item set gets its OWN
+    # translation unit, like bench/soak. It must not share the ECDSA body: the
+    # ECDSA items are all linked, so its channel-masking item would otherwise run
+    # before t01 (link order is by name, and 'r' < 't') and wedge the matrix.
+    target_sources(app PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_rsa.c)
 else()
     target_sources(app PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_test.c)
@@ -49,6 +56,57 @@ endif()
 if(OTBN_DELEG_BENCH)
     target_compile_definitions(app PRIVATE OTBN_DELEG_BENCH=1)
 endif()
+# case_throughput_iso_{proxy,local} (-DOTBN_DELEG_BENCH_HOLD=1): the "hold" side
+# of an isolated throughput measurement. This core compiles the same bench TU but
+# does not bench, so the peer measures the shared OTBN uncontended. The item name
+# is kept identical to the active core's, as the dual-core matrix requires.
+if(OTBN_DELEG_BENCH_HOLD)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_BENCH_HOLD=1)
+endif()
+# case_throughput_iso_local_hwrng (-DOTBN_DELEG_BENCH_HWRNG=1): the bench feeds
+# genkey/sign from the hardware entropy device instead of the in-process LCG, so
+# the local baseline matches what the delegation SERVER uses when serving a
+# proxied genkey/sign (see tests/src/otbn_delegation_bench.c).
+if(OTBN_DELEG_BENCH_HWRNG)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_BENCH_HWRNG=1)
+endif()
+# case_entropy_iso (-DOTBN_DELEG_BENCH_ENTROPY=1): the bench measures the two
+# entropy-device fetch APIs (blocking vs ENTROPY_BUSYWAIT) instead of OTBN ops.
+# Passed to BOTH cores; the HOLD side registers the same b02_entropy placeholder.
+if(OTBN_DELEG_BENCH_ENTROPY)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_BENCH_ENTROPY=1)
+endif()
+# OTBN_DELEG_BENCH_TRNG1=1 (ad-hoc, trng1 timing): see the cpu1 CMakeLists. On this
+# HOLD core the entropy bench expands to the hold placeholder, so the define is
+# inert here; it is accepted only so the same EXTRA_CMAKE_ARGS can drive both
+# cores without a per-core branch.
+if(OTBN_DELEG_BENCH_TRNG1)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_BENCH_TRNG1=1)
+endif()
 if(OTBN_DELEG_SOAK)
     target_compile_definitions(app PRIVATE OTBN_DELEG_SOAK=1)
+endif()
+# case_explicit_api (-DOTBN_DELEG_EXPLICIT_API=1): the client calls the explicit
+# mbedtls_ls_otbn_ecdsa_* entry points by name (see the redirection block in
+# tests/src/otbn_delegation_test.c). Passed to BOTH cores: the server registers
+# the equivalence item for name symmetry and SKIPs (its image has no explicit
+# entry point), while its matrix keeps the mbedtls_* names.
+if(OTBN_DELEG_EXPLICIT_API)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_EXPLICIT_API=1)
+endif()
+# case_alt_via_proxy (-DOTBN_DELEG_VIA_PROXY=1): the client is built with
+# CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION=y, so its PLAIN
+# mbedtls_ecdsa_* names ARE the proxy; the shared body calls them (see the
+# redirection block in tests/src/otbn_delegation_test.c) and registers the t90
+# "plain API is really mailbox-bound" item. Passed to BOTH cores: the server
+# registers t90 for name symmetry and SKIPs.
+if(OTBN_DELEG_VIA_PROXY)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_VIA_PROXY=1)
+endif()
+# case_rsa_delegation (-DOTBN_DELEG_RSA=1): the RSA item set lives in its own
+# source file (tests/src/otbn_delegation_rsa.c, selected above). Passed to BOTH
+# cores: the client drives the RSA proxy, the server drives its local OTBN RSA
+# backend (enabled by case_rsa_delegation/target.conf).
+if(OTBN_DELEG_RSA)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_RSA=1)
 endif()

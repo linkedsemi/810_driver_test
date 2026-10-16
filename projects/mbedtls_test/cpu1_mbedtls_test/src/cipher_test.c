@@ -971,59 +971,94 @@ ZTEST(cipher, aes_ecb_cbc_unaligned)
  */
 ZTEST(cipher, aes128_ctr_carry)
 {
+	/* 四种分片形状（low = 计数器低 32 位字；until_wrap = 距回绕还差几步）：
+	 *   [0] 0xFFFFFFFF / 4 块  → 批次 1+3    回绕落在第一块
+	 *   [1] 0xFFFFFFFE / 5 块  → 批次 2+3    回绕落在一小批之后
+	 *   [2] 0xFFFFFFFC / 6 块  → 批次 4+2    第一批发满、第二批不受限
+	 *   [3] 0xFFFFFFF0 / 10 块 → 单批 10     不需要分片
+	 * 只压 until_wrap==1 不够 —— 分片算术最容易写错的正是
+	 * "until_wrap 既不等于 1、也不大于总块数"这种边界。 */
+	static const struct {
+		const char *cnt0, *pt, *ct;
+		unsigned int bytes;
+	} v[MT_AES128CTR_CARRY_N] = {
+		{ MT_AES128CTR_CARRY0_CNT0, MT_AES128CTR_CARRY0_PT, MT_AES128CTR_CARRY0_CT, 64 },
+		{ MT_AES128CTR_CARRY1_CNT0, MT_AES128CTR_CARRY1_PT, MT_AES128CTR_CARRY1_CT, 80 },
+		{ MT_AES128CTR_CARRY2_CNT0, MT_AES128CTR_CARRY2_PT, MT_AES128CTR_CARRY2_CT, 96 },
+		{ MT_AES128CTR_CARRY3_CNT0, MT_AES128CTR_CARRY3_PT, MT_AES128CTR_CARRY3_CT, 160 },
+	};
 	mbedtls_aes_context aes;
-	unsigned char key[16], cnt0[16], pt[64], exp_ct[64];
+	unsigned char key[16], cnt0[16];
+	unsigned char pt[160], exp_ct[160];
 	unsigned char cnt[16], sb[16];
-	unsigned char ct[64], ct_seg[64], dec[64];
+	unsigned char ct[160], seg[160], dec[160];
+	int ok1[MT_AES128CTR_CARRY_N], ok2[MT_AES128CTR_CARRY_N];
+	int ok3[MT_AES128CTR_CARRY_N];
+	int single_ok = 1, segmented_ok = 1, roundtrip_ok = 1;
 	size_t off;
+	unsigned int i;
 	int ret;
-	int single_ok, seg_ok, roundtrip_ok;
 
 	zassert_equal(mt_unhexify(key, MT_AES128CTR_CARRY_KEY), 16, "carry key hex invalid");
-	zassert_equal(mt_unhexify(cnt0, MT_AES128CTR_CARRY_CNT0), 16, "carry cnt hex invalid");
-	zassert_equal(mt_unhexify(pt, MT_AES128CTR_CARRY_PT), 64, "carry pt hex invalid");
-	zassert_equal(mt_unhexify(exp_ct, MT_AES128CTR_CARRY_CT), 64, "carry ct hex invalid");
 
-	/* 确认本向量确实是"跨 32 位字进位"的那一档计数器 */
-	zassert_mem_equal(cnt0 + 12, "\xff\xff\xff\xff", 4,
-			  "carry vector must start with low 32 bits all ones");
-
-	/* 形态 1：一次喂 4 块 */
 	mbedtls_aes_init(&aes);
 	zassert_equal(mbedtls_aes_setkey_enc(&aes, key, 128), 0, "carry setkey failed");
-	memcpy(cnt, cnt0, sizeof(cnt));
-	memset(sb, 0, sizeof(sb));
-	off = 0;
-	ret = mbedtls_aes_crypt_ctr(&aes, 64, &off, cnt, sb, pt, ct);
-	single_ok = (ret == 0) && (memcmp(ct, exp_ct, 64) == 0);
 
-	/* 形态 2：拆成 1 块 + 3 块（跨进位发生在第 2 段；软件侧补递增若与硬件
-	 * 实际推进不符，这里就会错） */
-	memcpy(cnt, cnt0, sizeof(cnt));
-	memset(sb, 0, sizeof(sb));
-	off = 0;
-	ret = mbedtls_aes_crypt_ctr(&aes, 16, &off, cnt, sb, pt, ct_seg);
-	if (ret == 0) {
-		ret = mbedtls_aes_crypt_ctr(&aes, 48, &off, cnt, sb, pt + 16, ct_seg + 16);
+	for (i = 0; i < MT_AES128CTR_CARRY_N; i++) {
+		unsigned int n = v[i].bytes;
+		unsigned int half = (n / 2) & ~15u;   /* 分段点落在块边界上 */
+
+		ok1[i] = ok2[i] = ok3[i] = 0;
+
+		zassert_equal(mt_unhexify(cnt0, v[i].cnt0), 16, "carry%u cnt hex", i);
+		zassert_equal(mt_unhexify(pt, v[i].pt), (int)n, "carry%u pt hex", i);
+		zassert_equal(mt_unhexify(exp_ct, v[i].ct), (int)n, "carry%u ct hex", i);
+
+		/* 形态 1：单次整段 —— 回绕必须发生在硬件批次内部 */
+		memcpy(cnt, cnt0, sizeof(cnt));
+		memset(sb, 0, sizeof(sb));
+		off = 0;
+		ret = mbedtls_aes_crypt_ctr(&aes, n, &off, cnt, sb, pt, ct);
+		ok1[i] = (ret == 0) && (memcmp(ct, exp_ct, n) == 0);
+
+		/* 形态 2：从中间某块边界切开 —— 每段各自重新分片 */
+		memcpy(cnt, cnt0, sizeof(cnt));
+		memset(sb, 0, sizeof(sb));
+		off = 0;
+		ret = mbedtls_aes_crypt_ctr(&aes, half, &off, cnt, sb, pt, seg);
+		if (ret == 0) {
+			ret = mbedtls_aes_crypt_ctr(&aes, n - half, &off, cnt, sb,
+						    pt + half, seg + half);
+		}
+		ok2[i] = (ret == 0) && (memcmp(seg, exp_ct, n) == 0);
+
+		/* 形态 3：把该向量的密文解回明文（同一计数器流） */
+		memcpy(cnt, cnt0, sizeof(cnt));
+		memset(sb, 0, sizeof(sb));
+		off = 0;
+		ret = mbedtls_aes_crypt_ctr(&aes, n, &off, cnt, sb, exp_ct, dec);
+		ok3[i] = (ret == 0) && (memcmp(dec, pt, n) == 0);
+
+		single_ok &= ok1[i];
+		segmented_ok &= ok2[i];
+		roundtrip_ok &= ok3[i];
 	}
-	seg_ok = (ret == 0) && (memcmp(ct_seg, exp_ct, 64) == 0);
-
-	/* 形态 3：把密文解回明文（对同一计数器流） */
-	memcpy(cnt, cnt0, sizeof(cnt));
-	memset(sb, 0, sizeof(sb));
-	off = 0;
-	ret = mbedtls_aes_crypt_ctr(&aes, 64, &off, cnt, sb, exp_ct, dec);
-	roundtrip_ok = (ret == 0) && (memcmp(dec, pt, 64) == 0);
 
 	mbedtls_aes_free(&aes);
 
 	ZT_INFO("aes128_ctr_carry",
-		"algo=aes-128-ctr,carry=word_boundary,single_ok=%d,segmented_ok=%d,roundtrip_ok=%d",
-		single_ok, seg_ok, roundtrip_ok);
+		"algo=aes-128-ctr,n=%d,single_ok=%d,segmented_ok=%d,roundtrip_ok=%d,"
+		"single_bits=%d%d%d%d,seg_bits=%d%d%d%d",
+		MT_AES128CTR_CARRY_N, single_ok, segmented_ok, roundtrip_ok,
+		ok1[0], ok1[1], ok1[2], ok1[3], ok2[0], ok2[1], ok2[2], ok2[3]);
 
-	zassert_true(single_ok, "CTR single-call ciphertext wrong across a 32-bit word carry");
-	zassert_true(seg_ok, "CTR segmented ciphertext wrong across a 32-bit word carry");
-	zassert_true(roundtrip_ok, "CTR round trip wrong across a 32-bit word carry");
+	zassert_true(single_ok,
+		     "CTR single-call ciphertext wrong across a 32-bit word wrap "
+		     "(until_wrap = 1 / 2 / 4 / 16)");
+	zassert_true(segmented_ok,
+		     "CTR segmented ciphertext wrong across a 32-bit word wrap");
+	zassert_true(roundtrip_ok,
+		     "CTR round trip wrong across a 32-bit word wrap");
 }
 
 /* ---- AES 并发：两个 context 交错使用同一硬件引擎 ----

@@ -8,25 +8,35 @@
  * The SAME test code is compiled into both cpu2 (delegation CLIENT) and cpu1
  * (delegation SERVER). The only difference is the build config:
  *   - cpu2: CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT=y
- *           => mbedtls_ecdsa_{genkey,sign,verify} resolve to the delegation
- *              stubs in zephyr/soc/linkedsemi/lsqsh/otbn/mbedtls/
- *                 mbedtls_otbn_crypto_mbox.c -- the request is sent over the
- *              otbn_crypto mbox channel and answered by cpu1.
+ *           The image always builds the delegation stubs in
+ *           zephyr/soc/linkedsemi/lsqsh/otbn/mbedtls/mbedtls_otbn_crypto_mbox.c
+ *           (mbedtls_ls_otbn_ecdsa_*). WHICH local name reaches them is set by
+ *           the ECDSA alternative choice:
+ *             * entry = local OTBN or off  -> mbedtls_ecdsa_* is NOT the proxy,
+ *               so DELEG_* maps to the explicit names (cases default/
+ *               dead_channel/no_server/explicit_api);
+ *             * entry = via delegation (CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_
+ *               ALT_VIA_DELEGATION=y) -> mbedtls_ecdsa_* IS the proxy, and
+ *               DELEG_* maps to the plain names (case_alt_via_proxy).
+ *           Either way each delegated request crosses the otbn_crypto mbox
+ *           channel and is answered by cpu1.
  *   - cpu1: CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_SERVER=y
  *           => mbedtls_ecdsa_* are the real OTBN-accelerated implementations;
- *              the core also services cpu2's mbox requests from a work queue.
+ *              the core also services cpu2's mbox requests from a dedicated
+ *              delegation thread.
  *
  * Judgement (810 dual-core, same-name items on both cores) = item PASS on
  * CTRL(cpu2) AND TGT(cpu1). A delegated operation succeeds on cpu2 only if
  * cpu1 answered it, so a double PASS means "channel up + proxy round-trip
  * correct"; cpu1's own PASS means "local OTBN ECDSA correct".
  *
- * Test order is intentionally the numeric prefix order (link order = name
- * order), with the negative case LAST. Reason: the client-side genkey stub
- * leaks client_sem on an out-of-whitelist curve (mbedtls_ecdsa_genkey returns
- * -EIO at mbedtls_otbn_crypto_mbox.c:112 after taking the sem at :101 without
- * the matching k_sem_give at the shared exit). Running it last keeps the
- * channel usable for the positive cases and still exercises the negative path.
+ * Test order is the numeric prefix order (link order = name order). The
+ * negative cases were once forced last because the client-side genkey stub
+ * leaked client_sem on an out-of-whitelist curve (took the sem, then returned
+ * -EIO through a path without the matching give). That is fixed: the curve
+ * whitelist is now checked before the bus takes client_sem, and the bus
+ * releases it on every exit path (see otbn_delegation.c). Order no longer
+ * matters for channel health -- do not "fix" a leak that is not there.
  */
 
 #include <errno.h>
@@ -42,6 +52,50 @@
 #include "mbedtls/bignum.h"
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ecp.h"
+
+/*
+ * Interface redirection -- selected by ROLE and by which ECDSA surface the
+ * client's build routes to the proxy.
+ *
+ * The delegation CLIENT has two ECDSA surfaces:
+ *   - the explicit mbedtls_ls_otbn_ecdsa_* entry points (mbox.c), which the
+ *     client image always builds, and
+ *   - the mbedtls_ecdsa_* names, which reach the proxy ONLY when the OTBN ECDSA
+ *     alternative is routed through the delegation
+ *     (CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION); in every other
+ *     client config ecdsa_alt.c or ecdsa.c owns them instead.
+ *
+ * So the redirect has two client modes:
+ *   - client WITHOUT ALT_VIA_DELEGATION (cases default/dead_channel/no_server/
+ *     explicit_api): the plain names are software/ecdsa_alt.c, NOT the proxy, so
+ *     the matrix must call the explicit names to exercise the proxy.
+ *   - client WITH ALT_VIA_DELEGATION (case_alt_via_proxy): the plain names ARE
+ *     the proxy (mbedtls_ecdsa_* forwards to the mbox stub), so the matrix calls
+ *     the plain names -- that is the whole point of that case: prove the plain
+ *     API an application/TLS/pk would use is really forwarded to the peer.
+ *
+ * The SERVER builds no delegation client, so it keeps the mbedtls_ecdsa_* names:
+ * on that image they are the local OTBN implementation (ecdsa_alt.c), i.e. the
+ * independent reference the client's proxied results are compared against.
+ */
+/* Channel bring-up entry points (ls_otbn_delegation_client_init /
+ * _server_init), used by t16c_repeat_channel_init on BOTH roles. Keep this
+ * include OUTSIDE the DELEG_* selection below, which is the client
+ * explicit-API-only branch: the alt_via_proxy client and every server build
+ * take the #else arm and still need these declarations. */
+#include "ls_otbn_delegation.h"
+
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT) && \
+	!defined(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION)
+#include "mbedtls_otbn_ecdsa_mbox.h"
+#define DELEG_GENKEY  mbedtls_ls_otbn_ecdsa_genkey
+#define DELEG_SIGN    mbedtls_ls_otbn_ecdsa_sign
+#define DELEG_VERIFY  mbedtls_ls_otbn_ecdsa_verify
+#else
+#define DELEG_GENKEY  mbedtls_ecdsa_genkey
+#define DELEG_SIGN    mbedtls_ecdsa_sign
+#define DELEG_VERIFY  mbedtls_ecdsa_verify
+#endif
 
 /* ZT_INFO comes from the 810 common ztest glue; this TU must include it. */
 #include "ztest_glue.h"
@@ -116,21 +170,25 @@ static bool client_proxy_ready(void)
 		}                                       \
 	} while (0)
 
-/* Load the curve then generate a fresh key pair on the backend in use. */
+/*
+ * Generate a fresh key pair on the backend in use. No caller-side pre-load:
+ * every genkey entry point loads ctx->grp from gid itself -- the software one
+ * (crypto/mbedtls/library/ecdsa.c), the LOCAL OTBN alternative (ecdsa_alt.c),
+ * and the delegation proxy (mbedtls_otbn_crypto_mbox.c) -- so ctx->private_grp
+ * is populated right after this call on every backend (the N / nbits / check_*
+ * reads below rely on it).
+ */
 static void genkey_or_fail(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_id gid)
 {
-	int rc = mbedtls_ecp_group_load(&ctx->private_grp, gid);
+	int rc = DELEG_GENKEY(ctx, gid, test_rng, NULL);
 
-	zassert_equal(rc, 0, "ecp_group_load gid=%d rc=%d", (int)gid, rc);
-
-	rc = mbedtls_ecdsa_genkey(ctx, gid, test_rng, NULL);
 	zassert_equal(rc, 0, "ecdsa_genkey gid=%d rc=%d", (int)gid, rc);
 }
 
 /* Sign test_hash; returns r/s in the caller's mpis (caller owns/init them). */
 static void sign_or_fail(mbedtls_ecdsa_context *ctx, mbedtls_mpi *r, mbedtls_mpi *s)
 {
-	int rc = mbedtls_ecdsa_sign(&ctx->private_grp, r, s, &ctx->private_d,
+	int rc = DELEG_SIGN(&ctx->private_grp, r, s, &ctx->private_d,
 				    test_hash, sizeof(test_hash), test_rng, NULL);
 
 	zassert_equal(rc, 0, "ecdsa_sign rc=%d", rc);
@@ -244,7 +302,7 @@ static void assert_verify_roundtrip(mbedtls_ecp_group_id gid)
 	genkey_or_fail(&ctx, gid);
 	sign_or_fail(&ctx, &r, &s);
 
-	zassert_equal(mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+	zassert_equal(DELEG_VERIFY(&ctx.private_grp, test_hash,
 					    sizeof(test_hash), &ctx.private_Q, &r, &s),
 		      0, "gid=%d valid signature rejected", (int)gid);
 
@@ -256,7 +314,7 @@ static void assert_verify_roundtrip(mbedtls_ecp_group_id gid)
 
 	zassert_true(mbedtls_mpi_cmp_mpi(&r_bad, &r) != 0, "tamper made no change");
 
-	zassert_true(mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+	zassert_true(DELEG_VERIFY(&ctx.private_grp, test_hash,
 					   sizeof(test_hash), &ctx.private_Q,
 					   &r_bad, &s) != 0,
 		     "gid=%d tampered signature accepted (verify is a no-op)",
@@ -296,7 +354,7 @@ static void assert_sign_with_blen(mbedtls_ecp_group_id gid, size_t blen)
 	mbedtls_mpi_init(&s);
 	genkey_or_fail(&ctx, gid);
 
-	zassert_equal(mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d,
+	zassert_equal(DELEG_SIGN(&ctx.private_grp, &r, &s, &ctx.private_d,
 			buf, blen, test_rng, NULL), 0,
 		"gid=%d sign blen=%u failed", (int)gid, (unsigned)blen);
 	zassert_true(mbedtls_mpi_cmp_int(&r, 0) > 0 &&
@@ -335,7 +393,7 @@ static void assert_verify_rejects_bad_scalar(mbedtls_ecp_group_id gid, bool bad_
 		mbedtls_mpi_lset(&s, 0);                    /* s = 0 */
 	}
 
-	zassert_true(mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+	zassert_true(DELEG_VERIFY(&ctx.private_grp, test_hash,
 			sizeof(test_hash), &ctx.private_Q, &r, &s) != 0,
 		"gid=%d verify accepted out-of-range %s", (int)gid, bad_r ? "r=n" : "s=0");
 
@@ -360,7 +418,7 @@ static void genkey_job_thread(void *p1, void *p2, void *p3)
 	mbedtls_ecdsa_context ctx;
 
 	ctx_init(&ctx);
-	j->rc = mbedtls_ecdsa_genkey(&ctx, j->gid, test_rng, NULL);
+	j->rc = DELEG_GENKEY(&ctx, j->gid, test_rng, NULL);
 	ctx_free(&ctx);
 	k_sem_give(&j->done);
 }
@@ -454,6 +512,14 @@ ZTEST(otbn_deleg, t09_verify_sm2)
  * rejected, not silently accepted. MBEDTLS_ECP_DP_NONE is the "no curve"
  * sentinel: the client stub rejects it before any mbox traffic, and the local
  * backend fails mbedtls_ecp_group_load().
+ *
+ * On the CLIENT this also covers the sign/verify buffer-sizing fix: those
+ * stubs size their fixed MAX_OTBN_CURVE_LEN (48-byte) buffers from the curve
+ * whitelist, not from grp->nbits. A real, loadable non-whitelist curve --
+ * P-521, compiled in via CONFIG_MBEDTLS_ECP_ALL_ENABLED, nbits 521 => a
+ * 66-byte n_size -- used to overflow those buffers; it must now be rejected
+ * with -EIO before any buffer is written. The server keeps its own whitelist
+ * (ecdsa_curve_supported) and is not exercised by this extra block.
  */
 ZTEST(otbn_deleg, t10_reject_unsupported_curve)
 {
@@ -461,11 +527,48 @@ ZTEST(otbn_deleg, t10_reject_unsupported_curve)
 	int rc;
 
 	ctx_init(&ctx);
-	rc = mbedtls_ecdsa_genkey(&ctx, MBEDTLS_ECP_DP_NONE, test_rng, NULL);
+	rc = DELEG_GENKEY(&ctx, MBEDTLS_ECP_DP_NONE, test_rng, NULL);
 	zassert_true(rc != 0, "unsupported curve accepted rc=%d", rc);
 
 	ZT_INFO("reject_curve", "rc=%d", rc);
 	ctx_free(&ctx);
+
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
+	{
+		/* A caller may legitimately ask for a curve the proxy does not
+		 * serve. Load it for real so grp.nbits == 521 (the pre-fix code
+		 * would then derive n_size = 66 and write past the 48-byte
+		 * buffers): the stub must key off grp->id and return -EIO
+		 * without touching them, and must not crash. */
+		mbedtls_ecp_group grp;
+		mbedtls_mpi d, r, s;
+		mbedtls_ecp_point q;
+
+		mbedtls_ecp_group_init(&grp);
+		mbedtls_mpi_init(&d);
+		mbedtls_mpi_init(&r);
+		mbedtls_mpi_init(&s);
+		mbedtls_ecp_point_init(&q);
+		mbedtls_mpi_lset(&d, 1);
+
+		zassert_equal(mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP521R1), 0,
+			      "P-521 group failed to load");
+		zassert_equal(grp.nbits, 521, "P-521 nbits=%u", (unsigned)grp.nbits);
+
+		rc = DELEG_SIGN(&grp, &r, &s, &d, test_hash, sizeof(test_hash),
+				test_rng, NULL);
+		zassert_equal(rc, -EIO, "non-whitelist curve sign rc=%d", rc);
+
+		rc = DELEG_VERIFY(&grp, test_hash, sizeof(test_hash), &q, &r, &s);
+		zassert_equal(rc, -EIO, "non-whitelist curve verify rc=%d", rc);
+
+		mbedtls_ecp_point_free(&q);
+		mbedtls_mpi_free(&s);
+		mbedtls_mpi_free(&r);
+		mbedtls_mpi_free(&d);
+		mbedtls_ecp_group_free(&grp);
+	}
+#endif
 }
 
 /* --- interface-usage variants ------------------------------------------ */
@@ -530,14 +633,14 @@ static int run_neg_op(enum neg_op op, mbedtls_ecp_group_id gid)
 		} else {
 			mbedtls_mpi_copy(&d, &ctx.private_grp.N);
 		}
-		rc = mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &d, test_hash,
+		rc = DELEG_SIGN(&ctx.private_grp, &r, &s, &d, test_hash,
 					sizeof(test_hash), test_rng, NULL);
 	} else {
 		/* Valid key + signature first, then corrupt the verification input. */
-		if (mbedtls_ecdsa_genkey(&ctx, gid, test_rng, NULL) != 0) {
+		if (DELEG_GENKEY(&ctx, gid, test_rng, NULL) != 0) {
 			goto out;
 		}
-		if (mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d,
+		if (DELEG_SIGN(&ctx.private_grp, &r, &s, &ctx.private_d,
 				       test_hash, sizeof(test_hash), test_rng, NULL) != 0) {
 			goto out;
 		}
@@ -545,12 +648,12 @@ static int run_neg_op(enum neg_op op, mbedtls_ecp_group_id gid)
 			mbedtls_ecdsa_context ctx2;
 
 			ctx_init(&ctx2);
-			if (mbedtls_ecp_group_load(&ctx2.private_grp, gid) != 0 ||
-			    mbedtls_ecdsa_genkey(&ctx2, gid, test_rng, NULL) != 0) {
+			/* No curve pre-load: DELEG_GENKEY below loads ctx2.grp. */
+			if (DELEG_GENKEY(&ctx2, gid, test_rng, NULL) != 0) {
 				ctx_free(&ctx2);
 				goto out;
 			}
-			rc = mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+			rc = DELEG_VERIFY(&ctx.private_grp, test_hash,
 					sizeof(test_hash), &ctx2.private_Q, &r, &s);
 			ctx_free(&ctx2);
 		} else {
@@ -564,7 +667,7 @@ static int run_neg_op(enum neg_op op, mbedtls_ecp_group_id gid)
 			} else {
 				(void)mbedtls_ecp_set_zero(&qbad);
 			}
-			rc = mbedtls_ecdsa_verify(&ctx.private_grp, test_hash,
+			rc = DELEG_VERIFY(&ctx.private_grp, test_hash,
 					sizeof(test_hash), &qbad, &r, &s);
 		}
 	}
@@ -687,22 +790,90 @@ ZTEST(otbn_deleg, t16c_repeat_channel_init)
 
 	DELEG_GATE();
 
+	/* Channel bring-up is idempotent: call it a second time. The entry points
+	 * come from ls_otbn_delegation.h, included at the top of this file. */
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
-	void mbedtls_ls_otbn_delegation_client_chanels_init(void);
-
-	mbedtls_ls_otbn_delegation_client_chanels_init();   /* 2nd time */
+	ls_otbn_delegation_client_init();
 #elif defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_SERVER)
-	void mbedtls_ls_otbn_delegation_server_chanels_init(void);
-
-	mbedtls_ls_otbn_delegation_server_chanels_init();   /* 2nd time */
+	ls_otbn_delegation_server_init();
 #endif
 
 	ctx_init(&ctx);
-	rc = mbedtls_ecdsa_genkey(&ctx, MBEDTLS_ECP_DP_SECP256R1, test_rng, NULL);
+	rc = DELEG_GENKEY(&ctx, MBEDTLS_ECP_DP_SECP256R1, test_rng, NULL);
 	ZT_INFO("repeat_init", "genkey_after_double_init_rc=%d", rc);
 	zassert_equal(rc, 0, "proxy broken after repeated channel init (rc=%d)", rc);
 	ctx_free(&ctx);
 }
+
+/*
+ * t16d -- same-image cross-entry agreement (case_explicit_api only; see the
+ * redirection block at the top of the file).
+ *
+ * The client of this case calls the explicit mbedtls_ls_otbn_ecdsa_* names; this
+ * item additionally drives the mbedtls_ecdsa_* name and requires BOTH calls to
+ * succeed and to yield a valid on-curve key -- i.e. both entry points an
+ * application can reach are usable in one image.
+ *
+ * CAVEAT -- this is NOT a "the forwarder is alive" proof. The client image of
+ * THIS case is in the config where the OTBN ECDSA alternative is off
+ * (cell 3: ..._OTBN_ALT=n), so mbedtls_ecdsa_genkey() here is the SOFTWARE
+ * implementation (libmbedtls ecdsa.c), not the mbedtls_otbn_crypto_mbox.c
+ * forwarder. That forwarder is only DEFINED when the client routes its OTBN
+ * ECDSA alternative through the delegation (..._ALT_VIA_DELEGATION=y, cell 5);
+ * only then would the first call reach the proxy through the forwarder. Cell 5
+ * is compile-verified (see the 2026-10-13 migration report) but deliberately not
+ * enabled here: it selects CONFIG_LINKEDSEMI_OTBN, which runs otbn_common.c's
+ * POST_KERNEL SYS_INIT on cpu2 -- a runtime change that cannot be validated with
+ * the board offline, so it is reported rather than assumed safe.
+ *
+ * Registered under OTBN_DELEG_EXPLICIT_API so the other cases' item sets are
+ * unchanged. On the server the image compiles no proxy, so
+ * mbedtls_ls_otbn_ecdsa_genkey does not exist: the item is registered for name
+ * symmetry but SKIPs (precedent: the client gate in case_dead_channel).
+ */
+#ifdef OTBN_DELEG_EXPLICIT_API
+ZTEST(otbn_deleg, t16d_mbedtls_and_explicit_agree)
+{
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
+	mbedtls_ecdsa_context ctx_fwd, ctx_exp;
+	int rc_fwd, rc_exp;
+
+	DELEG_GATE();
+	ctx_init(&ctx_fwd);
+	ctx_init(&ctx_exp);
+
+	/* No pre-load here: mbedtls_ls_otbn_ecdsa_genkey() loads ctx->private_grp
+	 * itself, exactly like mbedtls_ecdsa_genkey(). That contract gap is fixed
+	 * in mbedtls_otbn_crypto_mbox.c; this item is the regression guard for it --
+	 * a pre-load would hide the regression the item exists to catch.
+	 */
+
+	/* Same request first through the mbedtls name (the forwarder)... */
+	rc_fwd = mbedtls_ecdsa_genkey(&ctx_fwd, MBEDTLS_ECP_DP_SECP256R1,
+				      test_rng, NULL);
+	/* ...then through the explicit entry point that forwarder calls. */
+	rc_exp = mbedtls_ls_otbn_ecdsa_genkey(&ctx_exp, MBEDTLS_ECP_DP_SECP256R1,
+					      test_rng, NULL);
+
+	ZT_INFO("equiv", "mbedtls_rc=%d,explicit_rc=%d", rc_fwd, rc_exp);
+
+	zassert_equal(rc_fwd, 0, "mbedtls_ecdsa_genkey (forwarder) rc=%d", rc_fwd);
+	zassert_equal(rc_exp, 0, "mbedtls_ls_otbn_ecdsa_genkey (explicit) rc=%d", rc_exp);
+
+	/* Each must yield a usable, on-curve public key. */
+	zassert_equal(mbedtls_ecp_check_pubkey(&ctx_fwd.private_grp, &ctx_fwd.private_Q),
+		      0, "forwarder produced an invalid public key");
+	zassert_equal(mbedtls_ecp_check_pubkey(&ctx_exp.private_grp, &ctx_exp.private_Q),
+		      0, "explicit entry produced an invalid public key");
+
+	ctx_free(&ctx_fwd);
+	ctx_free(&ctx_exp);
+#else
+	/* Server: this image has no explicit entry point to compare against. */
+	ztest_test_skip();
+#endif
+}
+#endif /* OTBN_DELEG_EXPLICIT_API */
 
 
 /*
@@ -731,7 +902,7 @@ static void proxy_probe_thread(void *p1, void *p2, void *p3)
 	mbedtls_ecdsa_context ctx;
 
 	ctx_init(&ctx);
-	pp->rc = mbedtls_ecdsa_genkey(&ctx, MBEDTLS_ECP_DP_SECP256R1, test_rng, NULL);
+	pp->rc = DELEG_GENKEY(&ctx, MBEDTLS_ECP_DP_SECP256R1, test_rng, NULL);
 	ctx_free(&ctx);
 	k_sem_give(&pp->done);
 }
@@ -779,6 +950,87 @@ ZTEST(otbn_deleg, t80_proxy_responds_within_timeout)
 		"(client_sem is held, every later proxy call blocks too)",
 		PROXY_PROBE_TIMEOUT_MS);
 }
+
+/*
+ * t90 -- the plain mbedtls_ecdsa_* API is really bound to the mailbox
+ * (case_alt_via_proxy only; see the redirection block at the top).
+ *
+ * case_alt_via_proxy builds the client in the ALT_VIA_DELEGATION config, where
+ * mbedtls_ecdsa_genkey()/sign()/verify() ARE the delegation forwarders. The rest
+ * of the matrix calling DELEG_* (== the plain names there) already proves the
+ * forwarded RESULT is correct, but a correct result alone cannot tell a real
+ * round-trip from a client that silently fell back to local software -- software
+ * ECDSA returns a valid key pair too.
+ *
+ * This item closes that gap with an observable only the mailbox path has:
+ *   1. The client core builds NO local OTBN in this config (CONFIG_LINKEDSEMI_OTBN
+ *      is off; asserted at compile time below), so the crypto cannot be local OTBN.
+ *   2. With the client's otbn_crypto channel masked, the plain-name genkey must
+ *      NOT succeed: the forwarder blocks on the reply until
+ *      DELEGATE_REPLY_TIMEOUT_MS and then returns non-zero, whereas software
+ *      ECDSA would return a valid key at once and PASS this item -- so a silent
+ *      software fallback is caught here.
+ *
+ * Runs LAST (name order t90 > every other item) because masking the channel
+ * leaves the proxy unusable for the rest of the suite. Registered under
+ * OTBN_DELEG_VIA_PROXY so only case_alt_via_proxy carries it; the server
+ * registers it for name symmetry and SKIPs.
+ */
+#if defined(OTBN_DELEG_VIA_PROXY)
+/* The client of this case must NOT drag the local OTBN driver in -- that is the
+ * whole point of routing the ECDSA alternative through the delegation instead of
+ * the local-OTBN entry. A stray CONFIG_LINKEDSEMI_OTBN here would mean the
+ * Kconfig choice leaked the local driver into the client, which this case exists
+ * to disprove. (The server has the local OTBN on purpose, so the check is
+ * client-only.) */
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT) && \
+	defined(CONFIG_LINKEDSEMI_OTBN)
+#error "case_alt_via_proxy: client pulled in CONFIG_LINKEDSEMI_OTBN (local OTBN) -- the delegation entry must not select it"
+#endif
+
+ZTEST(otbn_deleg, t90_plain_api_mailbox_bound)
+{
+#if defined(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION)
+	static struct proxy_probe pp;
+	static struct k_thread pt;
+	static K_THREAD_STACK_DEFINE(mb_probe_stk, 8192);
+	int got;
+
+	DELEG_GATE();
+
+	/* Mask our own otbn_crypto channel: no reply can reach the forwarder now. */
+	{
+		static const struct mbox_dt_spec sp =
+			MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto), mbox);
+
+		zassert_equal(mbox_set_enabled(sp.dev, sp.channel_id, false), 0,
+			      "could not mask the otbn_crypto channel");
+	}
+
+	k_sem_init(&pp.done, 0, 1);
+	pp.rc = 0x7FFFFFFF;
+	k_thread_create(&pt, mb_probe_stk, 8192, proxy_probe_thread, &pp,
+			NULL, NULL, K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
+	got = k_sem_take(&pp.done, K_MSEC(PROXY_PROBE_TIMEOUT_MS));
+
+	ZT_INFO("mailbox_bound", "returned=%d,rc=%d,timeout_ms=%d",
+		got == 0, pp.rc, PROXY_PROBE_TIMEOUT_MS);
+
+	/* The forwarder must give up (non-zero) once the reply cannot arrive. */
+	zassert_equal(got, 0,
+		"plain-name genkey did not return within %d ms after the channel "
+		"was masked (forwarder should time out, not block forever)",
+		PROXY_PROBE_TIMEOUT_MS);
+	zassert_true(pp.rc != 0,
+		"plain mbedtls_ecdsa_genkey() returned rc=%d with the otbn_crypto "
+		"channel masked -- it is NOT bound to the mailbox (software?)",
+		pp.rc);
+#else
+	/* Server: no delegation forwarder here; registered for name symmetry. */
+	ztest_test_skip();
+#endif
+}
+#endif /* OTBN_DELEG_VIA_PROXY */
 
 /* 6 explicit params: setup/teardown are suite-level, before/after per-test --
  * all NULL here (no shared fixture). Do NOT move a teardown into the `after`

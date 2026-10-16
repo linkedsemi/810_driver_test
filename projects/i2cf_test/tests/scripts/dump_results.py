@@ -62,6 +62,33 @@ TEST_NAMES = [
     "scl_hold_time_roundtrip", "slave_addr_scan", "switch_master_filter",
 ]
 
+# 按 case 取链接序表（★ 必须与 `nm --numeric-sort <elf> | grep _ztest_unit_test__i2cf__`
+# 的 SORT_BY_NAME 段名序**逐项一致**，因为内存结果数组的槽位 = 链接序 idx）：
+#   · case_default：只编 src/i2cf_test.c ⇒ 18 项（= TEST_NAMES）；
+#   · case_enum_matrix：多编 src/i2cf_enum.c ⇒ 插入 enum_matrix（第 9 位）；
+#   · case_scan_burst：多编 CONFIG_I2CF_SCAN_BURST 保护块 ⇒ 插入 scan_burst_drain（第 16 位）。
+# 每次增删测试项后必须重跑 nm 核对（KNOWN_ISSUES #27）。
+TEST_NAMES_BY_CASE = {
+    "case_enum_matrix": [
+        "addr_7bit_field", "callback_register", "cold_reset_state",
+        "concurrent_fill", "device_ready", "duplicate_addr_rejected",
+        "en_clears_table", "enable_channel_boundary", "enum_matrix",
+        "fill_dump_roundtrip", "filter_blocks_nonwhitelist",
+        "filter_passthrough_whitelist", "filter_set_bits", "invalid_args",
+        "isr_addr_beyond_whitelist", "master_eeprom_rw", "scl_hold_time_roundtrip",
+        "slave_addr_scan", "switch_master_filter",
+    ],
+    "case_scan_burst": [
+        "addr_7bit_field", "callback_register", "cold_reset_state",
+        "concurrent_fill", "device_ready", "duplicate_addr_rejected",
+        "en_clears_table", "enable_channel_boundary", "fill_dump_roundtrip",
+        "filter_blocks_nonwhitelist", "filter_passthrough_whitelist",
+        "filter_set_bits", "invalid_args", "isr_addr_beyond_whitelist",
+        "master_eeprom_rw", "scan_burst_drain", "scl_hold_time_roundtrip",
+        "slave_addr_scan", "switch_master_filter",
+    ],
+}
+
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址
 RESULT_SYM = "test_results"
 REASON_SYM = "test_reasons"
@@ -125,12 +152,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", default="case_default")
     ap.add_argument("--run", type=float, default=None, help="先烧录并运行 N 秒再 dump")
-    ap.add_argument("--count", type=int, default=len(TEST_NAMES))
+    ap.add_argument("--count", type=int, default=None)
     ap.add_argument("--reason-stride", type=int, default=96)
     ap.add_argument("--raw", action="store_true")
     ap.add_argument("--json", action="store_true",
                     help="JSON 输出（回归脚本兜底合并用，§12.3）")
     args = ap.parse_args()
+
+    # 按 case 取链接序表（槽位 = 链接序 idx）；--count 缺省 = 本 case 项数。
+    test_names = TEST_NAMES_BY_CASE.get(args.case, TEST_NAMES)
+    if args.count is None:
+        args.count = len(test_names)
 
     for tool in (GDB, NM):
         if shutil.which(tool) is None:
@@ -220,7 +252,7 @@ def main():
         vals = raw_vals
     results = {}
     for i, v in enumerate(vals):
-        name = TEST_NAMES[i] if i < len(TEST_NAMES) else f"test_{i}"
+        name = test_names[i] if i < len(test_names) else f"test_{i}"
         if v < 0:
             results[name] = "NOT_RUN"
         elif v == 0:
@@ -270,7 +302,7 @@ def main():
         print("  (WARNING: 解析不到完整数组，gdb 输出见上)")
     passed = ran = 0
     for i, v in enumerate(vals):
-        name = TEST_NAMES[i] if i < len(TEST_NAMES) else f"test_{i}"
+        name = test_names[i] if i < len(test_names) else f"test_{i}"
         st = results[name]
         if st == "PASS":
             passed += 1

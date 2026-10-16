@@ -1,0 +1,5 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_throughput_iso_proxy: no DT difference. The benchmark surface is selected
+ * by -DOTBN_DELEG_BENCH=1 in test.sh; this run's isolation (cpu2 benches the
+ * proxy, cpu1 holds) is a build-flag difference, not a devicetree one. */

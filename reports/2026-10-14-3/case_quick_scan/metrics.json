@@ -1,0 +1,51 @@
+{
+  "case": "i2cf_test:case_quick_scan",
+  "kind": "one_shot_diagnostic",
+  "date": "2026-10-14",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1 (single-core, cpu1 target/TGT)",
+  "hypothesis": "H: a blocked 0-length quick command produces no transaction-complete signal, so the master waits the full CONFIG_LS_I2C_BUS_TIMEOUT_MS (200 ms).",
+  "verdict": "H_NOT_REPRODUCED",
+  "environment": {
+    "upstream_master": "i2c2 (alias i2cfupstream, driver i2c_ls.c)",
+    "filter": "i2cf4 @0x40091800 (customer uses i2cf3 @0x40091000)",
+    "downstream": "in-chip target eeprom@33 on i2c3 (+ board device 0x50)",
+    "CONFIG_LS_I2C_BUS_TIMEOUT_MS": 200,
+    "CONFIG_I2C_LS": "y",
+    "scl_hold_time_all_i2cf": "0x155 (equal across i2cf1..4)",
+    "topology_note": "customer's i2cf3 has SAME scl-hold-time (0x155) as tested i2cf4"
+  },
+  "phases": {
+    "A_blocked_quickcmd": {"mode": "i2c_write(up,NULL,0,addr) filter on / whitelist empty",
+      "probed": 112, "isr_count": 112, "sum_ms": 16, "min_ms": 0, "max_ms": 1, "nz_ret": 111, "total_ms": 117},
+    "B_filteroff_quickcmd": {"mode": "i2c_write(up,NULL,0,addr) filter off",
+      "probed": 112, "isr_count": 0, "sum_ms": 15, "min_ms": 0, "max_ms": 1, "nz_ret": 111, "total_ms": 115},
+    "C_write1_baseline": {"mode": "i2c_write(up,&v,1,addr) filter on / whitelist empty",
+      "probed": 112, "isr_count": 112, "sum_ms": 17, "min_ms": 0, "max_ms": 1, "nz_ret": 111, "total_ms": 117}
+  },
+  "derived": {
+    "A_per_txn_ms": 0.143,
+    "B_per_txn_ms": 0.134,
+    "C_per_txn_ms": 0.152,
+    "note_total_ms_includes_k_msleep_100": true,
+    "i2c_bus_timeout_occurrences": 0,
+    "i2c_ls_dev_err_lines": 0,
+    "try_recovery_or_bus_busy_lines": 0,
+    "filter_beyond_whitelist_err_lines_total": 225,
+    "A_BEGIN_to_END_arrival_span_s": 1.051,
+    "A_firmware_queue_span_ms": 117,
+    "duration_dt_list_sample_ms": "A/B/C all '0 0 1 0 ...' (<=1 ms per address, no outliers)"
+  },
+  "repeatability": "run1 and run2 identical (A sum=16, C sum=16/17, 0 timeouts both)",
+  "artifact_hashes_md5": {
+    "i2cf_test.c": "7f0c989b6c06a3ab6035024141e34540",
+    "cpu1_i2cf_test/Kconfig": "81037cbea1e8f8e0f24abe3a8a6e3d58",
+    "quick_scan.conf": "6ada570b35a1b247fe39210b26ac5dcb",
+    "case_quick_scan_elf": "623a2bbdcff70de8afe06296bca943b5",
+    "case_default_elf": "2ad52171350d73a3045db0e8671c30f9"
+  },
+  "case_default_unaffected_verified": {
+    "CONFIG_I2CF_QUICK_SCAN": "is not set",
+    "quick_scan_symbols_in_elf": "none",
+    "compiler_warnings": 0
+  }
+}

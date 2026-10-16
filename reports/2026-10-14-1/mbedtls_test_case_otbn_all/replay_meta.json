@@ -1,0 +1,15 @@
+{
+  "archive_version": 1,
+  "case": "case_otbn_all",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 218
+    }
+  },
+  "timeout": 240.0,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\mbedtls_test\\tests\\run_test.py",
+  "script_md5": "3a7c76e087cc07890d44f5b37383aee4",
+  "timestamp": "2026-10-14T16:26:52"
+}

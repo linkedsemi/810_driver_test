@@ -1,0 +1,21 @@
+# Application Kconfig for cpu0_i2c_master (i2c_pure_test controller/master).
+#
+# 同一份 master 固件供两个 case 共用，差异只在"是否需要交替速率"这一行为
+# 开关上；case 目录的 controller.conf 打开它（qsh-test-gen §2 变体）：
+#   - 默认 (n)：case_pure_i2c_400k —— 固定 400K，行为与历史逐点一致；
+#   - =y：case_pure_i2c_alt_100k_400k —— 逐轮交替 100K/400K 并分组计时上报。
+#
+# 本文件成为本核的 KCONFIG_ROOT（zephyr/cmake/modules/kconfig.cmake 在
+# APPLICATION_SOURCE_DIR/Kconfig 存在时即选用它）；末尾 source "Kconfig.zephyr"
+# 拉入完整内核配置树，故既有 CONFIG_* 值不受影响（仅多出一个 default n 的
+# 符号）。target 核（cpu1_i2c_slave）无此文件，继续走 ZEPHYR_BASE/Kconfig。
+config I2C_PURE_WAVE_ALT_RATE
+	bool "Alternate 100K/400K I2C bus rate across test rounds"
+	default n
+	help
+	  When enabled, the i2c_wave test alternates the I2C bus speed between
+	  standard (100K) and fast (400K) on every round, and measures the
+	  write+read transfer time per rate group to prove the runtime rate
+	  switch took effect.
+
+source "Kconfig.zephyr"

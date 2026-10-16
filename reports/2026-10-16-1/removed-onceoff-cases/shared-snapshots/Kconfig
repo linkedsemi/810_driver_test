@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# 本工程私有 Kconfig（放在应用目录 = 自动成为 KCONFIG_ROOT）。
+#
+# ⚠️ 一旦本文件存在，Zephyr 就用它当**根** —— 必须先 source 官方根，
+#    否则整棵 Kconfig 树丢失（pfr_tpm 模块的 `I2C_FILTER_LINKEDSEMI` /
+#    `I2C_TARGET` / `I2C_EEPROM_TARGET` 全部变未定义 → Kconfig 报错中止）。
+#    实测踩过：漏这一行 ⇒ `error: Aborting due to Kconfig warnings`。
+
+source "Kconfig.zephyr"
+
+# 用途：给「只增不改」的可选源集提供开关 —— 新增用例由本开关保护，
+#       不置位时既有构建逐字节不变（SPEC_REFERENCE §6.4.5 / qsh-test-gen §2 变体）。
+
+config I2CF_SCAN_BURST
+	bool "扫描回归用例 case_scan_burst（逐址扫描 × 三种事务类型）"
+	default n
+	help
+	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_SCAN_BURST` 保护的用例
+	  `i2cf::scan_burst_drain`：白名单清空 + filter on → 上游 master 逐址扫
+	  0x08..0x77，对**三种事务类型**各跑一轮并断言「每址恰好一次上报」：
+	    ① 1 字节写（基线对照）
+	    ② 0 长度 quick command（**真正的 i2cdetect / Zephyr `i2c scan` 形态**）
+	    ③ 读
+	  另断言扫描本身耗时在粗上界内（实测 112 址 ≈ 16 ms）。
+
+	  BEGIN/END 两条 marker 保留，供采集侧测**日志驱逐跨度**（打印慢的量化值）——
+	  该跨度随 UART/日志后端变化，**只作观测、不作断言**（见该用例文件头说明）。
+
+	  ★ 正式回归用例，已登记进 tests/cases.yaml（case_scan_burst）与
+	    run_test.py 的 TEST_NAMES_BY_CASE。不置位时不编入，case_default 逐字节不变。
+
+config I2CF_QUICK_SCAN
+	bool "一次性诊断：quick command（0 长度写）扫描的单笔耗时"
+	default n
+	help
+	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_QUICK_SCAN` 保护的用例
+	  `i2cf::quick_scan`：白色名单 + filter on，用**片内 master（upstream，
+	  i2c_write(len=0)）**逐址扫 0x08..0x77，逐址记录单笔耗时（sum/min/max/dt 列表）。
+
+	  验证的假设（客户反馈：片内 master 扫描每笔被拦事务 200.2 ms ≈
+	  CONFIG_LS_I2C_BUS_TIMEOUT_MS 默认 200）：
+	    H：被拦的 0 长度 quick command 不产生事务完成信号，master 等满 200 ms。
+
+	  三个单变量相位：
+	    A 被拦 quick command（filter on，空白名单）
+	    B 对照 quick command（filter off —— 分离"quick command 本身代价"）
+	    C 基线 1 字节写（filter on，空白名单 —— 复刻 scan_burst 形态）
+
+	  ★ 一次性诊断用例，不登记进 regression/cases.yaml，用完可整体删除
+	    （本文件 + i2cf_test.c 的该块 + tests/case_quick_scan/）。
+
+config I2CF_FILTEROFF_PROBE
+	bool "一次性判别实验：无违规前置下 filter off 是否放行（H1 vs H2）"
+	default n
+	help
+	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_FILTEROFF_PROBE` 保护的用例
+	  `i2cf::filteroff_fresh_probe`：reset_all → switch_to_filter → filter_off
+	  → 上游读片内 target 0x33（**前置无任何违规**）。
+
+	  判读（取自 reports/2026-09-23-1/i2c_failure_triage.md §3.4）：
+	    读成功 ⇒ H2（拦截后残留态，需显式清中断才恢复）
+	    读失败 ⇒ H1（"关滤波器 = 不转发"成立，用例自证步的期望本身错）
+
+	  ★ 只做判别、**不置任何 zassert 判据**（结论由 ZT_INFO 记录）。
+	    一次性诊断，不登记进 regression/cases.yaml，用完可整体删除
+	    （本文件 + i2cf_test.c 的该块 + tests/case_filteroff_probe/）。
+
+config I2CF_MWRITE_PROBE
+	bool "一次性探针：MASTER_WRITE_MODE（SMBUS_FILTER_SET bit3）对 read 帧的影响"
+	default n
+	help
+	  开启后编入 i2cf_test.c 中被 `#ifdef CONFIG_I2CF_MWRITE_PROBE` 保护的用例
+	  `i2cf::mwrite_mode_probe`：空白名单 + filter on（每址皆越界），
+	  用上游 master 做 **read 方向**扫描：
+	    Phase A（MASTER_WRITE_MODE=0，驱动默认）→ 记 read 扫描的 ISR 计数
+	    读-改-写 SMBUS_FILTER_SET 把 bit3 置 1
+	    Phase B（MASTER_WRITE_MODE=1）→ 记同一 read 扫描的 ISR 计数
+	  客户预期「scan 时 read 的帧不该触发 filter 日志」—— 若 bit3=1 时 read 不再
+	  触发 ISR，则与该预期一致。**纯推断，仓库无寄存器手册**。
+
+	  ★ 只做观测、**不置任何 zassert 判据**（寄存器语义未知，断言会假 FAIL）。
+	    一次性诊断，不登记进 regression/cases.yaml，用完可整体删除
+	    （本文件 + i2cf_test.c 的该块 + tests/case_mwrite_probe/）。
+
+config I2CF_WAVE_GEN
+	bool "循环波形发生器：反复发 写/读 事务供示波器抓取（非回归用例）"
+	default n
+	help
+	  开启后 test_main **不走 ztest**，而是进入 `i2cf_wave_gen_run()`（src/i2cf_wave.c）
+	  —— 一个**永不返回**的循环波形发生器：上游 master(i2c2) 以 ~420ms 周期反复发
+	  **一笔写 + 一笔读**（地址 0x33=片内 target@i2c3 输出侧），并用标记 GPIO 给出每笔事务的包络(TRIG=PA06)
+	  与方向(DIR=PA04)、相位(PHASE=PA08，A=filter on 拦 / B=filter off 对照)。
+
+	  目的：让示波器/逻辑分析仪稳定触发并译码「read 方向在线上到底是不是读」
+	  （START + (addr<<1|1) 的 LSB 应与 DIR 一致）。
+
+	  ★ 只发波形、**不含任何 zassert 判据**（不判 PASS/FAIL）。
+	    一次性波形用例，不登记进 regression/cases.yaml，用完可整体删除
+	    （本文件该块 + src/i2cf_wave.{c,h} + CMakeLists 的 if 块 + tests/case_wave/）。
+
+config I2CF_ENUM_MATRIX
+	bool "I2CF 状态枚举矩阵回归用例（白名单内外 × 读/写 × 有/无器件 × 滤波开关）"
+	default n
+	help
+	  开启后编入 src/i2cf_enum.c 的 `ZTEST(i2cf, enum_matrix)`：跑满 9 格 × 读/写两方向，
+	  每格前 cold_reset + 关全部通道（单变量 + 组间复位），逐格用成对 LOG_INF marker
+	  （EM_BEGIN/EM_END）包住 3 笔事务，**逐格断言** ret / ISR 增量合计 / SMBF_NONWHITELIST
+	  锁存（判据全部来自 reports/2026-10-15-3 实测，22 轮零方差）。
+
+	  覆盖：「白名单内/外 × 读/写 × 有/无器件 × 滤波器开/关 → 反馈状态」。
+	  核心结论（C2 白名单内+无器件 isr=0 ↔ C4 白名单外+无器件 isr=1）= 上报只由
+	  「地址是否在白名单内」决定，与总线应答(ACK/NACK)无关、与读/写方向无关。
+
+	  ★ 正式回归用例，已登记进 tests/cases.yaml（工程 case_enum_matrix）与
+	    run_test.py 的 TEST_NAMES_BY_CASE。不置位时不编入，case_default 逐字节不变。
+
+config I2CF_SCAN_BURST_SHELL
+	bool "一次性诊断：由 shell 命令触发的扫描（B5 消融：shell 忙时日志排空）"
+	default n
+	depends on SHELL
+	help
+	  开启后编入 i2cf_test.c 中被 `#if defined(CONFIG_I2CF_SCAN_BURST_SHELL) && defined(CONFIG_SHELL)`
+	  保护的 shell 命令 `scanburst`：执行与 i2cf::scan_burst_drain **逐字节相同**的扫描
+	  （白名单清空 → 上游逐址 1 字节写 0x08..0x77），打同样的 SCAN_BURST_BEGIN/END marker。
+
+	  用途（B5 消融）：客户是"通过 shell 命令调用 I2CF"，此时 shell 线程**正在执行命令**
+	  （shell 日志后端在 shell 线程排空）—— 检验这会不会把日志排空从 ~12 ms/行推高。
+
+	  ★ 与 CONFIG_I2CF_SCAN_BURST **互斥使用**（本开关用于 shell 触发；那个用于开机自跑）。
+	    一次性诊断，不登记进 regression/cases.yaml，用完可整体删除
+	    （本文件该块 + tests/case_abl/abl_b5*.conf + tests/run_b5.py）。

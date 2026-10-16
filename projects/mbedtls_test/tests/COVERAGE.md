@@ -58,7 +58,7 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 | **aes128_xts_multi_ctx** | 两个 aes_xts context 绑不同密钥后**交错使用** | **契约（多 context 隔离）** | 各自仍等于自己的 KAT | 同上（golden） | ⏳ 新增 |
 | **aes_alt_null_params**（仅 ALT case 编入） | setkey/crypt_cbc/crypt_ecb/crypt_ctr 传 NULL ctx/key/in/out/nc_off | **ALT 加固（超出 mbedtls 契约）** | 七项均须**返回非 0**而非崩溃 | 本驱动加固承诺（contract） | ⏳ 新增 |
 | **aes_ecb_cbc_unaligned** | ECB/CBC 的输入、输出、IV 各偏移 1 字节 | 对齐（回退分支） | ECB 等于 FIPS-197 C.1；CBC 前 2 块等于 NIST F.2.1 | golden | ⏳ 新增 |
-| **aes128_ctr_carry** | mbedtls_aes_crypt_ctr，计数器跨 32 位字进位 | **契约（硬件计数器语义）** | 单次 / 分段 / 回环三种形态均等于期望密文 | golden（生成器显式 counter 序列 + AES-ECB 算出） | ⏳ 新增 |
+| **aes128_ctr_carry** | mbedtls_aes_crypt_ctr，计数器跨 32 位字回绕（压驱动的"硬件批量按回绕边界分片"逻辑） | **契约（硬件计数器语义 + 分片边界）** | **4 种分片形状**（until_wrap = 1 / 2 / 4 / 16）× 三种调用形态（单次 / 分段 / 回环）均等于期望密文 | golden（生成器显式 counter 序列 + AES-ECB 算出） | ⏳ 新增 |
 | **aes_concurrent_ctx** | 两个 AES context 交错使用同一硬件引擎（线程 A 长 CBC 被线程 B 的一次 ECB 抢占） | **并发（共享寄存器互斥）** | A 的密文仍等于单线程参考值 | contract | ⏳ 新增 |
 | **aes192_256_kat** | mbedtls_aes_setkey_enc/crypt_ecb/crypt_cbc，密钥 192/256 位 | 功能通路（**密钥装载分支**） | ECB 等于 FIPS-197 C.2/C.3；CBC 前 2 块等于 NIST F.2.2/F.2.3；解密回环 | golden | ⏳ 新增 |
 | **aes_cbc_len_contract** | mbedtls_aes_crypt_cbc 的 length 契约 | **边界（错误码 vs 断言）** | `length==0` 返回 0 且**不触碰** `iv`/`output`；`length=17` 返回非 0 而非断言/越界 | API 契约（对齐上游 aes.c） | ⏳ 新增 |

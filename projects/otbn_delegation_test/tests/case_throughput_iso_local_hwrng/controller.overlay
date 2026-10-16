@@ -1,0 +1,4 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_throughput_iso_local_hwrng: no DT difference. cpu2 is the HOLD side
+ * (-DOTBN_DELEG_BENCH_HOLD=1): channel up, sends nothing. */

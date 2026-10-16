@@ -1,0 +1,5 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_throughput_iso_proxy: no DT difference. cpu1 is the HOLD side in this run
+ * (-DOTBN_DELEG_BENCH_HOLD=1): it keeps serving cpu2's mbox requests but runs no
+ * bench ops of its own. */

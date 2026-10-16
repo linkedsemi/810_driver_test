@@ -1,0 +1,4 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_explicit_api: no per-case DT difference -- the client calls the explicit
+ * mbedtls_ls_otbn_ecdsa_* entry points over the same otbn_crypto mbox channel. */

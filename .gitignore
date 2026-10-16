@@ -108,7 +108,7 @@ TextEncoding.txt
 YAMLLint.txt
 
 # 各测试工程的调试临时目录（一次性探针/抓包/日志，不提交）
-projects/*/tests/tmp/
+projects/*/tests/tmp*/
 projects/*/tmp/
 tmp/
 __pycache__/

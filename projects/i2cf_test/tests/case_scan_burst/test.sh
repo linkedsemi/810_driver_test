@@ -2,18 +2,19 @@
 # I2C filter (PFR/TMP) driver test (single-core cpu1 secure domain)
 #
 # What is tested:
-#   ★ 一次性诊断（非回归用例）：filter 拦截扫描时的日志驱逐测量。
-#   白名单清空 → 上游 master 逐址扫 0x08..0x77（模拟外部 i2cdetect）→
-#   量化「被拦事件数」「扫描耗时」，并打 marker 供采集侧测**日志驱逐跨度**。
-#   ⚠️ 必须配带到达时间戳的采集（见 README.md）；跑完可整体删除。
+#   空白名单 + filter on 下逐址扫描 0x08..0x77，覆盖三种事务类型，逐一断言
+#   「每个被拦地址恰好产生一次上报」（isr == probed）：① 1 字节写（基线对照）
+#   ② 0 长度 quick command（= i2cdetect / Zephyr `i2c scan` 形态）③ 读。
+#   另断言扫描本身耗时（elapsed_ms）在粗上界内（实测 112 址 ≈ 16 ms）。
+#   BEGIN→END 两行的**到达时间差**（日志驱逐跨度）只作观测上报，不写断言。
 #
 # CPU1 (target role, TGT token):
 #   - Single-core project, no peer core; test_main drives all ZTESTs itself.
 #
 # Normal behavior:
-#   scan_burst_drain PASS（isr 计数 == 探测地址数）。
-#   ★ 本用例的**重点产出不是 PASS/FAIL**，而是 SCAN_BURST_BEGIN / END 两行的
-#     到达时间差 —— 那才是「打印慢」的量化值。
+#   scan_burst_drain PASS（三种类型的 isr 计数都 == 探测地址数）。
+#   ★ 附加观测：SCAN_BURST_BEGIN / END 两行的到达时间差（打印驱逐跨度）随
+#     UART/日志后端变化，仅作参考，不进 PASS/FAIL 判据。
 #
 # Abnormal behavior:
 #   Any FAIL prints the zassert reason (file:line (func): msg, with expected vs
@@ -24,7 +25,7 @@
 #   外部: **零外部器件** —— 从设备 = 片内 target eeprom@33（挂 i2c3）；上游主机 i2c2 跳线到 i2cf4 输入、i2c3 跳线到 i2cf4 输出。
 #
 # Build artifacts:
-#   - tests/case_default/build/target/
+#   - tests/case_scan_burst/build/target/
 #
 # Usage:
 #   ./test.sh          # build only, print launch.json snippet
@@ -79,7 +80,7 @@ if [ "${AGENT_RUN}" != "y" ]; then
 #    Board 走 test_common.sh 的 SINGLE_BOARD 变量（单核 = 1os 变体）——
 #    单核固件一律 1os 编译测试（SPEC_REFERENCE §6.1.10，禁在此硬编码 board）。
 build_single_test "${TEST_NAME}" "${TARGET_SRC}" "${TARGET_OVERLAY}" \
-    "$(realpath "${SCRIPT_DIR}/scan_burst.conf")" "${TEST_BUILD_DIR}"
+    "$(realpath "${SCRIPT_DIR}/case.conf")" "${TEST_BUILD_DIR}"
 fi
 
 if [ "${AGENT_RUN}" != "y" ]; then
@@ -89,9 +90,9 @@ echo -e "${COLOR_GREEN}=========================================================
 echo ""
 echo -e "${COLOR_YELLOW}Test: ${TEST_NAME}${COLOR_RESET}"
 echo ""
-echo -e "${COLOR_YELLOW}What: pfr_tpm i2c_filter 全 API：cold_reset 寄存器终态 / 16 通道 fill-dump 回读 / idx 与 NULL 异常参数 / 7bit 地址字段边界 / 重址拒绝 / clr_tbl / SMBUS_FILTER_SET 负逻辑 / scl_hold_time 回读 / pinctrl master-filter 切换 / 并发 fill / master 模式 EEPROM 读写。${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}What: 空白名单 + filter on 逐址扫描 0x08..0x77：1 字节写 / 0 长度 quick command / 读 三种类型，逐一断言 isr == probed。${COLOR_RESET}"
 echo ""
-echo -e "${COLOR_YELLOW}Normal: all items PASS + PROJECT EXECUTION SUCCESSFUL.${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}Normal: scan_burst_drain PASS（三种类型的 isr 都 == 探测地址数）。${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_YELLOW}Abnormal: FAIL - <name> + zassert reason (file:line, expected vs actual).${COLOR_RESET}"
 echo ""

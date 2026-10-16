@@ -1,0 +1,17 @@
+#include "../../cpu0_i2c_master/app.overlay"
+
+/* 纯 I2C 交替速率 case：总线的 DT 配置与 400K case 相同（i2c5
+ * bus-frequency = <400000> 作为上电初始档）。100K/400K 的逐轮切换由固件
+ * 在运行时经 i2c_configure() + i2c_ls_transfer 内的 i2c_reenable() 刷写
+ * TIMINGR 完成，不经过设备树。 */
+
+/* 临时实验（2026-10-12，实验结束后删除本块）：
+ * 把 i2c5 的 SCL 周期固定开销从 250ns 局部覆盖为 300ns，用于观察 400K
+ * 波形与实测速率的变化。默认值保持 250 —— lsqsh.dtsi 与驱动 binding 均
+ * 未改动，本块仅作用于本 case，不影响其他工程与 case。
+ * 生效路径：i2c_ls.c 的 DT_INST_PROP_OR(index, scl_overhead_ns, <C默认>)，
+ * DT 有值即取 DT ⇒ 此处取值会真实改变 i2c_timing_param_set 编出的
+ * TIMINGR（75MHz 源时钟下 400K：250 → 84 拍 / 300 → 83 拍）。 */
+&i2c5 {
+	scl-overhead-ns = <300>;
+};

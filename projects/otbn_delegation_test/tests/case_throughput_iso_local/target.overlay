@@ -1,0 +1,5 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_throughput_iso_local: no DT difference. The benchmark surface is selected
+ * by -DOTBN_DELEG_BENCH=1 in test.sh; cpu1 benches its LOCAL OTBN (mbedtls_ecdsa_*
+ * -> ecdsa_alt.c), the baseline the proxy numbers are diffed against. */

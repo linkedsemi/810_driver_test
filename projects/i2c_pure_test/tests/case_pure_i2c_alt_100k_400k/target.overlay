@@ -1,0 +1,4 @@
+#include "../../cpu1_i2c_slave/app.overlay"
+
+/* 纯 I2C 交替速率 case：slave 侧 DT 配置与 400K case 逐点相同（i2c6
+ * bus-frequency = <400000>，slave 时序在驱动内固定，不随 master 速率变）。 */

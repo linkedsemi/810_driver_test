@@ -1,0 +1,5 @@
+#include "../../cpu2_controller_otbn_delegation_test/app.overlay"
+
+/* case_throughput_iso_local: no DT difference. cpu2 is the HOLD side in this run
+ * (-DOTBN_DELEG_BENCH_HOLD=1): the mbox channel is up but it sends no request, so
+ * cpu1's OTBN is used only by cpu1's own local bench. */

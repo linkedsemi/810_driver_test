@@ -1,0 +1,6 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_throughput_iso_local_hwrng: no DT difference. cpu1 benches its LOCAL OTBN
+ * (-DOTBN_DELEG_BENCH=1) but feeds genkey/sign from the hardware entropy device
+ * (-DOTBN_DELEG_BENCH_HWRNG=1) -- the same RNG the delegation server handler
+ * uses, so proxy-minus-local isolates the transport instead of the entropy cost. */

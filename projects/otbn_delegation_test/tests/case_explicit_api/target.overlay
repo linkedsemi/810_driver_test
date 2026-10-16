@@ -1,0 +1,5 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_explicit_api: no per-case DT difference (see controller.overlay). The
+ * server image keeps using the mbedtls_ecdsa_* names (no explicit entry point
+ * is compiled on this core). */

@@ -1393,6 +1393,10 @@ python tests/scripts/dbg_run.py --xip --bins ... --no-reset-run --gdb-reset
 
 **STRATEGY_TEST（自动化回归）**
 ```text
+0. ★ 核「被测分支」是否含既有修复（G-BRANCH-1）：先确认工作树分支；对"上次 PASS 这次 FAIL"的驱动，
+   用 `git merge-base --is-ancestor <修复commit> HEAD` 核对 —— 返 NO = **分支差异、非代码回归**，
+   别按代码回归排查。工作树停在不含修复的分支上会把分支差异误判成驱动回归。
+   （判据与实测证据见 qsh-test-run §4.1 · reports/2026-10-12-2/failures/）
 1. 读 cases.yaml 获取 case 清单
 2. 查 state → 过滤已完成 case
 3. ★ 手动环境预检（qsh-debug §2.4 六项：DebugServer 进程/1025 就绪/GDB 连通/串口数/冲突/残留，全过才继续；不得委托 run_all.py 内置预检）

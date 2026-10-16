@@ -1131,37 +1131,70 @@ ZTEST_SUITE(i2cf, NULL, NULL, NULL, NULL, NULL);
 
 
 /* ===========================================================================
- * 一次性诊断用例（2026-09-23）：filter 拦截扫描时的**日志驱逐**测量
+ * 扫描回归用例（case_scan_burst）：空白名单 + filter on 下逐址扫描 0x08..0x77，
+ * 覆盖三种事务类型，逐一断言「每个被拦地址恰好产生一次上报」。
  *
- * 背景：用户反馈「开 filter 后外部 i2cdetect 扫描，ERR 日志一条条慢慢打印，
- *       20+ 秒才出完」；而扫描本身很快。
+ * 背景：用户曾反馈「开 filter 后外部 i2cdetect 扫描，ERR 日志一条条慢慢打印，
+ *       20+ 秒才出完」，而扫描本身很快（实测 112 址 ≈ 16 ms）。
+ *   「打印慢」是 **log 线程驱逐**的耗时，只在采集侧按**到达时间**可见；
+ *   固件侧只能测**入队时刻**（日志行自带时间戳全是 (+0) 紧发），测不到它。
  *
- * 测量原理（为什么不能只看固件时间戳）：
- *   固件侧只能测**入队时刻**（= 日志行自带的时间戳，所以全是 (+0) 紧发）；
- *   「打印慢」是 **log 线程驱逐**的耗时，只在采集侧可见。
- *   做法：扫描结束后再打一条 marker —— 它**排在 N 条 ERR 之后**入队，
- *   故「marker 到达时刻 − SCAN_BURST_BEGIN 到达时刻」= 驱逐跨度。
- *   ⇒ 必须配**带到达时间戳**的串口采集（见 tests/case_scan_burst/README.md）。
+ * 三种事务类型（都应在空白名单下"每址上报一次" ⇒ isr == probed）：
+ *   ① 1 字节写   i2c_write(up, &v, 1, addr)   —— **基线对照**
+ *   ② 0 长度 quick command  i2c_write(up, NULL, 0, addr)
+ *      ★ 这才是真正的 **i2cdetect / Zephyr `i2c scan`** 所用形态：zephyr/drivers/
+ *        i2c/i2c_shell.c 的 scan 用 `msgs[0].len = 0U, flags = I2C_MSG_WRITE |
+ *        I2C_MSG_STOP`。**此前本块的注释误称"模拟 i2cdetect 的逐址探测"却发的是
+ *        1 字节写 —— 本轮更正**：1 字节写只是基线对照，0 长度才是 i2cdetect 等价形态。
+ *        （实测：0 长度被拦也是 ~0.14 ms/笔，客户"200 ms/笔"的假设未复现。）
+ *   ③ 读   i2c_read(up, &v, 1, addr)
+ *      （enum 矩阵已证：读/写方向对"是否上报"无影响；本用例在扫描形态下复核。）
+ *
+ * 断言（每种类型各一条）：
+ *   · isr == probed —— 每址恰好一条 ADDRESS_BEYOND_WHITELIST 上报；
+ *   · elapsed_ms（扫描本身耗时）< I2CF_BURST_MAX_MS（粗粒度回归护栏）——
+ *     实测 112 址 ≈ 16 ms；若被拦事务退化成"等满 200 ms 总线超时"（客户 H），
+ *     112 址会 ≈ 22 s ⇒ 上界取 3000 ms（远超实测、远低于退化值）。
+ * ⚠️ BEGIN→END 的**到达时间差**（日志驱逐跨度：810 实测 ~1.0–1.4 s、客户 shell
+ *     后端 ~22 s）**随 UART/日志后端/平台变化 ⇒ 只作 ZT_INFO 观测上报，绝不写成
+ *     硬断言**（写死必然假 FAIL）。
  *
  * 本块由 CONFIG_I2CF_SCAN_BURST 保护：case_default 不置位 ⇒ 既有构建不受影响。
- * ★ 一次性诊断，**不登记进 regression/cases.yaml**；用完可整体删除
- *   （删：本块 + cpu1_i2cf_test/Kconfig + tests/case_scan_burst/）。
+ * 正式回归用例，已登记进 tests/cases.yaml（case_scan_burst）。
  * ===========================================================================
  */
 #ifdef CONFIG_I2CF_SCAN_BURST
 
 #define I2CF_BURST_ADDR_MIN 0x08u
 #define I2CF_BURST_ADDR_MAX 0x77u
+#define I2CF_BURST_PROBED   ((int)(I2CF_BURST_ADDR_MAX - I2CF_BURST_ADDR_MIN + 1))
+/* 扫描本身耗时的粗上界（ms）：实测 ≈16 ms；退化到"每笔 200 ms 总线超时" ≈ 22 s */
+#define I2CF_BURST_MAX_MS   3000
 
-ZTEST(i2cf, scan_burst_drain)
+enum i2cf_burst_kind {
+	I2CF_BURST_WRITE1,   /* 1 字节写（基线对照） */
+	I2CF_BURST_QUICK0,   /* 0 长度 quick command（= i2cdetect / i2c scan 形态） */
+	I2CF_BURST_READ,     /* 读 */
+};
+
+static const char *burst_kind_name(enum i2cf_burst_kind k)
 {
-	const struct device *dev = i2cf_dev(3);            /* i2cf4 */
-	const struct device *up = i2cf_upstream();
-	uint8_t val = 0;
-	int probed = 0;
-	int64_t t0, dt;
+	switch (k) {
+	case I2CF_BURST_WRITE1:
+		return "write1";
+	case I2CF_BURST_QUICK0:
+		return "quick0";
+	default:
+		return "read";
+	}
+}
 
-	zassert_true(device_is_ready(up), "upstream master not ready");
+/* 跑一轮扫描（空白名单 + filter on），返回扫描本身耗时（ms），isr 计数写入 *isr_out。 */
+static int64_t burst_scan(const struct device *dev, const struct device *up,
+			  enum i2cf_burst_kind kind, uint32_t *isr_out)
+{
+	uint8_t v = 0;
+	int64_t t0, dt;
 
 	i2cf_reset_all(dev);                               /* 全通道关闭 = 空白名单 ⇒ 每址皆越界 */
 	zassert_ok(linkedsemi_i2c_filter_register_callback(dev, 0, i2cf_isr_cb, NULL),
@@ -1170,27 +1203,66 @@ ZTEST(i2cf, scan_burst_drain)
 	i2cf_filter_on(dev);
 	i2cf_isr_arm(dev, 3);
 
-	/* ★ 采集侧以本行为计时起点 */
-	LOG_INF("SCAN_BURST_BEGIN addr=%#x..%#x", I2CF_BURST_ADDR_MIN, I2CF_BURST_ADDR_MAX);
+	/* ★ 采集侧以本行为计时起点（BEGIN→END 到达差 = 日志驱逐跨度，见上方说明） */
+	LOG_INF("SCAN_BURST_BEGIN mode=%s addr=%#x..%#x", burst_kind_name(kind),
+		I2CF_BURST_ADDR_MIN, I2CF_BURST_ADDR_MAX);
 
 	t0 = k_uptime_get();
 	for (uint16_t addr = I2CF_BURST_ADDR_MIN; addr <= I2CF_BURST_ADDR_MAX; addr++) {
-		(void)i2c_write(up, &val, 1, (uint8_t)addr);   /* 模拟 i2cdetect 的逐址探测 */
-		probed++;
+		switch (kind) {
+		case I2CF_BURST_WRITE1:
+			(void)i2c_write(up, &v, 1, (uint8_t)addr);
+			break;
+		case I2CF_BURST_QUICK0:
+			(void)i2c_write(up, NULL, 0, (uint8_t)addr);   /* 0 长度 quick command */
+			break;
+		default:
+			(void)i2c_read(up, &v, 1, (uint8_t)addr);
+			break;
+		}
 	}
 	dt = k_uptime_get() - t0;
 
 	k_msleep(100);                                     /* 给 ISR 计数留时间 */
 
-	/* ★ 本行排在 N 条 ERR **之后**入队 ⇒ 它的到达时刻 = 驱逐结束 */
-	LOG_INF("SCAN_BURST_END probed=%d elapsed_ms=%d isr=%u",
-		probed, (int)dt, isr_count);
+	/* ★ 本行排在本次扫描的 N 条 ERR **之后**入队 ⇒ 其到达时刻 = 驱逐结束 */
+	LOG_INF("SCAN_BURST_END mode=%s probed=%d elapsed_ms=%d isr=%u",
+		burst_kind_name(kind), I2CF_BURST_PROBED, (int)dt, isr_count);
 
-	ZT_INFO("scan_burst", "probed=%d elapsed_ms=%d isr=%u", probed, (int)dt, isr_count);
+	*isr_out = isr_count;
+	return dt;
+}
 
-	/* 每个被拦地址应恰好产生一次 ADDRESS_BEYOND_WHITELIST 事件 */
-	zassert_equal(isr_count, (uint32_t)probed,
-		      "被拦事件数应等于探测地址数：probed=%d isr=%u", probed, isr_count);
+ZTEST(i2cf, scan_burst_drain)
+{
+	const struct device *dev = i2cf_dev(3);            /* i2cf4 */
+	const struct device *up = i2cf_upstream();
+	uint32_t isr[3] = { 0 };
+	int64_t dt[3] = { 0 };
+
+	zassert_true(device_is_ready(up), "upstream master not ready");
+
+	/* 三种事务类型逐一验证：每址恰好一次上报（write1 / quick0 / read） */
+	for (enum i2cf_burst_kind k = I2CF_BURST_WRITE1; k <= I2CF_BURST_READ; k++) {
+		dt[k] = burst_scan(dev, up, k, &isr[k]);
+
+		zassert_equal(isr[k], (uint32_t)I2CF_BURST_PROBED,
+			      "[%s] 被拦事件数应等于探测地址数：isr=%u probed=%d",
+			      burst_kind_name(k), isr[k], I2CF_BURST_PROBED);
+		zassert_true(dt[k] < I2CF_BURST_MAX_MS,
+			     "[%s] 扫描耗时 %d ms 超上界 %d ms（疑被拦事务退化成总线超时）",
+			     burst_kind_name(k), (int)dt[k], I2CF_BURST_MAX_MS);
+	}
+
+	/* 单条汇总上报（报告「实际」列按测试项名取值；多条同名 INFO 会互相覆盖） */
+	ZT_INFO("scan_burst_drain",
+		"probed=%d,write1_isr=%u,write1_ms=%d,quick0_isr=%u,quick0_ms=%d,"
+		"read_isr=%u,read_ms=%d",
+		I2CF_BURST_PROBED, isr[0], (int)dt[0], isr[1], (int)dt[1], isr[2], (int)dt[2]);
+
+	/* 收尾：恢复监视态 + 管脚交回滤波器 */
+	i2cf_filter_off(dev);
+	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "restore filter mode");
 }
 
 #endif /* CONFIG_I2CF_SCAN_BURST */

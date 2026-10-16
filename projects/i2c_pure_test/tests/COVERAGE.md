@@ -1,10 +1,14 @@
 # i2c_pure_test 测试覆盖矩阵
 
-**被测对象**：纯 I2C 链路（无 I3C 参与）400K 波形质量与基本写读通路。
+**被测对象**：纯 I2C 链路（无 I3C 参与）波形质量与基本写读通路。
 i2c5（cpu2 master，PJ10/PJ11）↔ i2c6（cpu1 slave，PJ08/PJ09，地址 0x58），
 引脚复用由 i2c5/i2c6 节点 pinctrl-0（board 宏默认生成）在 init 时自动应用。
 驱动路径参照 `zephyr/drivers/i2c/i2c_ls.c`（i2c_ls_transfer 主机写/读主循环、
 i2c 从机逐字节回调路径）。
+
+**两个 case**（同一份固件，差异只在 master 侧的速率分支）：
+- `case_pure_i2c_400k`：固定 400K（`CONFIG_I2C_PURE_WAVE_ALT_RATE` 默认 n）。
+- `case_pure_i2c_alt_100k_400k`：逐轮交替 100K/400K（该开关 =y，见下）。
 
 **预期数据约定**（协议头 `tests/include/i2c_pure_test_protocol.h` 为单一事实源）：
 - 写 pattern：`W <len> <0x00,0x01,...,0x0F>`（递增序列，slave 逐字节校验）
@@ -35,6 +39,22 @@ i2c 从机逐字节回调路径）。
 > **实测耗时（2026-09-19）**：`i2c_wave` 单轮 **102.76 ms**（100ms 延迟 + ~2.8ms 传输）⇒
 > 整轮 **10.276 s**，与源码注释 `~10s` / slave 超时 `≈10.1s` **一致**（原"远慢于 10.1s"结论已撤回，
 > 那是采集窗口含 gdb `load` 的测量假象；`KNOWN_ISSUES.md` #99）。
+
+> **交替速率 case（2026-10-12 新增，`case_pure_i2c_alt_100k_400k`）**：与 400K case 共用同一份
+> `i2c_wave` 测试项（项名不变 ⇒ `TEST_NAMES` / `dump_results.py` 无需同步），仅 master 侧由
+> `CONFIG_I2C_PURE_WAVE_ALT_RATE=y`（该 case 的 `controller.conf` 打开，开关定义在
+> `cpu0_i2c_master/Kconfig`，`main.c` 用 `#if defined(...)` 门控）分流为**偶数轮 100K / 奇数轮
+> 400K** 逐轮交替。
+> - **自证机制**：`i2c_runtime_configure`（`i2c_ls.c`）只把速率档记进 `dev_data->config`，真正的
+>   `TIMINGR` 在每次 `i2c_ls_transfer` 的 `i2c_reenable(dev, true)` 里按 `I2C_SPEED_GET` 刷写
+>   ⇒ `i2c_configure` 延迟生效，逐轮改速率在机制上成立。master 用 `k_cycle_get_32()` 分组掐
+>   `i2c_write+i2c_read` 的传输耗时，上报 `INFO i2c_wave: ... avg_us_100k/avg_us_400k/`
+>   `ratio_100k_over_400k=...`，并**固件内硬断言比值 ∈ [2.5, 6]**（只调 `i2c_configure` 不算证据）。
+> - **slave 侧完全不变**：slave 时序在 `i2c_slave_timing_param_set` 内固定（不随 master 速率变），
+>   100K 更慢、setup/hold 更宽松 ⇒ 照常收帧，写帧/字节数仍 **100 帧 / 1600 字节**（断言不改）。
+> - **波形**：两种速率的 SCL 波形由固件保证交替出现，**质量（占空比/上升沿/振铃）需人工用示波器
+>   抓 PJ10/PJ11 或 PJ08/PJ09 判定**；固件不含示波器抓拍。
+
 ---
 
 ## 独立预期（机器可读）
@@ -48,5 +68,5 @@ i2c 从机逐字节回调路径）。
 
 ```expect
 # 测试项 | 断言 | 来源标签:说明
-i2c_wave | !none | !none:断言是 100 轮写读 pattern 的合取（示波器单次触发抓拍用），无单一标量
+i2c_wave | !none | !none:400K case 的断言是 100 轮写读 pattern 的合取（示波器单次触发抓拍用），无单一标量；alt case 额外产出的 ratio_100k_over_400k 只在 alt case 有值（同一 expect 块对该工程两 case 共用），登记它会令 400K case 误报 NO_ACTUAL，故仍 !none —— 该比值由固件内硬断言覆盖
 ```

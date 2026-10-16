@@ -9,8 +9,8 @@ meta:
   firmware: [cpu2_controller_otbn_delegation_test, cpu1_target_otbn_delegation_test]
   kconfig: [cpu2_controller_otbn_delegation_test/prj.conf, cpu1_target_otbn_delegation_test/prj.conf]
   run: tests/run_test.py
-  env: 片内（OTBN ECDSA 经 otbn_crypto mbox 通道代理，无外部接线）
-  title: OTBN ECDSA delegation：cpu2(client) 经 mbox 代理到 cpu1(server)，另含本地对拍
+  env: 片内（OTBN ECDSA/RSA 经 otbn_crypto mbox 通道代理，无外部接线）
+  title: OTBN delegation（ECDSA + RSA 族）：cpu2(client) 经 mbox 代理到 cpu1(server)，另含本地对拍
   coverage: tests/COVERAGE.md    # 工程定位 / 测试内容 / 环境需求 / 覆盖矩阵的权威源
 #
 # 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略（`#` 屏蔽 = 跳过）。
@@ -21,4 +21,11 @@ cases:
   - case_dead_channel
   - case_no_server
   - case_throughput
+  - case_throughput_iso_proxy
+  - case_throughput_iso_local
+  - case_throughput_iso_local_hwrng
+  - case_entropy_iso
   - case_seq_soak
+  - case_explicit_api
+  - case_alt_via_proxy
+  - case_rsa_delegation

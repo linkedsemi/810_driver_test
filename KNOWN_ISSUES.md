@@ -233,6 +233,12 @@ HAL**；`-DCONFIG_PICOLIBC=y` 命令行覆盖可非侵入验证假设。`NEWLIB_
   09-29 曾用垫片绕法（`-include <tmp>/rng_timing_shim.h`：给孤儿符号 no-op `static inline` 存根 +
   `mktime` 原型），实测垫片对 `aes_alt.c` 编译产物逐位无影响。**修根**：删 `src/main.c` 孤儿调用 +
   `platform.c` 补 `mktime` 原型。
+- **★ 2026-10-14 复测更正：09-29 的 `-include` 垫片绕法**已失效且有害**，勿再复用** —— 样例 10-12 重写后
+  `main.c` 不再调 `ls_otbn_rng_timing_*`、`mktime` 也不再是构建错误（净构建 **1296/1296 通过**、**不需要垫片**）；
+  而垫片本身在样例改用 **PICOLIBC** 后**直接破坏构建**：强制 `-include <stdint.h>` 使 picolibc `sys/features.h`
+  在 `fnmatch.c` 的 `#define _GNU_SOURCE` **之前**被处理 ⇒ `__GNU_VISIBLE` 未置 ⇒ `FNM_LEADING_DIR` /
+  `FNM_CASEFOLD undeclared`。**通用纪律**：凡"上轮有效的外部 `-include` 垫片"复用前先**净构建一次**核实仍需否；
+  `-include` 任何系统头会污染后续 TU 的 feature-macro 处理顺序（**强制包含 ≠ 无害**）。落点 `qsh-test-run` §6。
 - 关联：**#58**（mktime / MINIMAL_LIBC）· **#108 / #115**（未提交改动 / 游离损坏）· `qsh-test-run` §6。
 
 ---
@@ -363,6 +369,16 @@ trng 9/9、adc 6/6、dma 4/4、iopmp 5/5、wdt 5/5。范本 = otbn_test / otbn_s
 **已修（2026-09-16 runner 完成并验证）**：`dma_test/tests/scripts/dump_results.py` 改为
 `TEST_NAMES_BY_CASE{case_default: 4, case_destructive: 6}` + `test_names_for(case)`，按 case 选表；
 两表取值均与各自 ELF 的 `nm --numeric-sort` ztest 链接序一致。其余工程仍按上面防再犯流程比对。
+**增补（2026-10-13，G-RUNTEST-MULTICASE-ITEMSET）：`run_test.py` 的「多 case 批量」路径**曾**踩这个坑 ——
+它在 `len(cases)!=1` 时对**所有** case 用默认 `TEST_NAMES`、**忽略 `TEST_NAMES_BY_CASE`** ⇒ 单测项 /
+项数异常的 case 被按"默认项数"判 ⇒ **假 FAIL**（实测 `otbn_delegation_test`：`case_throughput`/
+`case_seq_soak` 各 1 项、`case_explicit_api` 25 项，批量按 24 项判 ⇒ 全项 MISSING；而其串口双核实为
+`PASS` + `PROJECT EXECUTION SUCCESSFUL`）。**已修（2026-10-13）**：把「按 case 取表」下沉到
+`l2_spec()._judge`（`TEST_NAMES_BY_CASE.get(ci.case, TEST_NAMES)`），**单跑与批量同一路径**，离线重放
+同样受益。**验证**：批量（一个 spec 判全部 case）与逐 case 单跑结论逐项一致；反例（篡改某项结果）
+批量仍 FAIL（未放宽校验）；真机上板 7/7 case PASS（单测项 case 不再假 FAIL）。⇒ **判据**：批量报告里
+单测项 / 项数异常的 case **全项 MISSING**，若**仍**出现，先核该 `run_test.py` 是否已含此修复
+（旧版才需逐 case 单跑 `--case <name>` 兜底），**别当真 FAIL**。操作面见 `qsh-test-run` §4.2。
 
 **61. `.gdbcmd` 用无效命令名 → `-x` 模式整脚本中止（误判为烧录失败）**
 `riscv64-unknown-elf-gdb -x xxx.gdbcmd` 里某命令无效 → 报 `Error in sourced command file: ...`
@@ -1108,6 +1124,23 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   **崩溃与"真判到 BAD"同码、不可区分**（现由 `try/except BaseException` 兜住）。**定案四分**：
   `0 = COMPLETE` / `1 = BAD` / `2 = 用法·零证据` / **`3 = 内部错误`**（`[ERR] 内部错误（非判定结果）`
   走 stderr）。**判据：见 `rc=3` 即"没判"**，不得采信、不得当日归档结论用。
+  **增补 3（2026-10-12，H2/H1 对多套件·D2 工程的口径误报 —— 待修）**：全量回归时对全部 PASS case 跑归档核验，
+  多套件 / D2 工程**一律**报 `ARCHIVE: BAD`，属**口径误报而非内容退化**，引用前须与本项要抓的退化区分开：
+  ① **H2「Running TESTSUITE 恰 1 次」对多套件工程误报**（G-ARCH-H2-1）：一个核跑**多个不同 suite**
+     时该行本就有多条（实测 mbedtls **6** 次〔cipher/ecc/hash/thread_safety/robustness/rsa〕、otbn **4** 次、
+     qspi **3** 次、otbn_selftest **2** 次）⇒ `n_suite != 1` 恒命中。**修法方向**：H2 改「**不同** suite 名
+     **去重后 ≥1**」（按 suite 名集合计数，不按行数）。
+  ② **H2 对 D2 token 型工程误报**（同一处待修，承上文「仍存的口径边界」）：D2 工程按自定前缀文法输出、
+     **没有** `Running TESTSUITE` 行 ⇒ `n_suite = 0` 报 BAD（实测 mbox **0** 次）。**修法方向**：按工程文法
+     分派（D2 工程不按 ztest D1 文法核）。
+  **危害**：把**正常归档**误判成坏归档 ⇒ 诱使放弃在这些工程上做归档核验 —— 而那是本项**唯一**的退化探测器
+  （"判定对退化完全不敏感"）。**操作面**：`qsh-test-run` §4.2。**证据**：`reports/2026-10-12-2/`（本轮归档核验普查）。
+  **增补 3b（2026-10-12，「头污染」sub-mode —— 判定无误，但会误触 H1）**（G-ARCH-H1-1）：`otbn_delegation_test
+  case_throughput`（PASS 1/1）归档**头 3 行**是上一轮 `INFO bench:`，其后才是 `*** Booting` → `ZT_BOOT` →
+  **完整 capture 轮** → `SUCCESSFUL` ⇒ H1 报"尾片段"。**定性**：capture 轮**完整**（ZT_BOOT→suite→SUCCESSFUL）
+  ⇒ **判定无误**、非假 PASS；属 `acquire` 的 `clear()` 与采集线程**竞态残留**（本项家族，方向是**"头污染"**
+  不是"尾片段/假 PASS"）。**与增补 3 ① 的区分**：多套件是"`Running TESTSUITE` 多于 1 次"，头污染是"`ZT_BOOT`
+  之前已有测试项行"。判读时先确认 capture 轮本身完整，再决定是否按退化处理。来源 `reports/2026-10-12-2/`。
 - **处置（本轮，只本工程）**：`projects/app_iwdg_cpu2_test/tests/run_test.py` 的 `--case-timeout`
   `default` **120 → 30**（= 实测下界 11s 的 ~3 倍，留裕量）；回归耗时 **12.3 → 3.1 min**。
   **`common/` 未改**（按既定口径"只调本工程默认值，不动公共层"）。
@@ -1691,6 +1724,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
 ## mbedtls 配置互斥（2026-10-10 登记）
 
 **120. `MBEDTLS_ECP_RESTARTABLE` 与 Linkedsemi ECC ALT 硬冲突，构建必失败**（2026-10-10，客户报障）
+> **⚠️ 2026-10-13 修订**：本节「易错点」「处置」里"只要还用 `DELEGATION_CLIENT` 就照样触发"的结论**已过期** —— 二者已解耦（见文末「2026-10-13 修订」）。冲突本身（`RESTARTABLE` × ECC ALT 不可共存）**仍成立**。
 客户在自己侧 `#define MBEDTLS_ECP_RESTARTABLE` 后，构建报：
 `check_config.h:195: #error "MBEDTLS_ECP_RESTARTABLE defined, but it cannot coexist with an alternative ECP implementation"`。
 - **冲突两边**：`zephyr/modules/mbedtls/configs/config-linkedsemi-alt.h:9-11` 在
@@ -1699,16 +1733,161 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   `MBEDTLS_ECDSA_{SIGN,VERIFY,GENKEY}_ALT`；而 `check_config.h:187-195` 禁止它与 `ECP_RESTARTABLE` 共存。
 - **不可调和，不是 bug**：`RESTARTABLE` 要求 ECP 实现**可中断/可恢复**；Linkedsemi 的 OTBN 硬件路径
   与代理路径**都是阻塞式**（本地直接等 OTBN；代理 `k_sem_take(..., K_FOREVER)`）。
-- ⚠ **易错点（已实测五组组合）**：`config-linkedsemi-alt.h:11` 那个 `||DELEGATION_CLIENT` ⇒
+- ⚠ **易错点（已实测五组组合；**2026-10-13 起此条已不成立，`||DELEGATION_CLIENT` 已从源码删除**）**：原 `config-linkedsemi-alt.h` 里的 `||DELEGATION_CLIENT` ⇒
   **只关 `..._OTBN_ALT` 不够**，只要还在用代理客户端就照样触发，且报错点一样，容易误判成"我已经关了加速"。
   - 实测：`RESTARTABLE`+`DELEGATION_CLIENT` → 报错；`RESTARTABLE`+`..._OTBN_ALT` → 报错；
     `RESTARTABLE` 单独 → 不报错；`DELEGATION_CLIENT` 单独 → 不报错；`DELEGATION_SERVER` 单独 → 不报错。
   - `DELEGATION_SERVER` 本身不触发，但 server 的板级 conf 通常**同时**开了 `..._OTBN_ALT=y`
     （见 `samples/crypto/otbn/delegation/mbedtls_server/boards/lsqsh_evb_cpu1.conf`）⇒ server 侧也会撞。
-- **处置（二选一，无第三条路）**：去掉客户自己的 `MBEDTLS_ECP_RESTARTABLE`；或关掉上述两个 Linkedsemi 开关
+- **处置（二选一，无第三条路）**：去掉客户自己的 `MBEDTLS_ECP_RESTARTABLE`；或关掉 `..._OTBN_ALT`（2026-10-13 之前还需同时关 `DELEGATION_CLIENT`，现已不需要）
   走纯软件 ECP（**失去 OTBN 加速**，ECDSA 性能大幅下降）。
 - **已加提前拦截**：`config-linkedsemi-tls.h` 末（`MBEDTLS_CONFIG_FILE` 链末端）新增 `#error`，
   会**指名冲突开关**，比 mbedtls 的通用报错好定位；触发范围见上五组实测。
   ⚠ 局限：`MBEDTLS_USER_CONFIG_FILE` 在本文件**之后**才处理（`build_info.h:115/130/192`），
   放在那里的定义只会被 `check_config.h` 拦下 —— 两种放置**最终都会被拦，不会漏过**。
 - 备份：`tmp/config-linkedsemi-tls.h.orig-2026-10-10`、`tmp/config-linkedsemi-alt.h.orig-2026-10-10`。
+
+### 2026-10-13 修订：`DELEGATION_CLIENT` 不再强制定义 ALT（解耦）
+
+改动三处（规范与组合表见 `zephyr/soc/linkedsemi/lsqsh/otbn/doc/OTBN适配和使用说明.md` §6.1.3 / §9）：
+- `config-linkedsemi-alt.h:16` 去掉 `|| defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)`
+  ⇒ `MBEDTLS_ECDSA_{SIGN,VERIFY,GENKEY}_ALT` **只由 `..._OTBN_ALT` 定义**
+- **新增** `CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION`（X）：A 与 D 同时开时选择
+  `mbedtls_ecdsa_*` 由**代理桩**提供（X=1）还是由**本地 `ecdsa_alt.c`** 提供（X=0，默认）
+- `ecdsa_alt.c` 文件级排除条件由 `!D_CLIENT` 改为 `!(D_CLIENT && X)`（避免与代理桩重复符号；
+  另有 `zephyr/modules/mbedtls/CMakeLists.txt:137` 的 `if(A)` 作第一道闸）
+
+**实测（2026-10-13，810 工程客户端镜像，编译级）**：`-DMBEDTLS_ECP_RESTARTABLE` 经 `-DEXTRA_CFLAGS` 注入，
+并已核对 `compile_commands.json` 确认进入编译命令（排除"注入失效的假通过"）。
+
+| # | 组合 | 旧语义 | **新语义** |
+|---|---|---|---|
+| R1 | `RESTARTABLE` + `DELEGATION_CLIENT`（ALT 关） | ❌ 失败 | ✅ **通过** |
+| R2 | `RESTARTABLE` + `..._OTBN_ALT` | ❌ 失败 | ❌ 失败（报新文案，`config-linkedsemi-tls.h:76`） |
+| R3 | `RESTARTABLE` 单独 | ✅ 通过 | ✅ 通过 |
+| R4 | `DELEGATION_CLIENT` 单独 | ✅ 通过 | ✅ 通过 |
+| R1b | R1 上**强制**定义 ALT 宏（复原旧语义作对照） | — | ❌ 失败 |
+
+⇒ **只有"开了 `..._OTBN_ALT`"这一种仍会撞**；代理客户端现在可与 `RESTARTABLE` 共存
+（该组合下 mbedtls 走**纯软件** ECP，代理接口 `mbedtls_ls_otbn_ecdsa_*` 仍可显式调用）。
+
+**未验证**：R1–R4 均为**编译级**证据，**未上板运行**。
+
+**迁移提醒（解耦的副作用，仅报告未改样例）**：解耦后，既有「只开
+`CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT=y`、无 ALT 项」的 conf 里，普通
+`mbedtls_ecdsa_*` 会**静默退回软件**（旧语义下 CLIENT 单独即定义 ALT 宏）。实例：样例
+`samples/crypto/otbn/delegation/mbedtls_client/boards/lsqsh_evb_cpu2.conf`（实测 `.config`：
+`..._OTBN_ALT_NONE=y`；`nm`：`ecdsa.c.obj` 供普通名、`mbox.c.obj` 只供显式名），其 `src/ecdsa_test.c`
+按**普通名**调用 ⇒ "代理"语义已失效。**修法**：加
+`CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION=y`（或改调显式名
+`mbedtls_ls_otbn_ecdsa_*`）。全仓扫描「`..._DELEGATION_CLIENT=y` 且无 ALT 项」的 conf **仅此一处**
+（810 工程已按角色迁移）。另：该样例记录的 board `lsqsh_evb@1os/lsqsh/cpu{1,2}` **本就编不过**
+（**先于本轮**、同 G-LSQSH-BOARD-1 族；`@2os` 方可编）。证据 `reports/2026-10-13-1/…` §5②。
+
+---
+
+## mbedtls ECC ALT 契约缺口（2026-10-13 登记，同日两侧修复）
+
+**121. 委托 / 本地 ECC 的 `genkey` 曾不像标准 `mbedtls_ecdsa_genkey` 那样自行载入曲线 ⇒ 空 group（`N==0`）上 `check_pubkey` 恒 FAIL（假 FAIL）**（2026-10-13 实测；**两侧均已修**）
+- **现象**：vendor / 委托 ECC 的 `genkey` 后紧接 `mbedtls_ecp_check_pubkey()` 恒 FAIL，报
+  `explicit entry produced an invalid public key`；换软件实现即正常。**极易误判成"测试断言写错"**（实为产品契约缺口）。
+- **根因**：`mbedtls_ecdsa_genkey` 契约含"载入曲线"这一副作用；代理桩 `mbedtls_ls_otbn_ecdsa_genkey`
+  （`zephyr/soc/linkedsemi/lsqsh/otbn/mbedtls/mbedtls_otbn_crypto_mbox.c`）与本核 ALT
+  `mbedtls_ecdsa_genkey`（`modules/crypto/mbedtls/library/ecdsa_alt.c:350`）**都只用 `gid` 算尺寸、
+  只填 `d`/`Q`、不载入 `ctx->private_grp`** ⇒ 空 group（`N==0`）上 `check_pubkey`（要求仿射点、需已载入 group）恒 FAIL。
+- **修复（2026-10-13，两侧）**：两处都自身补 `mbedtls_ecp_group_load(&ctx->private_grp, gid)`
+  （本核 ALT 在白名单检查后、session acquire 前补；失败即 return，此时未持 session）⇒ 与
+  `mbedtls_ecdsa_genkey()` 契约一致。**三个入口（软件 `ecdsa.c` / 本核 OTBN `ecdsa_alt.c` / 代理 `mbox.c`）
+  从此行为一致，调用方不再需要任何预载。**
+- **证伪性验证（上板）**：移除 `otbn_delegation_test` 测试侧全部 `mbedtls_ecp_group_load`
+  （`genkey_or_fail()` / `bench` / `soak` / `run_neg_op` ctx2 那处）后，全量 **7/7 case PASS、
+  双核 `PROJECT EXECUTION SUCCESSFUL`、与基线 0 差异**；服务端 TGT 不再出现 `private_grp.N==0` 整片
+  FAIL（`case_default` TGT 24/24 原生 PASS、`INFO genkey: gid=3,nbits=256`、零 `Assertion failed`）。
+  证据 `reports/2026-10-13-1/otbn_delegation_test_case_*/`。
+- **⚠ 唯一仍需显式载 group 的路径**：**不经 `genkey` 就直接 sign/verify** 的项（如 `run_neg_op` 的
+  `NEG_SIGN_D_ZERO`/`NEG_SIGN_D_N` 分支手工构造 `d` 直调 `DELEG_SIGN`，与 `genkey` 契约**无关**）。
+  判据：**凡经 `genkey` 的路径都不需要预载曲线**；别据旧文给经 `genkey` 的用例加回预载。
+- **招式入库**：`debug-knowledge` mcu 域 `vendor-alt-contract-mismatch.md`（方法学）；操作规则
+  `qsh-test-gen` §1.6 第 12 条。
+- **⚠ 代码注释引用待更正（属"勿改"文件，仅报告）**：`ecdsa_alt.c` 该段新注释引用了
+  `810_driver_test/KNOWN_ISSUES.md #120`，但 **#120 是 `MBEDTLS_ECP_RESTARTABLE` × ECC ALT 冲突**，
+  非本契约缺口 ⇒ 应改指 **#121**（本条）。
+
+---
+
+## OTBN 代理（delegation）域（2026-10-13 登记）
+
+**122. OTBN 代理线格式放大后未同步抬 mbox 通道宽度 ⇒ 客户端全部 `-EMSGSIZE`；且两核 DT 宽度必须一致**（2026-10-13，真机实测坐实；修复 = 两侧 fifo width 32→64）
+- **现象**：代理「总线化」重构后，真机**客户端每个代理调用都返回 `rc=-5`（`-EIO`）**，串口每条一现：
+  `<err> mbox_linkedsem: mbox: msg size error, channel: 1, msg size: 48, mtu: 32` +
+  `<wrn> mbedtls_otbn_mbox: delegation: mbox send failed`。影响本批 58 个客户端项 PASS→FAIL
+  （`case_default` 17/24、`alt_via_proxy` 17/25、`explicit_api` 18/25、`seq_soak` 1/1、`throughput` 1/1、
+  新 `case_rsa_delegation` 3/4），**服务端本地矩阵全 PASS**。
+- **根因**：新 `struct otbn_delegate_params`（`otbn_delegation.h:45`）=
+  `status(4)+op(1)+seq(1)+reserved(2)+arg[5](20)+data[5](20)` = **48 B**，而 `otbn_crypto` mbox 通道
+  MTU 仍是 **32 B**（板级 dts `mboxes = <&mbox 1 32 1 32 1>`，`lsqsh_evb_cpu{1,2}.dts`）⇒
+  `mbox_linkedsemi.c:180` 判 `msg->size > width` → `-EMSGSIZE` ⇒ `otbn_delegation.c:102` → 返 `-EIO`。
+- **领域知识**：linkedsemi mbox 的**每通道 MTU = DT 的 `tx/rx_fifo_width`**（共享 SRAM 软件 FIFO，
+  **任意字节宽、无硬件约束**）⇒ **改线格式必须同步抬 MTU，且两侧 dts 一致**。**编译期零告警**（纯编译验证抓不到）。
+- **判据**：客户端"**发送失败**"=`mbox_send_dt()!=0`（如 `-EMSGSIZE`，区别于"**无应答**"= 超时 `-ETIMEDOUT`）。
+- **修法**：两侧 dts `mboxes = <&mbox 1 64 1 64 1>`（或把线格式压回 ≤32 B）。
+- **★ 两核 DT 宽度必须一致（反例坐实）**：跨核共享的 mbox 两核**共用同一物理 fifo 区** ⇒
+  **一核 64 一核 32 混烧立即复现**上述故障（客户端 17 FAIL / `PROJECT EXECUTION FAILED`，服务端全 PASS）
+  ⇒ **两核必须同批重建、同烧**（硬约束）。反例模板与操作规则见 `qsh-test-run` §4.1。
+- **招式/规则入库**：`debug-knowledge` mcu 域 `mbox-channel-width-dt-fifo.md`（通道宽度是 DT/软 FIFO 属性）；
+  生成规则 `qsh-test-gen` §1.6 第 13 条；证据 `reports/2026-10-13-1/otbn_delegation_test_mtu-rootcause-2026-10-13.md`。
+
+**123. 服务端在「被代理的 ECDSA sign」上内核 panic（`_sched_spinlock` / `sys_work_q` 损坏）**（2026-10-13 实测坐实；**同日已修并上板复测通过** —— 见文末「2026-10-13 修订」；"根因未定位/只报不改"的初版状态**已过期**）
+- **现象**：MTU 修复（#122，fifo 32→64）后复测，**发送路径已通**（`t01–t03` genkey 经代理 PASS、
+  RSA `r01/r02` 逐字节往返 PASS），但**服务端(cpu1)处理「被代理的 ECDSA sign」时内核 panic** ⇒
+  该请求及其后所有客户端代理项 FAIL（`rc=-5`/`-116`）、服务端无收尾标记（`tgt_done=None`）。
+- **证据**（`serial_TGT.log`，`case_default` t04）：`ASSERTION FAIL [z_spin_lock_valid(l)] @ spinlock.h:136
+  Invalid spinlock 0x1010c44c` + `mcause:7 Store/AMO access fault  mtval:1012d874` +
+  `>>> ZEPHYR FATAL ERROR 4: Kernel panic on CPU 0` + `Current thread: (sysworkq)`。
+- **符号解析**（target elf）：`0x1010c44c=_sched_spinlock`、`0x1012d874=sys_work_q_stack+0x2f4`、
+  `0x10108410=k_sys_work_q` ⇒ **内核内存损坏，线程 = 系统工作队列**。
+- **定位**：传输层没问题（genkey/RSA 代理往返成立）⇒ 缺陷在服务端 sign 路径 `otbn_deleg_ecdsa_sign`
+  （`mbedtls_otbn_crypto_mbox.c:357`，跑在 `sysworkq`）。**关键区分**：服务端**本地** sign
+  （`case_dead_channel`/`case_no_server` 的 TGT，不经代理）24 项全 PASS ⇒ **只在跨核代理这一跳崩**。
+- **嫌疑机制（未验证）**：`sysworkq` 栈仅 `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=1024`、帧内含大结构
+  `mbedtls_ecdsa_context` + sign 深调用链（含模逆）⇒ 栈溢出/越界。
+- **判据纪律**：①「发送成功」≠「调用成功」—— 修好 MTU 只是**暴露出下一层缺陷**（与 #122 **互补**，非矛盾）；
+  ② 负向用例（期望 `rc≠0`）在**服务端死后"PASS"是假 PASS**（死服务器返回 `-EIO` 也满足），归因/判定不得采信；
+  ③ 内核 panic 现场应做**符号解析**（`Invalid spinlock X` / `mtval` / `Current thread` 三者）再下结论，别停在 `mcause`。
+- **招式入库**：`debug-knowledge` zephyr 域 `kernel-panic-scene-symbol-resolution.md`；负向判据
+  `qsh-test-gen` §1.6 第 4 条；证据 `reports/2026-10-13-1/otbn_delegation_test_mtu-rootcause-2026-10-13.md` §2–§5。
+
+### 2026-10-13 修订：已修（服务端迁出 system workqueue）
+
+**修法**：服务端 worker 从 `sysworkq`（`CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=1024`）迁到**独立线程**
+`K_THREAD_DEFINE(otbn_deleg_thread, 8192, server_thread, …, 优先级 2, …)`（`zephyr/soc/linkedsemi/lsqsh/otbn/otbn_delegation.c`）；
+请求队列改 `K_MSGQ_DEFINE` 静态初始化（线程可在 `otbn_deleg_server_init()` 之前就阻塞其上）。
+顺带解决一个设计毛病：475 ms 的 RSA modexp 原先跑在系统工作队列上，会把其它系统 work 堵死。
+该文件原就有一句注释掉的 `// K_THREAD_DEFINE(consumer_thread_id, 1024, …)` —— 本就是这个意图，只是栈给得太小。
+
+**复测（第三轮上板，两核同批 pristine 重建后同烧）**：
+- `otbn_delegation_test` **8/8 case 双核 PASS**（`PROJECT EXECUTION SUCCESSFUL`）；
+- 原有 7 个 case 与重构前基线**逐项 0 差异（124 项）**；上一轮自 `t04_sign_p256` 起的 67 项 DIFF 全部消失；
+- 同时保持：`t01–t03` genkey 经代理 PASS、RSA `r01/r02` 逐字节往返 PASS、`r90` 屏蔽通道后超时非零。
+
+**⚠️ 边界（不得据本条下强结论）**：
+- "栈溢出"是**归因**，与本轮"迁到 8 KB 独立线程后 panic 消失"**一致但未被独立测量**
+  （panic 已消失 ⇒ 无现场可抓，未插桩测线程栈水位）。若将来在别处复现同类 panic，仍应按上面的符号解析三步走。
+- 本节上面那条"负向用例在服务端死后假 PASS"的**判据纪律仍然有效**，与是否已修无关。
+
+---
+
+**124. 库无关的 OTBN 代理总线源被"单库开关"门控 ⇒ wolfssl-only 镜像不编总线源、链接期 `undefined reference to 'ls_otbn_delegation_server_init'`**（2026-10-14 发现并修复）
+- **现象**：`zephyr/soc/linkedsemi/lsqsh/otbn/CMakeLists.txt` 里代理总线源 `otbn_delegation.c` 的挂载
+  `zephyr_library_sources_ifdef(...)` 曾放在 **`if(CONFIG_MBEDTLS)` 块内部** ⇒ **wolfssl-only 构建**
+  （`CONFIG_MBEDTLS=n`、`CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER=y`）**根本不编这个源** ⇒
+  链接期 `soc.c(...): undefined reference to 'ls_otbn_delegation_server_init'`。
+- **形貌（判据）**：改名 / 搬迁总线 init 后，**只在 wolfssl 侧链不过、mbedtls 侧全好** ——
+  构建/链接失败**只出现在一侧库**（**非对称**），另一侧"全好"。
+- **根因**：代理总线 `otbn_delegation.c` **是库无关的公共源**（mbedtls 与 wolfssl 的委托端都用它），
+  却被挂在**单库开关**（`CONFIG_MBEDTLS`）之下 ⇒ 不选该库的镜像被**静默剔除**该源（编译期零告警）。
+- **修法（已修）**：把总线源**提到 `if(CONFIG_MBEDTLS)` 之外**，只按**两侧共同 select 的通用符号**
+  `CONFIG_LS_OTBN_DELEGATION` 门控（mbedtls / wolfssl 两侧都 `select` 它）。
+- **通用坑（可复用）**：把一个"库无关"的公共源放进某个库的 `if()` 里 ⇒ 只有那个库开的镜像才编得到它；
+  **跨库共用源要按通用开关门控**。招式入库 `debug-knowledge` common 域 `shared-build-unit-wrong-gate.md`；
+  诊断行 `qsh-test-run` §6；证据 `reports/2026-10-14-1/`。

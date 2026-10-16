@@ -120,9 +120,95 @@ TEST_NAMES = [
 
 # Per-case item sets: a case whose test surface differs from the project default
 # (KNOWN_ISSUES #60 -- one project-wide TEST_NAMES is wrong for such a case).
+# case_explicit_api = the default matrix (client calls the explicit
+# mbedtls_ls_otbn_ecdsa_* names) + t16d (the same-image equivalence item).
 TEST_NAMES_BY_CASE = {
     "case_throughput": ["b01_throughput"],
+    # Isolated throughput: the SAME bench item, but exactly one core benches and
+    # the peer holds (does not touch the OTBN), so the numbers carry no
+    # cross-core queueing. case_throughput_iso_proxy = client benches the proxy;
+    # case_throughput_iso_local = server benches its local OTBN. Both cores
+    # register b01_throughput (the hold core's copy is a trivial PASS + role
+    # INFO), so the same list serves both cores.
+    "case_throughput_iso_proxy": ["b01_throughput"],
+    "case_throughput_iso_local": ["b01_throughput"],
+    # Same local bench, but genkey/sign draw from the hardware entropy device --
+    # the RNG the delegation SERVER uses when serving -- so a proxy-minus-this
+    # diff isolates the bus transport rather than the entropy cost.
+    "case_throughput_iso_local_hwrng": ["b01_throughput"],
+    # Entropy-API timing: cpu1 times the two fetch paths of trng0 (blocking vs
+    # ENTROPY_BUSYWAIT) while cpu2 holds. New item name b02_entropy; the HOLD
+    # core registers the same name as a trivial PASS placeholder.
+    "case_entropy_iso": ["b02_entropy"],
     "case_seq_soak": ["s01_seq_soak"],
+    "case_explicit_api": [
+        "t01_genkey_p256",
+        "t02_genkey_p384",
+        "t03_genkey_sm2",
+        "t04_sign_p256",
+        "t05_sign_p384",
+        "t06_sign_sm2",
+        "t07_verify_p256",
+        "t08_verify_p384",
+        "t09_verify_sm2",
+        "t10_reject_unsupported_curve",
+        "t11_sign_blen_lt_n",
+        "t12_sign_blen_gt_n",
+        "t13_verify_r_out_of_range",
+        "t14_verify_s_zero",
+        "t15_concurrent_genkey",
+        "t16a_sign_blen_zero",
+        "t16b_sign_blen_eq_n",
+        "t16c_repeat_channel_init",
+        "t16d_mbedtls_and_explicit_agree",
+        "t17_sign_bad_d_zero",
+        "t19_verify_bad_q_off_curve",
+        "t21_verify_wrong_keypair",
+        "t80_proxy_responds_within_timeout",
+        "t88_sign_bad_d_ge_n",
+        "t89_verify_bad_q_infinity",
+    ],
+    # case_alt_via_proxy = the default matrix (client calls the PLAIN
+    # mbedtls_ecdsa_* names, which ARE the proxy in this config) + t90 (the
+    # "plain API is really mailbox-bound" discriminator; client asserts, server
+    # SKIPs). t90 sorts last (t90 > t89).
+    "case_alt_via_proxy": [
+        "t01_genkey_p256",
+        "t02_genkey_p384",
+        "t03_genkey_sm2",
+        "t04_sign_p256",
+        "t05_sign_p384",
+        "t06_sign_sm2",
+        "t07_verify_p256",
+        "t08_verify_p384",
+        "t09_verify_sm2",
+        "t10_reject_unsupported_curve",
+        "t11_sign_blen_lt_n",
+        "t12_sign_blen_gt_n",
+        "t13_verify_r_out_of_range",
+        "t14_verify_s_zero",
+        "t15_concurrent_genkey",
+        "t16a_sign_blen_zero",
+        "t16b_sign_blen_eq_n",
+        "t16c_repeat_channel_init",
+        "t17_sign_bad_d_zero",
+        "t19_verify_bad_q_off_curve",
+        "t21_verify_wrong_keypair",
+        "t80_proxy_responds_within_timeout",
+        "t88_sign_bad_d_ge_n",
+        "t89_verify_bad_q_infinity",
+        "t90_plain_api_mailbox_bound",
+    ],
+    # case_rsa_delegation = the RSA family of the delegation bus, in its own
+    # source file (tests/src/otbn_delegation_rsa.c). r01/r02/r03 run on BOTH
+    # cores (client proxy / server local backend); r90 is client-assert /
+    # server-SKIP (it masks the channel, so it runs LAST -- 'r90' > 'r03').
+    "case_rsa_delegation": [
+        "r01_rsa_modexp_roundtrip_2048",
+        "r02_rsa_modexp_roundtrip_4096",
+        "r03_reject_unsupported_modulus",
+        "r90_rsa_mailbox_bound",
+    ],
 }
 
 
@@ -491,12 +577,20 @@ def list_serial_ports() -> List[str]:
 # **聚合形态**：一次跑多个 case，但只写**一份**报告（results 列表整体交给渲染）。
 # 契约：每工程暴露 l2_spec(facts=None, test_names=None)；facts = 未归档采集事实。
 def l2_spec(facts=None, test_names=None):
-    test_names = test_names or TEST_NAMES
+    # Per-case item sets: the default TEST_NAMES is only a fallback. A case whose
+    # test surface differs (KNOWN_ISSUES #60 -- throughput/seq_soak/explicit_api)
+    # must resolve its own names, in BOTH the single-case and the multi-case batch
+    # path. Resolving it here (inside _judge) rather than once in main() is what
+    # fixes the batch defect: main() previously collapsed every case to the
+    # default set whenever len(cases) != 1, judging the one-item cases against 24
+    # names -> all MISSING -> false FAIL.
+    default_names = test_names or TEST_NAMES
     expected = parse_expected_from_coverage()
 
     def _judge(ci):
+        names = TEST_NAMES_BY_CASE.get(ci.case, default_names)
         return evaluate_case(ci.case, ci.lines.get("CTRL", []),
-                             ci.lines.get("TGT", []), test_names, ci.mem)
+                             ci.lines.get("TGT", []), names, ci.mem)
 
     def _render_md(jl, cdir):
         write_markdown_report(jl, expected, cdir, DRIVER_NAME)
@@ -599,11 +693,13 @@ def main() -> int:
         print("\nBuild-only requested; skipping run phase.")
         return 0
 
-    test_names = (TEST_NAMES_BY_CASE.get(cases[0].name, TEST_NAMES)
-                  if len(cases) == 1 else TEST_NAMES)
-    # L2 规格：expected 由 l2_spec() 内部构造
-    _L2_SPEC = l2_spec({"ctrl_uart": ctrl_port, "tgt_uart": tgt_port}, test_names)
-    print(f"Tests per case: {test_names}")
+    # L2 规格：expected 由 l2_spec() 内部构造。test_names=None ⇒ l2_spec 内部
+    # 按 case 解析（TEST_NAMES_BY_CASE，缺省 TEST_NAMES）——单跑与批量走同一路径
+    # （批量缺陷的修复点：不再在 main() 里把多 case 折叠成默认 24 项）。
+    _L2_SPEC = l2_spec({"ctrl_uart": ctrl_port, "tgt_uart": tgt_port}, None)
+    print("Tests per case: "
+          + ", ".join(f"{c.name}={len(TEST_NAMES_BY_CASE.get(c.name, TEST_NAMES))}"
+                      for c in cases))
 
     # L1 采集规格（common/acquire.py）：两遍烧录 + 双核采集 + 静默判完成 + §10.22 自愈重试
     _DUAL = acquire.DualRunSpec(

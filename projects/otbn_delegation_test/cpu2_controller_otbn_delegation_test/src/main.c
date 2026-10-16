@@ -14,10 +14,7 @@
 #include <zephyr/kernel.h>
 
 #include "ztest_glue.h"
-
-#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
-void mbedtls_ls_otbn_delegation_client_chanels_init(void);
-#endif
+#include "ls_otbn_delegation.h"
 
 void test_main(void)
 {
@@ -29,7 +26,7 @@ void test_main(void)
 	 * its callback is already registered when the first request goes out.
 	 * Guarded so a non-client build still links. */
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
-	mbedtls_ls_otbn_delegation_client_chanels_init();
+	ls_otbn_delegation_client_init();
 #endif
 
 	zt_init("CTRL");

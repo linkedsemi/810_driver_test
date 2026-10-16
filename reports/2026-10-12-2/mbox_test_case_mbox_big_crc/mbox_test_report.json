@@ -1,0 +1,61 @@
+{
+  "case": "case_mbox_big_crc",
+  "result": "PASS",
+  "ctrl_execution": "SUCCESSFUL",
+  "tgt_execution": "SUCCESSFUL",
+  "ctrl_errs": 0,
+  "tgt_errs": 0,
+  "items": [
+    {
+      "name": "ctrl_execution",
+      "core": "CTRL",
+      "kind": "execution",
+      "result": "PASS",
+      "detail": "PROJECT EXECUTION SUCCESSFUL"
+    },
+    {
+      "name": "tgt_execution",
+      "core": "TGT",
+      "kind": "execution",
+      "result": "PASS",
+      "detail": "PROJECT EXECUTION SUCCESSFUL"
+    },
+    {
+      "name": "big_crc_chunk_ack",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "chunks=79,chunk_err=0,ack_timeout=0,send_fail=0"
+    },
+    {
+      "name": "big_payload_crc",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "bytes=4096,tgt_recv=4096,crc=0xa2912082,tgt_crc=0xa2912082,tgt_st=0,us=2367"
+    },
+    {
+      "name": "big_payload_crc",
+      "core": "TGT",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "bytes=4096,recv=4096,pattern_err=0,seq_err=0,crc=0xa2912082,peer_crc=0xa2912082"
+    },
+    {
+      "name": "big_crc_chunk_ack",
+      "core": "TGT",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "chunks=79,ack_err=0"
+    }
+  ],
+  "notes": [],
+  "behavior_total": 4,
+  "behavior_passed": 4,
+  "timed_out": false,
+  "elapsed_s": 11.2
+}

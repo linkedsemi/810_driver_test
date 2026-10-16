@@ -1,0 +1,19 @@
+{
+  "archive_version": 1,
+  "case": "case_default",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "CTRL": {
+      "port": "COM18",
+      "lines": 104
+    },
+    "TGT": {
+      "port": "COM16",
+      "lines": 112
+    }
+  },
+  "timeout": 120,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\otbn_delegation_test\\tests\\run_test.py",
+  "script_md5": "9e37b3738d6c9d098484f253ff53c51e",
+  "timestamp": "2026-10-10T17:37:41"
+}

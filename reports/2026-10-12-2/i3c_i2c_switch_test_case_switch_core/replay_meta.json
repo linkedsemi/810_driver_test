@@ -1,0 +1,20 @@
+{
+  "archive_version": 2,
+  "case": "case_switch_core",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 64
+    },
+    "CTRL": {
+      "port": "COM18",
+      "lines": 63
+    }
+  },
+  "timeout": 60,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\i3c_i2c_switch_test\\tests\\run_test.py",
+  "script_md5": "d9351b69db87006963f8d3785ffa4618",
+  "timestamp": "2026-10-12T20:40:20",
+  "split_from_primary": true
+}

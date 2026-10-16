@@ -1,0 +1,5 @@
+#include "../../cpu1_target_otbn_delegation_test/app.overlay"
+
+/* case_entropy_iso: no DT difference. The benchmark surface is selected by
+ * -DOTBN_DELEG_BENCH=1 -DOTBN_DELEG_BENCH_ENTROPY=1 in test.sh; cpu1 times the
+ * two fetch paths of DT_CHOSEN(zephyr_entropy) (trng0). */
