@@ -17,9 +17,11 @@ ECDSA 并把结果回填。被测/依赖源码：
 | cpu2 | controller = delegation **CLIENT** | uart5 | 代理桩（mbox round-trip 到 cpu1） |
 | cpu1 | target = delegation **SERVER** | uart1 | 本地 OTBN ECDSA（同时响应 cpu2 请求） |
 
-**用例模型**：两核编译**同一份**测试体（`tests/src/otbn_delegation_test.c`），
+**用例模型**：两核编译**同一份**测试体（`tests/src/otbn_delegation_test.c`，
+`case_slot` 为独立测试体 `tests/src/otbn_delegation_slot.c`），
 差异只在 Kconfig（`case_explicit_api` 另经 `-DOTBN_DELEG_EXPLICIT_API` 在客户端
 切换被测接口名为显式 `mbedtls_ls_otbn_ecdsa_*`，见 §1）。同名项双核 PASS 才判 PASS。
+`case_slot` 的 `s*` 链接序与默认 `t*` 矩阵互不影响；CPU1 在 `test_main()` 先注册 slot 0..3（P256 两把 / P384 / SM2）。
 
 ## 1. case 清单
 
@@ -36,6 +38,7 @@ ECDSA 并把结果回填。被测/依赖源码：
 | `case_explicit_api` | 显式入口：客户端按名调用 `mbedtls_ls_otbn_ecdsa_{genkey,sign,verify}`（共享体，`-DOTBN_DELEG_EXPLICIT_API=1`）+ 同镜像等价项 t16d；应用侧 `#include "mbedtls_otbn_ecdsa_mbox.h"` | 与 `case_default` 同形（t16d 客户端 PASS / 服务端 SKIP） |
 | `case_alt_via_proxy` | 普通入口：客户端（cpu2）配成「入口=走代理」（`CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION=y`，见 controller.conf），测试体按名调用 **普通 `mbedtls_ecdsa_*`** —— 该配置下它们就是 `mbox.c` 的转发桩（共享体 `-DOTBN_DELEG_VIA_PROXY=1`） | 与 `case_default` 同形（同一 mbox 桩，只是经普通名抵达）+ t90 客户端 PASS / 服务端 SKIP |
 | `case_rsa_delegation` | **RSA 族**：客户端（cpu2）显式调 `mbedtls_ls_otbn_rsa_modexp_encrypt()/_decrypt()`，服务端（cpu1）须开 `CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT=y`（见 target.conf）用**本地** OTBN RSA 应答并自测。**独立源文件** `-DOTBN_DELEG_RSA=1`（`tests/src/otbn_delegation_rsa.c`，与 `case_throughput` 换 bench 源码同式；因 `r*` 链接序在 `t*` 之前、r90 屏蔽通道会破坏 ECDSA 矩阵，**不得**与 ECDSA 体同源） | r01 2048 位往返 m'==m / r02 4096 位往返（双核 PASS）；r03 非支持模数被拒（双核 PASS）；r90 屏蔽通道后显式 RSA 调用**必须超时非零**（客户端 PASS / 服务端 SKIP） |
+| `case_slot` | **私钥槽位签名**：cpu1 在 `test_main()` 注册 slot 0..3（P256×2 / P384 / SM2，私钥不出 CPU1），cpu2 只传 slot id + digest。**独立源文件** `-DOTBN_DELEG_SLOT=1`（`tests/src/otbn_delegation_slot.c`）；客户端走 mbox 公共 API，服务端直接调 handler 并用已知公钥本地验签 | s01/s02/s03/s05/s06/s07 双核 PASS；s04/s09/s12 服务端 PASS / 客户端 SKIP；s08/s10/s11/s13/s14/s15/s16 客户端 PASS / 服务端 SKIP |
 
 > `case_dead_channel`/`case_no_server` 的**功能/负例项在客户端 SKIP**（门控
 > `client_proxy_ready()`），只跑 t80；服务端不受影响（其项为本地运算）。
@@ -116,6 +119,23 @@ ECDSA 并把结果回填。被测/依赖源码：
 | r02_rsa_modexp_roundtrip_4096 | 同上（4096 位） | 功能通路（数值往返） | 同上 | 标准契约（固定 4096 位向量） | 双核 |
 | r03_reject_unsupported_modulus | 桩白名单分支 / `mbedtls_ls_otbn_rsa_modexp` 尺寸门 | 异常参数 | 1024/1536 位 rc≠0（客户端 `-EINVAL` / 服务端 `-ENOTSUP`） | 标准契约 | 双核 |
 | r90_rsa_mailbox_bound | 屏蔽客户端 otbn_crypto 通道后调**显式** `mbedtls_ls_otbn_rsa_modexp_encrypt` | 无响应防护 / 绑定证明 | 返回且 rc≠0，且耗时 ≈ 10s 总线超时（`OTBN_DELEG_TIMEOUT_RSA_MS`）⇒ 证明 RSA 调用确走 mbox（软件会 rc=0 立即返回） | 契约 | 仅 `case_rsa_delegation`：客户端 ✅ / 服务端 SKIP |
+| s01_sign_verify | 客户端 `mbedtls_ls_otbn_ecdsa_sign_slot(slot 0)` → mbox op 0x23 → server 槽位查表 → 本地 OTBN sign；服务端直接调 handler | 功能通路 | rc=0；r/s 用已知公钥 verify=0 | 标准契约（固定 P256 向量） | 双核 |
+| s02_unregistered | 用永久未注册的 slot 7 签名 | 异常参数 | rc=-ENOENT | 标准契约 | 双核 |
+| s03_curve_mismatch | slot 0 登记为 P256，请求 P384（32B digest，隔离曲线维度） | 异常参数 | rc=-EINVAL | 标准契约 | 双核 |
+| s04_register_validation | 服务端注册表：d=0 / d=n / d=n-1 / 非白名单曲线 / 越界 slot / NULL / 空槽注销 / 注册-签名-注销-再签名 | 异常参数 / 状态机 | d=0、d=n → `MBEDTLS_ERR_ECP_INVALID_KEY`；d=n-1 → rc=0；非白名单 → -EOPNOTSUPP；越界/NULL → -EINVAL；空槽注销 → -ENOENT；注销后签名 → -ENOENT | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
+| s05_curves | slot 1 (P384, SHA-384) / slot 2 (SM2, SHA-256) 签名并各自验签 | 功能通路（曲线维度） | 两个 rc=0；分别用 P384/SM2 公钥 verify=0 | 标准契约（固定向量） | 双核 |
+| s06_multi_slot | slot 0 (key A) 与 slot 3 (key B) 同时存在，各自签名；A 的签名用 B 的公钥验签 | 功能通路（槽位索引）/ 语义 | 两个 rc=0；各自 verify=0；交叉 verify=`MBEDTLS_ERR_ECP_VERIFY_FAILED` | 标准契约（固定 P256 向量） | 双核 |
+| s07_hash_lengths | 同一 slot 0：31B（<n）/ 64B（>n，截断）/ 0B | 边界长度 | 31B、64B verify=0（64B 按前 32B 验）；0B rc=0 且 r/s∈(0,n) | 标准契约 | 双核 |
+| s08_client_args | 客户端 API：NULL grp/r/s/digest、P521 非白名单、越界 slot | 异常参数 | -EINVAL / -EIO / -ENOENT | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s09_server_args | 服务端 handler：NULL data[0..3]、arg[1]>n、曲线不匹配/非白名单、合法对照 | 异常参数 | 前 7 项 -EINVAL；合法请求 rc=0 | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
+| s10_soak | 客户端连续 100 次 slot 0 签名 | 统计性质 / 稳定性 | 100 次 rc=0；末次 verify=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s11_concurrent | 客户端 2 线程各 10 次 slot 0 签名（总线单请求锁） | 并发 | 两线程 rc 均=0，无死锁 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s12_server_race | 服务端线程 50 轮注册/注销 slot 4，同时主线程 20 次 slot 0 签名 | 并发 / 状态机 | 注册/注销与签名 rc 均=0，无 oops | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
+| s13_proxy_rng | 客户端用固定 RNG 调显式 `mbedtls_ls_otbn_ecdsa_genkey/sign`（genkey seed / sign nonce）；同一 nonce 签两次 | 随机数来源（client RNG） | genkey rc=0；两次 sign rc=0 且 r/s 完全相同；用生成的 Q verify=0 | 标准契约（固定 seed/nonce） | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s14_slot_rng | 客户端用固定 RNG 调 `mbedtls_ls_otbn_ecdsa_sign_slot`（nonce 由 client 提供）；同一 nonce 签两次 | 随机数来源（slot client RNG） | 两次 rc=0 且 r/s 完全相同；用已知 Q verify=0 | 标准契约（固定 nonce） | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s15_p384_fixed_rng | P384 48B + 固定 client nonce；OTBN slot 签名 vs 客户端软件 ECDSA 同 key/hash/nonce | 签名正确性（独立参考） | OTBN r/s 与软件 r/s 逐 MPI 相等；Q verify=0 | 标准契约（固定向量） | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s16_p384_server_rng | P384 48B + server RNG，客户端单独签 20 次、逐次软件 verify（server 端无本地签名并发） | 随机数来源 / 并发隔离 | 20/20 rc=0 且 verify=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s17_p384_32b_server_rng | 同 s16，但 digest 改为 32B（e=256 bit）；唯一变量是 e 位长 | e 位长隔离 | 20/20 rc=0 且 verify=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
 
 > **契约负例暴露的产品缺陷族（只报不改）**：vendor OTBN ECDSA ALT **不做输入校验** ——
 > 无效私钥 `d`（=0 / ≥n）**被接受并返回成功**；无效公钥（非曲线点 / 无穷远点）、
@@ -165,4 +185,21 @@ r01_rsa_modexp_roundtrip_2048 | !none | contract:合取（enc rc=0 + dec rc=0 + 
 r02_rsa_modexp_roundtrip_4096 | !none | contract:同 r01
 r03_reject_unsupported_modulus | !none | contract:断言 rc≠0（1024 与 1536 位各一）
 r90_rsa_mailbox_bound | !none | contract:合取（超时内返回 + rc≠0 + 耗时 ≥ 8s；软件会 rc=0 立即返回）
+s01_sign_verify | !none | contract:合取（rc=0 + 已知公钥 verify=0）
+s02_unregistered | !none | contract:断言 rc=-ENOENT
+s03_curve_mismatch | !none | contract:断言 rc=-EINVAL
+s04_register_validation | !none | contract:合取（d=0/n 拒绝、n-1 接受、越界/NULL、注销后 -ENOENT）
+s05_curves | !none | contract:合取（P384/SM2 rc=0 + 各自公钥 verify=0）
+s06_multi_slot | !none | contract:合取（两槽各自 verify=0 + 交叉 verify 失败）
+s07_hash_lengths | !none | contract:合取（<n / >n verify=0 + 0 长度 r/s 范围）
+s08_client_args | !none | contract:断言 -EINVAL / -EIO / -ENOENT
+s09_server_args | !none | contract:合取（7 条 -EINVAL + 合法请求 rc=0）
+s10_soak | !none | contract:合取（100 次 rc=0 + 末次 verify=0）
+s11_concurrent | !none | contract:断言两线程各 10 次 rc=0
+s12_server_race | !none | contract:断言注册/注销 50 轮 + 20 次签名为 0/0
+s13_proxy_rng | !none | contract:合取（genkey rc=0 + 两次 sign r/s 相等 + verify=0）
+s14_slot_rng | !none | contract:合取（两次 sign r/s 相等 + verify=0）
+s15_p384_fixed_rng | !none | contract:合取（OTBN r/s == 软件 r/s + verify=0）
+s16_p384_server_rng | !none | contract:断言 20 次 server-RNG 签名均 verify=0
+s17_p384_32b_server_rng | !none | contract:断言 20 次 32B-digest server-RNG 签名均 verify=0
 ```

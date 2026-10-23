@@ -1,0 +1,369 @@
+[
+ {
+  "run": "A_run1.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 287,
+  "burst_err": 285,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.286,
+  "mean_ms": 11.53,
+  "p50": 20.999999999999908,
+  "p90": 22.999999999999687,
+  "max": 44.00000000000048,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 51,
+  "drop_notices": [
+   [
+    14.464,
+    51
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "A_run2.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 287,
+  "burst_err": 285,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.287,
+  "mean_ms": 11.53,
+  "p50": 21.999999999998465,
+  "p90": 22.999999999999687,
+  "max": 44.00000000000048,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 51,
+  "drop_notices": [
+   [
+    14.464,
+    51
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "A_run3.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 287,
+  "burst_err": 285,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.287,
+  "mean_ms": 11.53,
+  "p50": 21.000000000000796,
+  "p90": 22.999999999999687,
+  "max": 45.000000000001705,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 51,
+  "drop_notices": [
+   [
+    14.463,
+    51
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "B_run1.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 43,
+  "burst_err": 41,
+  "begin": 0,
+  "end": 1,
+  "span_s": 1.295,
+  "mean_ms": 31.59,
+  "p50": 10.500000000000398,
+  "p90": 22.999999999999687,
+  "max": 847.999999999999,
+  "gt50": 1,
+  "gt80": 1,
+  "gt150": 1,
+  "drops": 0,
+  "drop_notices": [],
+  "first_gt50_gap_at_err_line": 36
+ },
+ {
+  "run": "B_run2.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 42,
+  "burst_err": 40,
+  "begin": 0,
+  "end": 2,
+  "span_s": 1.295,
+  "mean_ms": 32.38,
+  "p50": 21.000000000000796,
+  "p90": 22.999999999999687,
+  "max": 847.999999999999,
+  "gt50": 1,
+  "gt80": 1,
+  "gt150": 1,
+  "drops": 0,
+  "drop_notices": [],
+  "first_gt50_gap_at_err_line": 35
+ },
+ {
+  "run": "C_run1.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 338,
+  "burst_err": 336,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.867,
+  "mean_ms": 11.51,
+  "p50": 21.000000000000796,
+  "p90": 22.999999999999687,
+  "max": 44.99999999999993,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 0,
+  "drop_notices": [],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "C_run2.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 338,
+  "burst_err": 336,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.868,
+  "mean_ms": 11.51,
+  "p50": 21.000000000000796,
+  "p90": 22.999999999999687,
+  "max": 44.99999999999993,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 0,
+  "drop_notices": [],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "D_run1.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 262,
+  "burst_err": 260,
+  "begin": 2,
+  "end": 3,
+  "span_s": 2.996,
+  "mean_ms": 11.52,
+  "p50": 20.99999999999902,
+  "p90": 22.999999999999687,
+  "max": 44.99999999999993,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 90,
+  "drop_notices": [
+   [
+    1.24,
+    1
+   ],
+   [
+    2.417,
+    1
+   ],
+   [
+    4.704,
+    1
+   ],
+   [
+    5.922,
+    1
+   ],
+   [
+    6.037,
+    1
+   ],
+   [
+    7.367,
+    2
+   ],
+   [
+    9.49,
+    1
+   ],
+   [
+    9.611,
+    1
+   ],
+   [
+    9.727,
+    1
+   ],
+   [
+    9.864,
+    1
+   ],
+   [
+    9.953,
+    57
+   ],
+   [
+    9.976,
+    19
+   ],
+   [
+    12.953,
+    1
+   ],
+   [
+    14.067,
+    1
+   ],
+   [
+    15.199,
+    1
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "D_run2.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 262,
+  "burst_err": 260,
+  "begin": 2,
+  "end": 3,
+  "span_s": 2.995,
+  "mean_ms": 11.52,
+  "p50": 21.000000000000796,
+  "p90": 22.999999999999687,
+  "max": 44.99999999999993,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 90,
+  "drop_notices": [
+   [
+    1.24,
+    1
+   ],
+   [
+    2.417,
+    1
+   ],
+   [
+    4.705,
+    1
+   ],
+   [
+    5.922,
+    1
+   ],
+   [
+    6.039,
+    1
+   ],
+   [
+    7.376,
+    2
+   ],
+   [
+    9.491,
+    1
+   ],
+   [
+    9.612,
+    1
+   ],
+   [
+    9.727,
+    1
+   ],
+   [
+    9.865,
+    1
+   ],
+   [
+    9.954,
+    57
+   ],
+   [
+    9.977,
+    19
+   ],
+   [
+    12.953,
+    1
+   ],
+   [
+    14.067,
+    1
+   ],
+   [
+    15.2,
+    1
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "E_run1.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 287,
+  "burst_err": 285,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.288,
+  "mean_ms": 11.54,
+  "p50": 21.999999999998465,
+  "p90": 22.999999999999687,
+  "max": 45.000000000001705,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 51,
+  "drop_notices": [
+   [
+    14.465,
+    51
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ },
+ {
+  "run": "E_run2.log",
+  "queue_size": null,
+  "timeout_ms": null,
+  "err_total": 287,
+  "burst_err": 285,
+  "begin": 3,
+  "end": 3,
+  "span_s": 3.286,
+  "mean_ms": 11.53,
+  "p50": 20.999999999999908,
+  "p90": 22.999999999999687,
+  "max": 45.000000000001705,
+  "gt50": 0,
+  "gt80": 0,
+  "gt150": 0,
+  "drops": 51,
+  "drop_notices": [
+   [
+    14.464,
+    51
+   ]
+  ],
+  "first_gt50_gap_at_err_line": null
+ }
+]

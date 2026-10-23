@@ -22,6 +22,17 @@
 | session_no_leak | `otbn_rsa_keygen` 连续 10 次 2048（session_acquire/release 配对） | 并发 / 资源清理 | 10 次全部 ret==0（泄漏则第 2 次 -EBUSY） | `otbn_rsa_keygen.c:528/558` session 生命周期契约 | ⬜ |
 | unaligned_rejected | `otbn_rsa_is_aligned` 守卫：keygen（p_le/n_le）、check_prime（候选）、key_from_pq（n_le） | 异常参数 | 非 4 字节对齐缓冲一律 `-EINVAL` | `otbn_rsa_keygen.h` 对齐硬约束 | ⬜ |
 | ref_vector_kat | `otbn_rsa_key_from_pq`（纯算术）+ `otbn_rsa_check_prime`（P/Q 两个方向）；向量 = 客户 TPM 参考实现 RSA-2048 密钥对 | 功能通路 / 跨来源交叉 | ① 返回 0；② N 与参考逐字节相同；③ d 与参考逐字节相同；④ `check_prime(P)`==true（P≡3 mod 4）；⑤ `check_prime(Q)`==false（**既定约束**，见下） | `tests/expected/ref_vector.h`（客户 TCG 参考实现 dump，主机侧验证过 N=P*Q、qInv、dP/dQ/`d=e⁻¹ mod lcm` 自洽） | ⬜ |
+| zzz_modexp_kat_n128b_random | `mbedtls_ls_otbn_rsa_modexp` → 1024 位通用模幂（MODE 0x2a7）；`rsa_otbn_load_app` 首次载入 rsa_imem | 功能通路 / 新档 bring-up | ret==0（非 -ENOTSUP）；输出与 KAT 逐字节相同；fw==RSA_MODEXP | `tests/expected/modexp_vectors.h`（N128B_random） | ⬜ |
+| zzz_modexp_kat_n192b_random | 同上 → 1536 位通用模幂（MODE 0x7c3） | 功能通路 / 新档 bring-up | 同上 | `tests/expected/modexp_vectors.h`（N192B_random） | ⬜ |
+| zzz_modexp_kat_n256b_random | 同上 → 2048 位通用模幂（既有档回归） | 功能通路 / 回归 | 同上 | `tests/expected/modexp_vectors.h`（N256B_random） | ⬜ |
+| zzz_modexp_kat_n384b_hostkat | 同上 → 3072 位通用模幂（既有档回归） | 功能通路 / 回归 | 同上 | `tests/expected/modexp_vectors.h`（主机 `pow()` 独立 KAT） | ⬜ |
+| zzz_modexp_kat_n512b_hostkat | 同上 → 4096 位通用模幂（既有档回归） | 功能通路 / 回归 | 同上 | `tests/expected/modexp_vectors.h`（主机 `pow()` 独立 KAT） | ⬜ |
+| zzz_modexp_kat_n512b_f4_hostkat | 同上 → 4096 位 F4 模幂（e=65537 分支） | 功能通路 / 回归 | 同上 | `tests/expected/modexp_vectors.h`（主机 `pow()` 独立 KAT） | ⬜ |
+| zzz_modexp_kat_n4b_base0 | 128B 模数边界：base=0 | 边界 | 输出 == 0 | 数论定义 | ⬜ |
+| zzz_modexp_kat_n4b_base1 | 128B 模数边界：base=1 | 边界 | 输出 == 1 | 数论定义 | ⬜ |
+| zzz_modexp_kat_n4b_basenm1 | 128B 模数边界：base=n-1、指数为奇数 | 边界 | 输出 == n-1 | 数论定义 | ⬜ |
+| zzz_modexp_kat_n4b_exp0 | 128B 模数边界：exp=0 | 边界 | 输出 == 1（x^0 mod n） | 数论定义 | ⬜ |
+| zzz_modexp_kat_n4b_exp1 | 128B 模数边界：exp=1 | 边界 | 输出 == base | 数论定义 | ⬜ |
 
 > 判据独立性：密钥正确性一律由 **CPU 侧 mbedtls bignum** 独立复算（不经被测模块），
 > 且"OTBN 真的被用到"额外由 `ls_otbn_imem_firmware_get()==OTBN_FIRMWARE_RSA_KEYGEN`
@@ -61,4 +72,15 @@ rsa_4096_ok | !none | !none:多判据合取（ret + n=p*q + 3 mod 4）
 session_no_leak | !none | !none:10 次成功次数合取（计数==10）
 unaligned_rejected | !none | !none:4 个入口的 -EINVAL 合取
 ref_vector_kat | !none | !none:多判据合取（N/d 逐字节比对 + P 判素 + Q 判合数）；向量本体为外部黄金数据，非单标量预期
+zzz_modexp_kat_n128b_random | byte_equal == 1 | golden:128B KAT（外部向量文件）
+zzz_modexp_kat_n192b_random | byte_equal == 1 | golden:192B KAT（外部向量文件）
+zzz_modexp_kat_n256b_random | byte_equal == 1 | golden:256B KAT（外部向量文件）
+zzz_modexp_kat_n384b_hostkat | byte_equal == 1 | golden:384B KAT（主机 pow 独立复算）
+zzz_modexp_kat_n512b_hostkat | byte_equal == 1 | golden:512B KAT（主机 pow 独立复算）
+zzz_modexp_kat_n512b_f4_hostkat | byte_equal == 1 | golden:512B F4 KAT（主机 pow 独立复算）
+zzz_modexp_kat_n4b_base0 | byte_equal == 1 | handcalc:0^e mod n == 0
+zzz_modexp_kat_n4b_base1 | byte_equal == 1 | handcalc:1^e mod n == 1
+zzz_modexp_kat_n4b_basenm1 | byte_equal == 1 | handcalc:(n-1)^奇数 mod n == n-1
+zzz_modexp_kat_n4b_exp0 | byte_equal == 1 | handcalc:x^0 mod n == 1
+zzz_modexp_kat_n4b_exp1 | byte_equal == 1 | handcalc:x^1 mod n == x
 ```

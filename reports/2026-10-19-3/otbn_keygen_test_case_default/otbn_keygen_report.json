@@ -1,0 +1,126 @@
+{
+  "driver": "otbn_keygen_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=auto, timeout=900s",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "timestamp": "2026-10-19T21:35:42",
+  "results": {
+    "candidate_residue_and_topbits": "PASS",
+    "direct_apis_ok": "PASS",
+    "mbedtls_gen_key_ok": "PASS",
+    "ref_vector_kat": "PASS",
+    "rng_error_propagates": "PASS",
+    "rsa_2048_correctness": "PASS",
+    "rsa_2048_deterministic": "PASS",
+    "rsa_3072_ok": "PASS",
+    "rsa_4096_ok": "PASS",
+    "session_no_leak": "PASS",
+    "unaligned_rejected": "PASS",
+    "zzz_modexp_kat_n128b_random": "PASS",
+    "zzz_modexp_kat_n192b_random": "PASS",
+    "zzz_modexp_kat_n256b_random": "PASS",
+    "zzz_modexp_kat_n4b_base0": "PASS",
+    "zzz_modexp_kat_n4b_base1": "PASS",
+    "zzz_modexp_kat_n4b_basenm1": "PASS",
+    "zzz_modexp_kat_n4b_exp0": "PASS",
+    "zzz_modexp_kat_n4b_exp1": "PASS"
+  },
+  "infos": {
+    "mbedtls_gen_key_ok": {
+      "api": "mbedtls_rsa_gen_key",
+      "keylen": "2048",
+      "ret": "0"
+    },
+    "ref_vector_kat": {
+      "key_from_pq_ret": "0",
+      "n_byte_equal": "1",
+      "d_byte_equal": "1"
+    },
+    "session_no_leak": {
+      "iterations": "10",
+      "ok": "10"
+    },
+    "zzz_modexp_kat_n128b_random": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n192b_random": {
+      "ret": "0",
+      "ms": "28",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n256b_random": {
+      "ret": "0",
+      "ms": "63",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_base0": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_base1": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_basenm1": {
+      "ret": "0",
+      "ms": "8",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_exp0": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_exp1": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "candidate_residue_and_topbits": "src=token",
+    "direct_apis_ok": "src=token",
+    "mbedtls_gen_key_ok": "src=token",
+    "ref_vector_kat": "src=token",
+    "rng_error_propagates": "src=token",
+    "rsa_2048_correctness": "src=token",
+    "rsa_2048_deterministic": "src=token",
+    "rsa_3072_ok": "src=token",
+    "rsa_4096_ok": "src=token",
+    "session_no_leak": "src=token",
+    "unaligned_rejected": "src=token",
+    "zzz_modexp_kat_n128b_random": "src=token",
+    "zzz_modexp_kat_n192b_random": "src=token",
+    "zzz_modexp_kat_n256b_random": "src=token",
+    "zzz_modexp_kat_n4b_base0": "src=token",
+    "zzz_modexp_kat_n4b_base1": "src=token",
+    "zzz_modexp_kat_n4b_basenm1": "src=token",
+    "zzz_modexp_kat_n4b_exp0": "src=token",
+    "zzz_modexp_kat_n4b_exp1": "src=token"
+  }
+}

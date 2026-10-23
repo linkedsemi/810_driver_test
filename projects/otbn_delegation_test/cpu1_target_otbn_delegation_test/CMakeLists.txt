@@ -23,6 +23,10 @@ elseif(OTBN_DELEG_RSA)
     # ECDSA body).
     target_sources(app PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_rsa.c)
+elseif(OTBN_DELEG_SLOT)
+    # case_slot (-DOTBN_DELEG_SLOT=1): private-key slot item set (own TU).
+    target_sources(app PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_slot.c)
 else()
     target_sources(app PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_test.c)
@@ -96,4 +100,9 @@ endif()
 # (case_rsa_delegation/target.conf) and SKIPs r90 (no delegation client here).
 if(OTBN_DELEG_RSA)
     target_compile_definitions(app PRIVATE OTBN_DELEG_RSA=1)
+endif()
+# case_slot (-DOTBN_DELEG_SLOT=1): selects the slot TU and enables the slot 0
+# registration in test_main. Passed to BOTH cores.
+if(OTBN_DELEG_SLOT)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_SLOT=1)
 endif()

@@ -29,3 +29,4 @@ cases:
   - case_explicit_api
   - case_alt_via_proxy
   - case_rsa_delegation
+  - case_slot

@@ -61,3 +61,26 @@ config I2CF_ENUM_MATRIX
 
 	  ★ 正式回归用例，已登记进 tests/cases.yaml（工程 case_enum_matrix）与
 	    run_test.py 的 TEST_NAMES_BY_CASE。不置位时不编入，case_default 逐字节不变。
+
+config I2CF_LOG_FLOOD
+	bool "一次性诊断：shell 命令 log_flood 从 shell 线程灌 200 条 deferred ERR"
+	default n
+	help
+	  开启后把 src/log_flood.c 编入：注册 shell 命令 `log_flood`，在 shell
+	  线程内连续调用 200 次 LOG_ERR（deferred 模式，只入 log ring）。
+
+	  用途：复现「日志产生期间 shell 线程无法排空自己的 log 消息队列」的
+	  场景，测量 shell 日志后端队列满后的逐行到达节奏。日志会与 ztest
+	  输出混流，分析只取 `flood msg` 行。
+
+	  ★ 一次性诊断，不登记进 tests/cases.yaml；不置位时（默认）不编入该
+	    文件，任何既有 case 的构建逐字节不变。
+
+config I2CF_LOG_FLOOD_LONG
+	bool "log_flood 使用长消息（约 94 字符格式化文本，长度对照用）"
+	default n
+	depends on I2CF_LOG_FLOOD
+	help
+	  L5 长度对照：把 log_flood 的日志文本加长到与 i2cf ERR 行接近
+	  （"flood msg N " + 80 个 a，约 94 字符）。默认 n ⇒ 短消息版本，
+	  与客户给出的纯软件判据逐字一致。

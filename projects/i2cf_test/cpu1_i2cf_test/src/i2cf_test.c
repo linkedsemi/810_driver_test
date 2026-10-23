@@ -347,7 +347,7 @@ ZTEST(i2cf, en_clears_table)
 	}
 
 	/* clr_tbl=true → 遍历 16 通道把命令表清零（i2c_filter.c:242-249） */
-	zassert_ok(linkedsemi_i2c_filter_en(dev, false, false, true), "en clr_tbl");
+	zassert_ok(linkedsemi_i2c_filter_en(dev, false, false, false, true), "en clr_tbl");
 
 	for (uint8_t idx = 0; idx < I2CF_CHANNEL_NUM; idx++) {
 		memset(dump, 0xff, sizeof(dump));
@@ -384,14 +384,26 @@ ZTEST(i2cf, filter_set_bits)
 
 	for (int i = 0; i < (int)ARRAY_SIZE(cases); i++) {
 		zassert_ok(linkedsemi_i2c_filter_en(dev, cases[i].filter_en,
-						    cases[i].wlist_en, false),
+						    cases[i].wlist_en, false, false),
 			   "en(%d,%d)", cases[i].filter_en, cases[i].wlist_en);
 		s.value = sys_read32(base + SMBUS_FILTER_SET);
 		zassert_equal(s.BLOCK_DISABLE, cases[i].block_disable,
 			      "BLOCK_DISABLE for filter_en=%d", cases[i].filter_en);
 		zassert_equal(s.FILTER_DISABLE, cases[i].filter_disable,
 			      "FILTER_DISABLE for wlist_en=%d", cases[i].wlist_en);
+		/* relay_all_addr=false must always clear bit2 */
+		zassert_equal(s.RELAY_ALL_ADDRESS, 0,
+			      "RELAY_ALL_ADDRESS for entry %d", i);
 	}
+
+	/* relay_all_addr=true must set bit2, and the next call must clear it. */
+	zassert_ok(linkedsemi_i2c_filter_en(dev, true, true, true, false), "en relay on");
+	s.value = sys_read32(base + SMBUS_FILTER_SET);
+	zassert_equal(s.RELAY_ALL_ADDRESS, 1, "RELAY_ALL_ADDRESS must be 1");
+
+	zassert_ok(linkedsemi_i2c_filter_en(dev, true, true, false, false), "en relay off");
+	s.value = sys_read32(base + SMBUS_FILTER_SET);
+	zassert_equal(s.RELAY_ALL_ADDRESS, 0, "RELAY_ALL_ADDRESS must be 0 again");
 
 	/* MASTER_WRITE_MODE 恒为 0（驱动未使用该位） */
 	zassert_equal(s.MASTER_WRITE_MODE, 0, "MASTER_WRITE_MODE must stay 0");
@@ -756,7 +768,7 @@ static uint8_t i2cf_first_slave_bypass(const struct device *dev)
 /* filter 模式：拦违规访问 + 白名单生效（BLOCK_DISABLE=0, FILTER_DISABLE=0） */
 static void i2cf_filter_on(const struct device *dev)
 {
-	zassert_ok(linkedsemi_i2c_filter_en(dev, true, true, false), "filter on failed");
+	zassert_ok(linkedsemi_i2c_filter_en(dev, true, true, false, false), "filter on failed");
 }
 
 /*
@@ -779,7 +791,7 @@ static void i2cf_filter_on(const struct device *dev)
  */
 static void i2cf_filter_off(const struct device *dev)
 {
-	zassert_ok(linkedsemi_i2c_filter_en(dev, false, false, false), "filter off failed");
+	zassert_ok(linkedsemi_i2c_filter_en(dev, false, false, false, false), "filter off failed");
 }
 
 /* 清 pending 中断，并把 ISR 观测归零（在每笔事务前调用，保证归因唯一） */

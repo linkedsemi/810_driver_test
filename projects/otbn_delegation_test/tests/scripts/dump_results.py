@@ -198,6 +198,26 @@ TEST_NAMES_BY_CASE = {
         "r03_reject_unsupported_modulus",
         "r90_rsa_mailbox_bound",
     ],
+    # case_slot = private-key slot signing (own TU); order = ztest link order.
+    "case_slot": [
+        "s01_sign_verify",
+        "s02_unregistered",
+        "s03_curve_mismatch",
+        "s04_register_validation",
+        "s05_curves",
+        "s06_multi_slot",
+        "s07_hash_lengths",
+        "s08_client_args",
+        "s09_server_args",
+        "s10_soak",
+        "s11_concurrent",
+        "s12_server_race",
+        "s13_proxy_rng",
+        "s14_slot_rng",
+        "s15_p384_fixed_rng",
+        "s16_p384_server_rng",
+        "s17_p384_32b_server_rng",
+    ],
 }
 
 # 枚举序必须与 ztest_unit_test 链接序一致；按 --count 截断

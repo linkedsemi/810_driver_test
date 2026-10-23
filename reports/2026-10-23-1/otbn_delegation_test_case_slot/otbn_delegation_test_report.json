@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-10-23T10:43:00.328539",
+  "board": "lsqsh_evb@2os",
+  "overall": "PASS",
+  "cases": [
+    {
+      "name": "case_slot",
+      "result": "PASS",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done_conflict": false,
+      "exec_conflict": false,
+      "exec_conflict_note": "",
+      "tgt_done": "SUCCESSFUL",
+      "mem_unavailable": true,
+      "mem_state": "unavailable",
+      "zero_evidence": false,
+      "evidence_gap": [],
+      "evidence_note": "",
+      "mem_note": "\u5185\u5b58\u515c\u5e95\u672a\u6267\u884c\uff08gdb/dump \u5931\u8d25\u3001\u8d85\u65f6\u6216\u7b26\u53f7\u89e3\u6790\u5931\u8d25\uff09\u3002",
+      "tests": [
+        {
+          "name": "s01_sign_verify",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s02_unregistered",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s03_curve_mismatch",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s04_register_validation",
+          "ctrl": "SKIP",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "s05_curves",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s06_multi_slot",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s07_hash_lengths",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s08_client_args",
+          "ctrl": "PASS",
+          "tgt": "SKIP",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "s09_server_args",
+          "ctrl": "SKIP",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "s10_soak",
+          "ctrl": "PASS",
+          "tgt": "SKIP",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "s11_concurrent",
+          "ctrl": "PASS",
+          "tgt": "SKIP",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "s12_server_race",
+          "ctrl": "SKIP",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        }
+      ]
+    }
+  ]
+}

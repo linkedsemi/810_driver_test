@@ -33,6 +33,11 @@ elseif(OTBN_DELEG_RSA)
     # before t01 (link order is by name, and 'r' < 't') and wedge the matrix.
     target_sources(app PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_rsa.c)
+elseif(OTBN_DELEG_SLOT)
+    # case_slot (-DOTBN_DELEG_SLOT=1): the private-key slot item set has its own
+    # TU so its s* link order is independent of the default t* matrix.
+    target_sources(app PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_slot.c)
 else()
     target_sources(app PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/src/otbn_delegation_test.c)
@@ -109,4 +114,9 @@ endif()
 # backend (enabled by case_rsa_delegation/target.conf).
 if(OTBN_DELEG_RSA)
     target_compile_definitions(app PRIVATE OTBN_DELEG_RSA=1)
+endif()
+# case_slot (-DOTBN_DELEG_SLOT=1): selects the slot-signing TU and lets cpu1's
+# test_main register slot 0 before ztest starts. Passed to BOTH cores.
+if(OTBN_DELEG_SLOT)
+    target_compile_definitions(app PRIVATE OTBN_DELEG_SLOT=1)
 endif()

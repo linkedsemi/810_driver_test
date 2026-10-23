@@ -39,3 +39,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)
 if(CONFIG_I2CF_ENUM_MATRIX)
     target_sources(app PRIVATE src/i2cf_enum.c)
 endif()
+
+# 一次性诊断 shell 命令（log_flood）：仅 CONFIG_I2CF_LOG_FLOOD=y 时编入。
+# 默认 n ⇒ 不置位时本文件不存在于构建中，既有 case 不受影响。
+if(CONFIG_I2CF_LOG_FLOOD)
+    target_sources(app PRIVATE src/log_flood.c)
+endif()

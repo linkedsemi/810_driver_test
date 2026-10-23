@@ -1,0 +1,54 @@
+STATUS 2026-10-22: RESOLVED — hardware restored, DebugServer restarted (PID 2644),
+F (3 rounds), G (2 rounds), H (2 rounds) completed. Results in summary_table.tsv / stats.json
+and raw/F_run*.log, raw/G_run*.log, raw/H_run*.log. The BLOCKED note below is kept as history.
+
+F/G/H experiment status: BLOCKED — board USB physically offline before first run.
+
+Builds (all OK, verified from each build's zephyr/.config and zephyr.dts):
+  case_scan_burst_shell_f : QUEUE=512 TIMEOUT=1    uart1 current-speed=0x1c200 (115200)
+  case_scan_burst_shell_g : QUEUE=512 TIMEOUT=100  uart1 current-speed=0x960   (2400)
+  case_scan_burst_shell_h : QUEUE=512 TIMEOUT=0    uart1 current-speed=0x960   (2400)
+
+Failure evidence:
+  raw/F_run1.log .. F_run3.log each contain exactly:
+    "ERROR: no candidate COM port found (all ports are CKLink?)"
+  -> failure occurred in dbg_run.py discover_ports(), before any GDB access/flash.
+  Re-probes: comports() == [] for 10+ rounds over ~5 minutes.
+  Get-PnpDevice (all states) shows board USB devices Present=False:
+    CKLink-Lite / CKLink Serial (VID 32BF:B210), CH342 A/B (1A86:55D2),
+    MCP2200 (04D8:00DD) -- the whole board USB composite is gone.
+  DebugServerConsole.exe (PID 9240) still LISTENING on 1025, but no CKLink is enumerated.
+  Per qsh-debug 2.2a: stopped probing/restarting DS; this is a physical disconnect/power loss.
+
+Resume when the board is back (reconnect USB/power; then restart DebugServer once):
+  cd D:/zephyr4_0/810_driver_test/projects/i2cf_test/tests
+
+  # F: 3 rounds, 115200
+  for i in 1 2 3; do
+    PYTHONIOENCODING=utf-8 python scripts/dbg_run.py --case case_scan_burst_shell_f \
+      --raw --timeout 70 > ../../../reports/2026-10-22-1/raw/F_run$i.log 2>&1
+  done
+
+  # G: 2400 baud, TIMEOUT=100 (early stop: END write1 +5 lines, or 40 ERR, or idle 10s)
+  python ../../../reports/2026-10-22-1/cap_baud.py --case case_scan_burst_shell_g \
+    --baud 2400 --raw --timeout 180 --stop-tail 5 --stop-err 40 --idle-stop 10 \
+    > ../../../reports/2026-10-22-1/raw/G_run1.log 2>&1
+
+  # H: 2400 baud, TIMEOUT=0 (same early-stop policy)
+  python ../../../reports/2026-10-22-1/cap_baud.py --case case_scan_burst_shell_h \
+    --baud 2400 --raw --timeout 180 --stop-tail 5 --stop-err 40 --idle-stop 10 \
+    > ../../../reports/2026-10-22-1/raw/H_run1.log 2>&1
+
+cap_baud.py = copy of tests/scripts/dbg_run.py with:
+  - TESTS_DIR pinned to D:/zephyr4_0/.../i2cf_test/tests (script now lives in reports/)
+  - --baud (serial open rate), --stop-tail, --stop-err, --idle-stop
+  - unchanged gdb flashing / two-pass capture / ANSI strip / arrival timestamps.
+
+Expected discriminator (to be checked after resume, not yet measured):
+  F: timeout-determined -> ~2 ms/line; consumer/semaphore-determined -> ~11 ms/line,
+     with many dropped (queue full on every attempt).
+  G (2400): timeout-determined -> ~200 ms/line; UART-determined -> ~540 ms/line
+     (130 B/line x 10 bit / 2400 baud = 542 ms).
+  H (2400, TIMEOUT=0): if "TIMEOUT=0 restores 12 ms" -> ~12 ms/line (physically impossible
+     at 2400); physically expected -> ~540 ms/line with only the newest ~15-19 lines
+     surviving (silent overwrite), then idle stop.

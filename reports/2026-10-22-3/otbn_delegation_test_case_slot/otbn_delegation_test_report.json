@@ -1,0 +1,60 @@
+{
+  "timestamp": "2026-10-22T21:59:04.003058",
+  "board": "lsqsh_evb@2os",
+  "overall": "FAIL",
+  "cases": [
+    {
+      "name": "case_slot",
+      "result": "FAIL",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done_conflict": false,
+      "exec_conflict": false,
+      "exec_conflict_note": "",
+      "tgt_done": "SUCCESSFUL",
+      "mem_unavailable": true,
+      "mem_state": "unavailable",
+      "zero_evidence": false,
+      "evidence_gap": [],
+      "evidence_note": "",
+      "mem_note": "\u5185\u5b58\u515c\u5e95\u672a\u6267\u884c\uff08gdb/dump \u5931\u8d25\u3001\u8d85\u65f6\u6216\u7b26\u53f7\u89e3\u6790\u5931\u8d25\uff09\u3002",
+      "tests": [
+        {
+          "name": "s01_sign_verify",
+          "ctrl": "PASS",
+          "tgt": "SKIP",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "s02_unregistered",
+          "ctrl": "PASS",
+          "tgt": "FAIL",
+          "src": "token",
+          "info": "",
+          "reason": "TGT:CPU \u5f02\u5e38\uff08\u6267\u884c\u671f\u95f4\u81f4\u547d\u5f02\u5e38\uff0c**\u975e\u65ad\u8a00\u5931\u8d25**\uff09\uff1a\u672c\u9879\u6267\u884c\u7a97\u53e3\u5185\u56fa\u4ef6\u6253\u5370\u4e86 `ZEPHYR FATAL ERROR 3: Kernel oops on CPU 0`\uff08\u5f52\u6863\u7b2c 47 \u884c\uff1bmcause: 11, Environment call from M-mode\uff09=> \u6d4b\u8bd5\u7ebf\u7a0b\u88ab\u5185\u6838\u5f02\u5e38/panic \u6253\u65ad\uff0cztest \u7684 `ztest_test_fail()` \u672a\u88ab\u8c03\u7528\uff0c\u9010\u9879\u7ed3\u679c\u505c\u5728**\u521d\u503c PASS** \u2014\u2014 \u90a3\u662f\u5047 PASS\u3002\u6309\u672c\u6a21\u5757/\u5224\u5b9a\u6846\u67b6\u300e\u4efb\u4f55\u4e0d\u786e\u5b9a\u90fd\u4e0d\u5141\u8bb8\u4ea7\u751f PASS\u300f\u5224 FAIL\u3002\u2605 \u4e32\u53e3\u8be5\u9879\u4ecd\u4f1a\u6253\u5370 `PASS`\uff0c\u62a5\u544a\u4ee5\u672c\u7406\u7531\u4e3a\u51c6\uff08\u52ff\u8bfb\u6210\u65ad\u8a00\u5931\u8d25\uff09\u3002",
+          "result": "FAIL"
+        },
+        {
+          "name": "s03_curve_mismatch",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "s04_register_validation",
+          "ctrl": "SKIP",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        }
+      ]
+    }
+  ]
+}

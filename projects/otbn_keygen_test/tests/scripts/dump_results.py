@@ -68,6 +68,24 @@ TEST_NAMES = [
     "rsa_4096_ok",
     "session_no_leak",
     "unaligned_rejected",
+    # on-board benchmarks（zzz_bench_* ⇒ 链接序在 KAT 之前，按全名升序）
+    "zzz_bench_modexp_128b",
+    "zzz_bench_modexp_192b",
+    "zzz_bench_no_internal_drbg",
+    "zzz_bench_random_counts",
+    "zzz_bench_trial_division",
+    # modexp KAT bring-up（zzz_ 前缀 ⇒ 链接序最后；128/192 新档 + 256 回归 + 边界）
+    "zzz_modexp_kat_n128b_random",
+    "zzz_modexp_kat_n192b_random",
+    "zzz_modexp_kat_n256b_random",
+    "zzz_modexp_kat_n384b_hostkat",
+    "zzz_modexp_kat_n4b_base0",
+    "zzz_modexp_kat_n4b_base1",
+    "zzz_modexp_kat_n4b_basenm1",
+    "zzz_modexp_kat_n4b_exp0",
+    "zzz_modexp_kat_n4b_exp1",
+    "zzz_modexp_kat_n512b_f4_hostkat",
+    "zzz_modexp_kat_n512b_hostkat",
 ]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址

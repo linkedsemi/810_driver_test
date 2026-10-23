@@ -1,0 +1,4 @@
+/* One-off diagnostic overlay: shell/console UART1 at 2400 baud. */
+&uart1 {
+	current-speed = <2400>;
+};

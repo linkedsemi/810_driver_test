@@ -141,6 +141,8 @@ static int count_diff(const uint8_t *a, const uint8_t *b, size_t n)
  * 套件 1：emmc_app_cpu_guard —— 早退守卫与寄存器态的一致性
  * ===================================================================== */
 
+ZTEST_SUITE(emmc_app_cpu_guard, NULL, NULL, NULL, NULL, NULL);
+
 ZTEST(emmc_app_cpu_guard, guard_matches_driver_behavior)
 {
 	struct sdhc_host_props props;

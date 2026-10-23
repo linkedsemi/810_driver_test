@@ -169,16 +169,16 @@ static void em_setup(const struct device *dev, const struct em_cfg *c)
 		(void)linkedsemi_i2c_filter_fill_bitmap(dev, 0, c->wl_addr, bm);
 	}
 	if (c->mode == EM_FILTER_ON) {
-		(void)linkedsemi_i2c_filter_en(dev, true, true, false);
+		(void)linkedsemi_i2c_filter_en(dev, true, true, false, false);
 	} else {
-		(void)linkedsemi_i2c_filter_en(dev, false, false, false);
+		(void)linkedsemi_i2c_filter_en(dev, false, false, false, false);
 	}
 }
 
 /* 收尾：关滤波器 + 管脚交回滤波器 + 关全部通道（用例间零残留） */
 static void em_teardown(const struct device *dev)
 {
-	(void)linkedsemi_i2c_filter_en(dev, false, false, false);
+	(void)linkedsemi_i2c_filter_en(dev, false, false, false, false);
 	(void)linkedsemi_i2c_filter_switch_to_filter(dev);
 	for (uint8_t i = 0; i < I2CF_CHANNEL_NUM; i++) {
 		(void)linkedsemi_i2c_filter_enable_channel(dev, i, false);

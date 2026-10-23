@@ -7,7 +7,10 @@ project(cpu1_otbn_keygen_test)
 # 项目特定源文件
 target_sources(app PRIVATE
     src/main.c
-    src/otbn_keygen_test.c)
+    src/otbn_keygen_test.c
+    src/otbn_modexp_kat.c
+    src/otbn_bench.c
+    src/trial_div_bench.c)
 
 # 项目特定include目录
 # 注：../tests/expected 保留——ref_vector.h（客户 TPM 参考向量）向量本体在该目录。

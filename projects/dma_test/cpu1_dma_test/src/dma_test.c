@@ -230,6 +230,11 @@ ZTEST(dma, test_dma_invalid_channel)
 		.channel_direction = MEMORY_TO_MEMORY,
 		.source_data_size = 1,
 		.dest_data_size = 1,
+		/* burst_length 必须显式给 1：缺省为 0 会触发 dw_dma_config() 的
+		 * `source_burst_length > 0` 断言（kernel panic），本项会在
+		 * 正对照阶段就被打断。 */
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
 		.block_count = 1,
 	};
 	struct dma_block_config block = {

@@ -1891,3 +1891,32 @@ gdb `load` 仅 **4s**（写包提速已生效）。
 - **通用坑（可复用）**：把一个"库无关"的公共源放进某个库的 `if()` 里 ⇒ 只有那个库开的镜像才编得到它；
   **跨库共用源要按通用开关门控**。招式入库 `debug-knowledge` common 域 `shared-build-unit-wrong-gate.md`；
   诊断行 `qsh-test-run` §6；证据 `reports/2026-10-14-1/`。
+
+---
+
+**125. 用例的驱动 config 结构体漏填"驱动会断言"的字段 ⇒ `CONFIG_ASSERT=y` 下正对照 `k_panic`，该项串口仍打 `PASS`（假 PASS）且被测守卫根本未被覆盖**（2026-10-22 实测；历史两轮同形貌；**源码已补、跑侧未复验**）
+- **现象**：`dma_test::test_dma_invalid_channel` 判 `FAIL (6/7)`，但串口该项打 `PASS`。
+  `serial_TGT.log:21` = `ASSERTION FAIL [cfg->source_burst_length > 0] @ dma_dw_common.c:204`；
+  `:52` `ZEPHYR FATAL ERROR 4: Kernel panic on CPU 0`；`:53` `Current thread: … (test_dma_invalid_channel)`；
+  `:55` 仍 `PASS`；`:73` `PROJECT EXECUTION SUCCESSFUL`。
+- **根因**：用例 `cfg`（`dma_test.c:228`）只设了 `dma_slot / channel_direction / source,dest_data_size /
+  block_count / head_block`，**未设 `source_burst_length` / `dest_burst_length`**（零初始化）；
+  `dw_dma_config()` 的 `__ASSERT_NO_MSG(cfg->source_burst_length > 0)`（`dma_dw_common.c:204`）
+  在**正对照 `dma_config(ch0)`** 处 panic ⇒ `dma_config(ch99)` 的通道越界守卫（`-EINVAL`）**从未执行**。
+- **假 PASS 机制**：内核 `__ASSERT` panic **终止测试线程**，`ztest_test_fail()` 未被调用 ⇒ 逐项结果
+  停在**初值 `PASS`**；panic 后 ztest 继续跑后续项、收尾标记照打。与 #123「服务端死后负向用例假 PASS」
+  同族（都是"没跑到"被记成"过了"）。
+- **不是驱动回归**：该断言由 `dc7238fbab53` 引入，是 HEAD 祖先，不在本轮三个 DMA 提交
+  （`e69b5d184c3` / `501e782e48f` / `6090210eaef`）内；同形貌 panic（当时断言行 `dma_dw_common.c:206`）
+  已存在于 `reports/2026-09-23-1` 与 `reports/2026-09-24-1`，那两轮判 `PASS (7/7)` ⇒ 差异来自
+  **判定口径收紧**（现按"窗口内出现 `ZEPHYR FATAL ERROR`"判 FAIL）。
+- **状态（2026-10-22）**：`projects/dma_test/cpu1_dma_test/src/dma_test.c` 已见补入
+  `source_burst_length = 1` / `dest_burst_length = 1`（文件 mtime **18:10**），但归档 ELF / object 为
+  **18:00**、归档串口日志 **18:08** ⇒ **修复晚于本次运行，尚未重建验证**。下轮必须**重建**后复跑，
+  勿用 `--skip-build` 复用旧 ELF（G-FAMFILL-1 / #88）。
+- **判据纪律**：① 窗口内出现 `ZEPHYR FATAL ERROR` / `ASSERTION FAIL [` 的项**不得计 PASS**；
+  ② `ASSERTION FAIL [...] @`（内核 `__ASSERT`）≠ `Assertion failed at <file>:<line>`（ztest `zassert`，
+  正常 FAIL 路径）—— 归因不得写成"断言失败"；③ 正对照 panic ⇒ 被测负向路径的覆盖是**假的**，
+  报告必须写覆盖损失，且不得据此反推"该守卫没回归"。
+- 生成期规则 `qsh-test-gen` §1.6 第 18 条；校验项 `qsh-test-validate` §1.10 **ab / ac**；
+  归因口径 `qsh-test-compare` §2 + §4.1；证据 `reports/2026-10-22-1/failures/dma_test_default.md`。
