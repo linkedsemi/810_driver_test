@@ -38,7 +38,25 @@
 void rlog_emitf(const char *fmt, ...);
 
 #ifndef PRINT_DATA
+#if defined(RLOG_LOCAL_ECHO)
+/* Integrated dual set: keep the cpu1 console informative while still relaying
+ * the token to the controller. Echoing every START/PASS line with blocking
+ * printk slowed the target enough to break tight read-path timing (run10c:
+ * 24/35 on the controller). Echo only FAIL and SUMMARY locally; the full line
+ * set still reaches the controller over RLOG. */
+#include <zephyr/kernel.h>
+#include <string.h>
+#define PRINT_DATA(fmt, ...)                                                   \
+	do {                                                                   \
+		rlog_emitf(fmt, ##__VA_ARGS__);                                \
+		if (strstr(fmt, "SUMMARY") != NULL ||                          \
+		    strstr(fmt, "FAIL") != NULL) {                             \
+			printk(fmt, ##__VA_ARGS__);                            \
+		}                                                              \
+	} while (0)
+#else
 #define PRINT_DATA(fmt, ...) rlog_emitf(fmt, ##__VA_ARGS__)
+#endif
 #endif
 
 #endif /* TC_UTIL_USER_OVERRIDE_H */

@@ -1,0 +1,179 @@
+{
+  "driver": "spi_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=30s",
+  "timestamp": "2026-10-24T00:19:32",
+  "execution": "FAILED",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "results": {
+    "concurrent_two_threads": "PASS",
+    "configure_datasize16": "PASS",
+    "configure_freq_boundary": "PASS",
+    "configure_lsb_first": "PASS",
+    "configure_mode_bits": "PASS",
+    "configure_prescaler_table": "PASS",
+    "device_ready": "PASS",
+    "error_half_duplex": "PASS",
+    "error_ti_mode": "PASS",
+    "hold_on_cs_spe": "PASS",
+    "lock_on_hold_release": "PASS",
+    "post_reset_state": "PASS",
+    "reconfigure_same_cfg_prescaler": "PASS",
+    "release_semantics": "PASS",
+    "transceive_duplex_pair": "PASS",
+    "transceive_length_sweep": "PASS",
+    "transceive_null_bufs": "PASS",
+    "transceive_tx_only_rx_only": "PASS",
+    "link_probe": "FAIL",
+    "repeat_roundtrips_state_isolation": "SKIP",
+    "roundtrip_fifo_boundary": "SKIP",
+    "roundtrip_length_sweep": "SKIP",
+    "roundtrip_master_tx_slave_rx": "SKIP",
+    "roundtrip_max_length_256": "SKIP",
+    "roundtrip_pattern_matrix": "SKIP",
+    "slave_ret_recv_frames": "SKIP"
+  },
+  "infos": {
+    "concurrent_two_threads": {
+      "arm": "0",
+      "ret_a": "0",
+      "ret_b": "0",
+      "iter": "4"
+    },
+    "configure_datasize16": {
+      "ret": "0",
+      "ds": "0xf00"
+    },
+    "configure_freq_boundary": {
+      "arm": "0",
+      "ret_ok": "0",
+      "br_ok": "0x10",
+      "ret_bad": "-22",
+      "spe_after_bad": "0"
+    },
+    "configure_lsb_first": {
+      "ret_lsb": "0",
+      "lsb_bit": "128",
+      "ret_msb": "0",
+      "msb_bit": "0"
+    },
+    "configure_mode_bits": {
+      "ret": "0",
+      "cr1": "0x11f",
+      "cr2": "0x40704"
+    },
+    "configure_prescaler_table": {
+      "f0": "9375000/br=0x10",
+      "f1": "5000000/br=0x18",
+      "f2": "3000000/br=0x20",
+      "f3": "1500000/br=0x28",
+      "f4": "800000/br=0x30",
+      "f5": "400000/br=0x38",
+      "f6": "292968/br=0x38"
+    },
+    "device_ready": {
+      "spi1_base": "0x4008a000",
+      "spi2_base": "0x4008a400",
+      "cs1_pin": "3",
+      "cs2_pin": "15"
+    },
+    "error_half_duplex": {
+      "arm": "0",
+      "ret": "-134"
+    },
+    "error_ti_mode": {
+      "arm": "0",
+      "ret": "-134"
+    },
+    "hold_on_cs_spe": {
+      "ret_hold": "0",
+      "spe_hold": "64",
+      "cs_hold": "0",
+      "ret_norm": "0",
+      "spe_norm": "0"
+    },
+    "lock_on_hold_release": {
+      "ret1": "0",
+      "ret2": "0",
+      "ret_rel": "0"
+    },
+    "post_reset_state": {
+      "ret_rst": "0",
+      "cr1_after": "0x10",
+      "ret_recover": "0",
+      "br_after": "0x20"
+    },
+    "reconfigure_same_cfg_prescaler": {
+      "ret1": "0",
+      "br_first": "0x38",
+      "ret2": "0",
+      "br_second": "0x10",
+      "spe": "0"
+    },
+    "release_semantics": {
+      "ret_unused": "-22",
+      "ret_tx": "0",
+      "ret_release": "0",
+      "spe": "0"
+    },
+    "transceive_duplex_pair": {
+      "ret": "0",
+      "rx0": "ff",
+      "rx1": "ff",
+      "rx31": "ff"
+    },
+    "transceive_length_sweep": {
+      "n": "15",
+      "min_len": "1",
+      "max_len": "256",
+      "last_ret": "0"
+    },
+    "transceive_null_bufs": {
+      "ret_null": "0",
+      "ret_release": "-22"
+    },
+    "transceive_tx_only_rx_only": {
+      "ret_tx": "0",
+      "ret_rx": "0"
+    },
+    "link_probe": {
+      "master_ret": "0",
+      "slave_ret": "-119",
+      "state": "0"
+    }
+  },
+  "reasons": {
+    "link_probe": "WEST_TOPDIR/810_driver_test/projects/spi_test/cpu1_spi_test/src/spi_loopback.c: 454: spi_loopback_link_probe: (lb_link_state not equal to LB_LINK_OK)"
+  },
+  "notes": {
+    "concurrent_two_threads": "src=token",
+    "configure_datasize16": "src=token",
+    "configure_freq_boundary": "src=token",
+    "configure_lsb_first": "src=token",
+    "configure_mode_bits": "src=token",
+    "configure_prescaler_table": "src=token",
+    "device_ready": "src=token",
+    "error_half_duplex": "src=token",
+    "error_ti_mode": "src=token",
+    "hold_on_cs_spe": "src=token",
+    "lock_on_hold_release": "src=token",
+    "post_reset_state": "src=token",
+    "reconfigure_same_cfg_prescaler": "src=token",
+    "release_semantics": "src=token",
+    "transceive_duplex_pair": "src=token",
+    "transceive_length_sweep": "src=token",
+    "transceive_null_bufs": "src=token",
+    "transceive_tx_only_rx_only": "src=token",
+    "link_probe": "src=token",
+    "repeat_roundtrips_state_isolation": "src=token(skip)",
+    "roundtrip_fifo_boundary": "src=token(skip)",
+    "roundtrip_length_sweep": "src=token(skip)",
+    "roundtrip_master_tx_slave_rx": "src=token(skip)",
+    "roundtrip_max_length_256": "src=token(skip)",
+    "roundtrip_pattern_matrix": "src=token(skip)",
+    "slave_ret_recv_frames": "src=token(skip)"
+  }
+}

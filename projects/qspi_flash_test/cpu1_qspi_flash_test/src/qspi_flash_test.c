@@ -265,17 +265,36 @@ ZTEST(qspi_flash_id, line_width_set)
 
 ZTEST(qspi_flash_id, four_byte_mode_unknown_mfr)
 {
+	uint8_t id[SPI_NOR_MAX_ID_LEN] = { 0 };
 	bool en4b = false;
-	int ret = spi_nor_get_4byte_mode(flash_dev, &en4b);
+	int id_ret = flash_read_jedec_id(flash_dev, id);
+	int ret;
 
-	ZT_INFO("four_byte_mode_unknown_mfr", "ret=%d,en4b=%d", ret, (int)en4b);
+	zassert_ok(id_ret, "flash_read_jedec_id returned %d", id_ret);
+
+	ret = spi_nor_get_4byte_mode(flash_dev, &en4b);
+	ZT_INFO("four_byte_mode_unknown_mfr", "mfr=%02x,ret=%d,en4b=%d",
+		id[0], ret, (int)en4b);
 
 	/* spi_nor_get_4byte_mode() 的厂商白名单只有 MXIC/Winbond/Gigadevice，
-	 * Puya(0x85) 落 default: → -ENXIO。属驱动功能缺口（未按 JESD216 通用
-	 * 方式查询），本用例钉住现状：新增厂商支持时需同步更新。 */
-	zassert_equal(ret, -ENXIO,
-		      "Puya (0x85) not in manufacturer whitelist -> -ENXIO, got %d", ret);
+	 * 其余厂商落 default: → -ENXIO。不要钉死 Puya：EVB 实测 ID 是 20 40 20，
+	 * prot 板可能是 MXIC(c2201b)。按运行时 JEDEC ID 弹性判定。 */
+	switch (id[0]) {
+	case SPI_NOR_MFR_ID_MXIC:
+	case SPI_NOR_MFR_ID_WINBOND:
+	case SPI_NOR_MFR_ID_GIGADEVICE:
+		zassert_ok(ret, "whitelisted mfr 0x%02x should return 0, got %d",
+			   id[0], ret);
+		break;
+	default:
+		zassert_equal(ret, -ENXIO,
+			      "mfr 0x%02x not in whitelist -> -ENXIO, got %d",
+			      id[0], ret);
+		break;
+	}
 }
+
+ZTEST_SUITE(qspi_flash_id, NULL, NULL, NULL, NULL, NULL);
 
 /* =====================================================================
  * 套件 2：qspi_flash_rw —— flash API 层擦 / 写 / 读（功能通路 + 边界长度）

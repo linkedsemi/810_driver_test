@@ -17,28 +17,33 @@ cases:
   - projects\rtc_ls_test
   - projects\rtc_timer_ls_test
   - projects\otbn_test
-  - projects\otbn_selftest
+  - projects\otbn_selftest //mbedtls
   - projects\otbn_keygen_test
+  - projects\mbedtls_test
+
   - projects\i2c_pure_test
   - projects\i3c_i2c_switch_test
   - projects\i3c_dualcore_test
-  - projects\mbedtls_test
-  - projects\adc_temper_test
+  - projects\adc_temper_test  // 2路adc，温感数值比较 ±5
   - projects\dma_test
-  - projects\flash_test
+  - projects\flash_test    //内置flash mbox代理
+  - projects\spi_test  // 三个flash测试合一  最大8KB吞吐率测试
+  - projects\qspi_flash_test //malloc ->sxy
   - projects\mbox_test
-  - projects\wdt_test
+  - projects\wdt_test   // cpu1 iwdg
+  - projects\app_iwdg_cpu2_test
   - projects\iopmp_test
-  - projects\spi_test
   - projects\spif_test
   - projects\spid_test
   - projects\i2cf_test
-  - projects\qspi_flash_test
+
+  - projects\otbn_delegation_test
   - projects\emmc_test
   - projects\pwm_test
-  - projects\app_iwdg_cpu2_test
-  - projects\otbn_delegation_test
 
+
+# trng、flash、加解密、dma、mbox性能
+#  trng0
 
 
   # 屏蔽（2026-09-23，用户裁定）：O-26 PHY 复位无界自旋未修，回归结果为 FAIL(0/0) 无有效数据

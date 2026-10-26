@@ -1,0 +1,61 @@
+{
+  "driver": "rtc_timer_ls_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=30s",
+  "timestamp": "2026-10-23T22:21:49",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "results": {
+    "a_device_ready": "PASS",
+    "a_get_uninitialized": "PASS",
+    "b_get_normalizes_meta": "PASS",
+    "b_set_get_roundtrip": "PASS",
+    "b_time_advances": "PASS",
+    "c_month_bounds": "PASS",
+    "c_year_bounds": "PASS",
+    "d_day_bounds_30day": "PASS",
+    "d_day_bounds_feb_leap": "PASS",
+    "d_day_bounds_feb_nonleap": "PASS",
+    "e_hms_bounds": "PASS",
+    "e_isdst_nsec_bounds": "PASS",
+    "e_wday_bounds": "PASS",
+    "e_yday_bounds": "PASS",
+    "f_day_31_and_rollover_sample": "PASS"
+  },
+  "infos": {
+    "b_set_get_roundtrip": {
+      "y": "2026",
+      "mon": "6",
+      "d": "15"
+    },
+    "b_time_advances": {
+      "delta_s": "2"
+    },
+    "f_day_31_and_rollover_sample": {
+      "y": "2027",
+      "mon": "1",
+      "d": "1"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "a_device_ready": "src=token",
+    "a_get_uninitialized": "src=token",
+    "b_get_normalizes_meta": "src=token",
+    "b_set_get_roundtrip": "src=token",
+    "b_time_advances": "src=token",
+    "c_month_bounds": "src=token",
+    "c_year_bounds": "src=token",
+    "d_day_bounds_30day": "src=token",
+    "d_day_bounds_feb_leap": "src=token",
+    "d_day_bounds_feb_nonleap": "src=token",
+    "e_hms_bounds": "src=token",
+    "e_isdst_nsec_bounds": "src=token",
+    "e_wday_bounds": "src=token",
+    "e_yday_bounds": "src=token",
+    "f_day_31_and_rollover_sample": "src=token"
+  }
+}

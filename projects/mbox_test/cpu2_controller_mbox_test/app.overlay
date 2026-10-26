@@ -5,7 +5,10 @@
  *   mboxes = <&mbox channel tx_width tx_depth rx_width rx_depth>
  *   mbox-names = "mbox"（单一 phandle，不再分 tx/rx）
  *
- * 用 ch4/ch5 避开 ch0-2 已占用通道。
+ * mboxes 首格 = 本节点在 `&mbox` 子节点中的**枚举序**（驱动按遍历序把
+ * fifo 填进数组，首格就是数组下标），**以 zephyr.dts 为准**：板级现有 5 个
+ * consumer（qspi/otbn/espi/vuart/pcc1 = 0..4），本项目追加 ⇒ 5/6。
+ * 节点名 ch4/ch5 为历史命名，实际下标见 mboxes 首格。
  * cpu2 的 tx_fifo_first = <1>（TX fifo first，与 cpu1 相反，
  * 板级 cpu2 DTS 需设此值使 fifo 内存布局对应）。
  */
@@ -13,12 +16,12 @@
 &mbox {
 	mbox_test_ch4: mbox_test_ch4 {
 		compatible = "vnd,mbox-consumer";
-		mboxes = <&mbox 4 64 4 64 4>;
+		mboxes = <&mbox 5 64 4 64 4>;
 		mbox-names = "mbox";
 	};
 	mbox_test_ch5: mbox_test_ch5 {
 		compatible = "vnd,mbox-consumer";
-		mboxes = <&mbox 5 64 4 64 4>;
+		mboxes = <&mbox 6 64 4 64 4>;
 		mbox-names = "mbox";
 	};
 };

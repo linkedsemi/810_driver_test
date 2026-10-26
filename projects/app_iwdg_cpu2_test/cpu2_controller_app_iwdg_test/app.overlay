@@ -13,12 +13,14 @@
 
 /* RLOG 单出口通道（SPEC_REFERENCE §6.9.3）：两核 token 汇成一路串口流。
  * `channel` 单元格必须等于本节点在 `&mbox` 子节点中的**序号**（驱动按
- * DT_INST_FOREACH_CHILD_STATUS_OKAY 的遍历序索引 FIFO）：板级已占 0..3，
- * 本项目追加 ⇒ 序号 4。两核必须一致；宽 128 与本工程 RLOG 帧长（127B）匹配。 */
+ * DT_INST_FOREACH_CHILD_STATUS_OKAY 的遍历序索引 FIFO），**以 zephyr.dts
+ * 里 `&mbox` 的子节点顺序为准**，不要按固定数字或板级占用数推断：板级现有
+ * 5 个 consumer（qspi/otbn/espi/vuart/pcc1 = 0..4），本项目追加 ⇒ 序号 5。
+ * 两核必须一致；宽 128 与本工程 RLOG 帧长（127B）匹配。 */
 &mbox {
 	rlog_channel: rlog_channel {
 		compatible = "vnd,mbox-consumer";
-		mboxes = <&mbox 4 128 8 128 8>;
+		mboxes = <&mbox 5 128 8 128 8>;
 		mbox-names = "mbox";
 	};
 };

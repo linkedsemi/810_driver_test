@@ -37,6 +37,12 @@
 驱动侧约定（`mbox_linkedsemi.c:135-138`）：**rx 回调上报的 `msg.size` 恒等于该通道
 width**，与实际发送长度无关；`width` 同时是 `general_fifo_put_size` 的单帧上限（MTU）。
 
+> ⚠ 上表的 ch0..ch5 是**历史命名**，不是实际数组下标。`mboxes` 首格 = 节点在 `&mbox` 下的
+> **枚举序**：板级 5 个 consumer 占 0..4（qspi/otbn/espi/vuart/**pcc1**），本工程追加的两个
+> consumer 实际为 **5（`mbox_test_ch4`）/ 6（`mbox_test_ch5`）**。测试代码一律经
+> `MBOX_DT_SPEC_GET` 取 `channel_id`，不写死数字；板级 consumer 增删后按 `zephyr.dts` 重数
+> （KNOWN_ISSUES #132）。
+
 ## 2. case_mbox_basic（`MBOX_TEST_CASE_ID = 0`）
 
 帧数契约由 `mbox_test_protocol.h` 的 `MBOX_BASIC_CH4_COUNT/CH5_COUNT` 单点定义，
@@ -85,7 +91,7 @@ width**，与实际发送长度无关；`width` 同时是 `general_fifo_put_size
 | `consumer_ch1_roundtrip` | CTRL+TGT | `fifo[TX/RX][1]` 主路径（32 B 全帧） | 功能通路 | 到达通道 == 1 且 rx size == 32，ACK 回收 | 板级 dts MTU | ✅ |
 | `consumer_ch2_roundtrip` | CTRL+TGT | `fifo[TX/RX][2]`（8 B 最短帧） | 功能通路/边界长度 | 到达通道 == 2 且 rx size == 8 | 板级 dts MTU | ✅ |
 | `consumer_ch3_roundtrip` | CTRL+TGT | `fifo[TX/RX][3]`（8 B 最短帧） | 功能通路/边界长度 | 到达通道 == 3 且 rx size == 8 | 板级 dts MTU | ✅ |
-| `consumer_ch4_roundtrip` | CTRL+TGT | `fifo[TX/RX][4]`（64 B 满帧） | 功能通路 | 到达通道 == 4 且 rx size == 64 | 板级 dts MTU | ✅ |
+| `consumer_ch4_roundtrip` | CTRL+TGT | `fifo[TX/RX][5]`（64 B 满帧） | 功能通路 | 到达通道 == `mbox_test_ch4` 的 channel_id（=5）且 rx size == 64 | 板级 dts MTU | ✅ |
 | `consumer_same_channel_bidir` | CTRL+TGT | 同一通道双向（本核 TX 与 RX 落在对偶 region） | 功能通路 | 4 条探针的 ACK 全部由**原通道**收回/发回 | 驱动 fifo 对偶布局（`tx_fifo_first` 互补） | ✅ |
 | `consumer_ch5_short_frame` | CTRL+TGT | `rx_callback_handle` 的 `msg.size = fifo.width` | 边界长度 | 对端发 8 B 时本端仍报 64 | 驱动源码 `:135-138` | ✅ |
 

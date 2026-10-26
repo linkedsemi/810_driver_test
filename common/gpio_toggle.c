@@ -28,8 +28,10 @@ static const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpioa));
 #define GPIO_PA05_PIN  5
 #define GPIO_PA07_PIN  7
 
-/* 线程栈大小 */
-#define GPIO_THREAD_STACK_SIZE 512
+/* 线程栈大小。
+ * 512 B 在 LOG_MODE_DEFERRED 下够用，但集成固件用 IMMEDIATE 时同步日志路径
+ * 会压爆小栈（实测 boot 阶段 gpio_pa07 CPU exception，mepc=0x0e）。 */
+#define GPIO_THREAD_STACK_SIZE 1024
 
 /*
  * 线程优先级：故意设置不同优先级以增加测试干扰

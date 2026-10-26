@@ -566,6 +566,10 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
 **30. 共享树被其他会话修改**
 构建失败先查是否共享源 API 变更；他人工作流正在动的共享源不碰。
 硬件串扰：完成标记只认本固件 ZT_BOOT 已见的端口。
+- **采集窗口内改源但不重建**（2026-10-23，G-CONCURRENT-SOURCE-EDIT-MIDRUN）：源 mtime 晚于镜像
+  ⇒ **源码/注释比镜像新**，读源码解释本轮现象会把镜像里没有的改动当成行为。报告同记
+  「产物 mtime + md5」与「被测源 mtime」；关键特性用 `grep -a "<字符串>" <elf>` 核镜像；
+  结论只对记录的 md5 负责。详见 `qsh-test-run` §1 / `runner-qsh-routing.md` §3.1。
 
 **32. i3c WDR 时序项间歇性 critical 异常**
 约 1 case/轮，复跑即恢复。基线容忍 ≤1 case；驱动侧 `scl-overhead-ns` 工作流跟进。
@@ -1001,12 +1005,66 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   容量上界要顺着 `zephyr,memory-region = "MBOX"` 反查 SRAM 布局。
 - **板级 ch0 = `mbox_consumer_qspi1`，在双核构建里是 flash delegation 专线**：cpu1 `soc_flash_ls.c:506`、
   cpu2 `soc_flash_ls_client.c:84` 都注册了回调，往 ch0 打测试流量会被 delegation 协议互相解析 ⇒
-  consumer 覆盖只能做 **ch1..ch5**。判断某通道是否已被占用 = 把 `mbox` phandle 的引用者全 grep 一遍。
+  consumer 覆盖只能在板级未占用的序号里选（本条写定时为 **ch1..ch5**；板级 consumer 集合会增长——
+  2026-10-14 起 0..4 已全部占用，含 `mbox_consumer_pcc1`，见 #132）⇒ **可用号段以 `zephyr.dts` 的
+  枚举序为准，不按本条固定数字**。判断某通道是否已被占用 = 把 `mbox` phandle 的引用者全 grep 一遍。
 - **`mbox_mtu_get()` 是 per-device 接口（签名只有 `dev`，没有 `channel`）**，驱动里存在的
   `mbox_linkedsemi_tx_mtu_get/rx_mtu_get(dev, channel)` 是**未挂进 `api.mtu_get` 的死代码** ⇒
   该接口统一返回 `-ENOSYS`（`case_mbox_invalid` 已把它固化成断言项，驱动补齐后该项要改判）。
   照驱动里的 `*_mtu_get` 签名去写会直接编译报错（"too many arguments"）。
 工程内逐项登记与未覆盖率见 `projects/mbox_test/tests/COVERAGE.md` §4。
+
+**132. `mboxes` 首格是「DT 子节点枚举序」而非通道号 —— 板级新增 consumer 会让所有工程的自加通道整体后移（G-MBOX-CHANNEL-INDEX-SHIFT，2026-10-24 登记，2026-10-26 已修；跨仓 DT–overlay 耦合）**
+- **机制（源码逐行核对）**：`mbox_linkedsemi_probe()` 遍历 `DT_INST_FOREACH_CHILD_STATUS_OKAY`，按**位置序号**
+  填 `config->fifo[TX/RX][i].width/env`；`mbox_linkedsemi_send()` 用 `dev_config->fifo[TX][channel].width`
+  判 MTU（`zephyr/drivers/mbox/mbox_linkedsemi.c:178`）⇒ `mboxes` 首格**就是一个数组下标**，必须等于本节点
+  在 `&mbox` 下的序号。DT 里没有脱离子节点序的"通道号"。
+- **触发**：`b4cb868041e`（2026-10-14，add espi lpc post code）在 `lsqsh_evb_cpu{1,2}.dts` 的 `&mbox` 下新增
+  `mbox_consumer_pcc1`（`mboxes = <&mbox 4 2 4 2 4>`，`struct pcc_data` 仅 2 B）⇒ 枚举序变为
+  `qspi=0 / otbn=1 / espi=2 / vuart=3 / pcc1=4`，工程追加节点从 4 后移到 5。
+- **现象**：各工程 `app.overlay` 的 `rlog_channel` 仍写 `<&mbox 4 128 8 128 8>` ⇒ 127 B RLOG 帧进 pcc1 的
+  2 B FIFO ⇒ `<err> mbox_linkedsem: mbox: msg size error, channel: 4, msg size: 127, mtu: 2`；
+  `common/rlog.c` 每行重试 `RLOG_RETRY_MAX=200 × RLOG_RETRY_MS=2` ⇒ 从核 token 不中继、主核读到
+  MISSING/超时。实测 `app_iwdg_cpu2_test case_non_destructive` 的 `serial_TGT.log` **1557** 行；
+  基线 `reports/2026-09-24-1` 同 case **0** 行且 PASS。
+- **影响面（20 case，同一根因）**：`i3c_dualcore_test`×7、`i3c_i2c_switch_test`×2、`i2c_pure_test`×2、
+  `app_iwdg_cpu2_test`×3、`mbox_test`×6。前四者的 `rlog_channel` overlay 首格 4→5；
+  `mbox_test` 自带两个 consumer（`mbox_test_ch4`/`mbox_test_ch5`，均 width 64）应改为 5/6 —— 其中 4 正落到
+  pcc1，故 `basic_ch4_frames` 全败、写 5 的项部分通过。**不能**只按"未出现的通道号"选号。
+- **判据**：形貌是**多个不同工程齐 FAIL 且数据面断言未见**；先看从核串口有无该错误行，再**数
+  `zephyr.dts` 的 `&mbox` 子节点**（别按 overlay 注释或"板级已占 0..3"推断）。错误行的 `channel: 4`
+  是本次落值，不是判据常量。
+- **复核清单**：板级 `&mbox` 子节点增删后，全库 grep `mboxes` 的显式首格（rlog、测试自有 consumer、
+  sample 一并算），对齐 `zephyr.dts` 的枚举序；改完两核同批重建同烧（见 `qsh-test-run` §4.1
+  G-DUALCORE-MBOX-WIDTH-COUPLING）。
+- **同机制另一实例**：integrated 固件的 i3c overlay 也把 `rlog_channel` 写死 4（证据
+  `integrated/build/run10b/RESULTS.md` §5），修法相同。
+- **状态（2026-10-26 已修）**：10 份 overlay 首格改到位 —— 4 个双核工程 × 两核的 `rlog_channel`
+  **4→5**；`mbox_test` 自有 consumer **4/5→5/6**。另在 `common/rlog.c` 加
+  `BUILD_ASSERT(首格 == DT_NODE_CHILD_IDX(rlog_channel))` ⇒ 同类错位以后在**构建期**失败，
+  不再静默跑坏。复测 `reports/2026-10-26-1`：清单 21 case **全 PASS**（含 mbox_test 6 个 FAIL→PASS），
+  全批 `channel: 4 … mtu: 2` 0 行；`mbox_test case_mbox_invalid` 仍有 3 条 `msg size error`
+  属用例**故意触发**的负向项（65>64 / 空数据 / 9>8，7/7 PASS），不是复发。
+- **落点**：`qsh-test-run` §4.1（诊断与处置）· `qsh-test-gen` §1.8 第 5 条（overlay 生成规则）·
+  证据 `reports/2026-10-23-4/failures/`（修复前）与 `reports/2026-10-26-1/`（修复后）。
+
+**133. 驱动能力扩展后，旧用例的「必须拒绝」断言会过期 —— 先查驱动白名单，别当驱动回归（G-TEST-EXPECTATION-STALE，2026-10-26）**
+- **形貌**：`otbn_delegation_test case_rsa_delegation` 的 `r03_reject_unsupported_modulus`
+  **单核一侧 FAIL、另一侧 PASS**：TGT（本地后端）`rc_1024=0, rc_1536=0`（用例期望非 0），
+  CTRL（代理客户端）仍 `rc=-22`（-EINVAL）符合期望。同 case 的 r01/r02 全 PASS ⇒ 通路本身没坏。
+- **根因**：`modules/crypto/mbedtls` `1313114b3`（2026-10-22，*rsa: allow 128/192-byte moduli in
+  the OTBN modexp*）**有意**让本地 OTBN 后端支持 1024/1536 位 —— RSA-2048/3072 keygen 的
+  Miller-Rabin 素数候选就走这两档（`rsa_otbn_select_mode()` 同时新增两档）。而客户端
+  `rsa_modulus_supported()` 仍是 2048/3072/4096 ⇒ **两核白名单已分叉**，1024/1536 不再是
+  "两边都不支持"的合法拒绝样本。
+- **处置（2026-10-26）**：r03 改用**两核白名单交集之外**的 **768/1792 位**（仍断言 `rc≠0`，
+  **没有放宽校验**）；COVERAGE.md 同步。实测 CTRL `-22`（-EINVAL）/ TGT `-134`（-ENOTSUP）。
+  若产品决定让 delegation 也支持 1024/1536，则应改的是客户端白名单 + 增加正向用例，而不是回退本条。
+- **判据**：失败项形貌是"期望拒绝、实际接受"，且**只有本地侧失败、代理侧仍按期望拒绝** ⇒
+  先 `git log -S <白名单函数/尺寸常量>` 查驱动能力是否被有意扩展；**别按驱动回归排查**。
+  改拒绝样本时选**两侧白名单交集之外**的尺寸，并在注释里写清两侧各自放行什么。
+- **落点**：`projects/otbn_delegation_test/tests/src/otbn_delegation_rsa.c` · 同工程 `COVERAGE.md` ·
+  证据 `reports/2026-10-26-1/otbn_delegation_test_case_rsa_delegation/`（3/3 PASS，r90 SKIP 属设计）。
 
 ---
 
@@ -1376,6 +1434,11 @@ deferred 模式下消息进 ring、由 log 线程异步排空。115200 下 150 �
   ⇒ 修法方向（**未改代码，`run_all.py` 在写域外**）：`audit_stale_elves()` 增加"build mtime < 相关源
   mtime 即强制重建"，或去掉该快路径。**通用**：哨兵 / 版本标记只证明"当时编过、格式对"，
   **不证明"对应当前源码"**；产物新鲜度必须比对 mtime（或内容哈希），与 G-CLEAN-2 / qsh-test-compare §5 同族。
+- **姊妹形态：任务书给定的"最终/验收镜像"本身可能早于其源码**（2026-10-23，G-ITEST-TASK-BIN-STALE）——
+  实测给定 `itest_sys_cpu1` 产物 19:04 构建，而 `core/itest_run.c` 19:34 才加入任务要求验证的特性
+  （`itest_shell.c` 19:36）⇒ `grep -a "NOT COVERED" <elf>` = **0 命中**，直接烧它等于验一个不存在的特性。
+  **判据** = 产物 vs 源 mtime + 对关键特性字符串直接 `grep -a` 镜像（md5/构建成功都不够）。
+  **处置** = 用当前源码同路径重建（不改代码），记录新旧 md5 并在报告注明。详见 `qsh-test-run` §4.2。
 
 **89. 以太网/网络类工程：`CONFIG_NET_CONFIG_INIT_TIMEOUT` 默认 30 s —— 网线未插时 ztest 开机阻塞**（2026-09-18）
 `subsys/net/lib/config/init.c` 的 `net_config_init_by_iface()` 在 `check_interface()` 为假（网口未 up）时
@@ -1920,3 +1983,106 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   报告必须写覆盖损失，且不得据此反推"该守卫没回归"。
 - 生成期规则 `qsh-test-gen` §1.6 第 18 条；校验项 `qsh-test-validate` §1.10 **ab / ac**；
   归因口径 `qsh-test-compare` §2 + §4.1；证据 `reports/2026-10-22-1/failures/dma_test_default.md`。
+
+---
+
+**126. `spif::cmd_idx_accessors` 固定槽 5 的 DUMMY_CYCLE[12:8] 写不进/回读为 0 —— 确定性 FAIL（驱动侧待复核）**（2026-10-23 登记）
+- **现象**：整合 `itest run spif` 两轮一致 `FAIL 17/18`，仅 `cmd_idx_accessors` 失败：
+  `INFO cmd_idx_accessors: slot5_raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0`；
+  `spif_test.c:341: (dummy not equal to 9)`。同项两轮（`run2` 与 `repeat`）逐值相同。
+- **判读**：`cmd` 字段读回正常（0x77）而 `dummy` 字段恒 0 ⇒ 按用例自带诊断口径 =
+  **固定槽 5 的 DUMMY_CYCLE[12:8] 写路径未生效**，不是总线流量/跳线问题。
+- **状态**：**未改代码**，待驱动侧复核 `spi_filter.c` 的 `set_dummy_by_idx` 写路径
+  （或确认该字段在固定槽是否为只读/保留）。
+- **判据**：`slot5_raw` 正常而 `raw_dummy/get_dummy` 恒 0 ⇒ 先把范围缩到该字段写路径。
+- 证据：`integrated/build/run2/shell_spif.txt`、`shell_spi.txt`、`repeat/shell2_spi.txt`。
+
+---
+
+**127. `reg_i2c_filter.h` 孤立反引号 ⇒ `stray` backtick 编译错误，任何包含它的编译必失败（整合曾因此排除 i2cf）**（2026-10-23 登记；同日核验已修）
+- **现象**：`modules/lib/pfr_tpm/drivers/pfr/i2c/reg_i2c_filter.h:56` 有一行孤立反引号，
+  `projects/i2cf_test` 编译报 `error: stray '…' in program`。**原始工程同样失败**（非整合引入）。
+- **关键点**：`#include "reg_i2c_filter.h"` 先搜包含者所在目录，**临时 `-I` 无法遮蔽**同目录的坏头
+  ⇒ 修好前只能把 i2cf 从整合集排除。
+- **状态（2026-10-23 核验）**：该文件已无孤立反引号（grep 整行仅一个反引号的行无命中）⇒ 视为已修；
+  重新并入整合后 `run4` 的 `itest run i2cf` **PASS 19/19**（见 #128）。
+- **教训**：编译报错落在第三方头时，先用**原工程复现**区分"整合引入"与"既有缺陷"；
+  招式 `debug-knowledge` common 域 `quoted-include-source-dir-first.md`。
+- 证据：`tmp/m0_integrated/logs/i2cf_orig_check.log`。
+
+---
+
+**128. i2cf 旁路读写的 `addr=0x33` 是片内 target：未注册时 4 项恒 FAIL（`wr/rd=-5`、读回全 0），注册后全转 PASS**（2026-10-23 登记；测试侧已修并复验）
+- **现象（未修时）**：整合 `itest run i2cf` 两轮一致 4 项 FAIL：
+  `EM_P0 addr=0x33 pat=a55a1122 wr=-5 rd=-5 chk=00000000`（旁路写/读片内 target 均 -EIO）、
+  `filter_passthrough_whitelist` 读回全 `00`、`filter_blocks_nonwhitelist` 未阻断、
+  `master_eeprom_rw` 备份读 -EIO；而 `slave_addr_scan` 只扫到 `0x50`（板载器件）。
+- **根因**：用例以 `0x33` 为片内 target，但该 target **没有注册** ⇒ 总线上无人应答（-EIO），
+  滤波器旁路自然也无数据；不是外部跳线问题。
+- **修法（测试侧，未改驱动）**：启动阶段注册片内 i2c target（`eeprom@33 @0x33`），
+  `run4` 启动日志出现 `on-chip i2c target registered: eeprom@33 @0x33` 后
+  `itest run i2cf` **PASS 19/19**（`EM_P0 ... wr=0 rd=0 chk=a55a1122`；
+  非白名单地址 `0x2a` 仍正确 `ret=-5`）。
+- **判据**：片内 target 类用例先确认 target 已注册并有地址；`slave_addr_scan` 只看到
+  板载器件（`0x50`）而看不到目标地址 ⇒ 先查注册，别按接线查。
+- 证据：`integrated/build/run2/shell_i2cf.txt`、`repeat/shell2_i2cf.txt`（修前）；
+  `integrated/build/run4/shell_i2cf.txt`、`normal_serial.log`、`RESULTS.md`（修后）。
+
+---
+
+**129. `itest run rtc` 首轮在 `drift_measure` 内触发整机复位（原因未定位），复位清零 ztest 统计致 summary 缩水**（2026-10-23 登记）
+- **现象**：`drift_measure` 执行中串口出现 bootrom 标记 `flash reset...` / `Flash Boot...`
+  （约 57 s uptime），复位后重发命令 `drift_ms=0`、`5/5 PASS`。
+  批次结束的 `itest summary` 只剩复位后跑过的 rtc/wdt/wdt_boundary（`pass=29`），
+  补跑其余 suite 后恢复 `pass=139 fail=5`。
+- **已排除**：复位后连续运行 >4 min 无再复位 ⇒ 不是"未喂的 32 s IWDG"周期复位。
+- **未定位**：固件不打印 `reset_reason`，复位源未知；本轮**未改代码**。
+- **判据**：`summary` 只统计复位后跑过的 suite ⇒ **不是**"其余 suite 没跑"；
+  跨复位的完整台账要按每轮 `run group` 输出或补跑后对账。
+- 招式 `debug-knowledge` zephyr 域 `reset-semantics-shmem-vs-ztest-stats.md`；
+  证据 `integrated/build/run2/shell_rtc.txt`、`shell_summary.txt`、`shell_summary_final.txt`。
+
+---
+
+**130. `flash_program.py --dump-out`（读回校验）会硬复位板子且**不运行** ⇒ 之后串口 shell 探针无回应，形貌酷似固件挂死**（2026-10-23 登记；工具行为类环境坑，非驱动缺陷）
+- **现象**：读回完成后串口探针（发 `\r\n` 等窗口）零回应，banner 不回、也无 `uart:~$`；
+  与"固件挂死 / 串口坏 / 口号错"的形貌一致，极易往固件侧排查。
+- **根因（源码逐行核对）**：`scripts/flash_program.py::_do_dump()` 调
+  `_build_config(..., reset_and_run=False, ...)` **写死**；而 `_build_config()` 对所有会话固定
+  `ConnectType: 1`（硬复位连接）⇒ 读回时板子**先被硬复位**，`ResetAndRun: false` ⇒
+  **复位后 CPU 不运行**。`--dump-out` 与 `--bin` 互斥，这条路径没有"顺带重烧并启动"的副作用。
+  推断（同一源码路径、未单独实测）：`--bin` 烧录不带 `--reset-and-run` 时同理。
+- **判据（先验廉价可逆假设）**：最近一次动作是 `--dump-out`（含带 `--compare` 的读回）且串口静默
+  ⇒ **先按"板子被 dump 复位且未运行"处理**——一步 GDB 即可证伪，不动固件、不换口号、不拆接线；
+  恢复不了再按 `qsh-debug` §2.3（连接残留）/ §4.2（串口链路）继续查。
+- **恢复**：GDB `target remote 127.0.0.1:1025` → `reset` → `continue`（恢复后 `uart:~$` 立即回）；
+  或重新烧录带 `--reset-and-run`（`dbg_run.py --xip` 默认带）。
+- **预防**：读回校验排在**一轮 shell 会话之前**（或整轮测试收尾），别夹在"固件已跑起来、还要继续用
+  shell"的中间；读回后要继续走 shell，显式 `reset` + `continue` 收尾。
+- **证据**（`integrated/build/run8/`）：`readback_cpu1_0x6a000.bin` 19:55 生成 → `debugserver.log`
+  19:56:25 GDB 连入 / 19:57:05 断开 → `shell_probe_a.txt`（19:58）`uart:~$` 恢复；
+  另有 `flash_run8_a.txt`、`RESULTS.md` §0（独立读回校验段）/ §2.1。
+- 落点：`qsh-test-run` §8 · `qsh-debug` `ref-flash-variants.md` §3 · `qsh-debug` §7 速查行 ·
+  `qsh-test-run` `ref-xip-flash.md`（命令旁警示）· `SPEC_REFERENCE` §6.7.5。
+
+---
+
+**131. `itest` 的 suite 行 / `summary` 是「累计口径」（`G-ITEST-CUMULATIVE-STATS`），`results:` 行才是本轮快照 —— 同一 boot 内重复跑会累加，`fail_used` 不重置致同一 FAIL 重复打印**（2026-10-23 登记；框架计数语义，非用例失败；未改代码）
+- **现象**：同一上电周期内重复 `itest run <suite>`（含先单跑再 `itest run safe`）时，suite 行逐次变大：
+  iopmp `7/7 → 14/14 → 21/21 → 28/28 → 35/35`，spif `17/18` → `34/36`；`itest run safe` 打印
+  `group 'safe' done: suites=12 pass=181 fail=2`，而**该次实际新增 143 PASS / 1 FAIL**
+  （= 143 + iopmp 先前 3 轮 21 + spif 先前 1 轮 17；fail 1+1）。同一条 `itest summary` 又并列打出
+  `summary: pass=188 fail=2` 与 `results: pass=143 fail=1 not_run=368`。
+- **根因**：`itest_run.c::suite_totals()` 累加 `z_ztest_unit_test::stats->pass_count/fail_count`，
+  而 ztest 的 `stats` 在同一 boot 内**不因再次 `z_ztest_run_test_suite()` 而清零** ⇒ suite 行/组聚合 = 累计。
+  两个口径来源不同：`summary:`/suite 行来自 ztest stats（**累计**）；`results:` 来自 `itest_results[]`
+  槽位快照（**去重后的当前状态**，144 个 safe 用例 = 143 PASS + 1 FAIL，其余 368 NOT_RUN）。
+- **FAIL 重复打印**：`itest_results_capture()` 每次调用都把 FAIL 追加进 `itest_fail_*` 槽，而 `fail_used`
+  只在 boot 的 `itest_results_init()` 复位 ⇒ 同一 `idx=145 reason=spif::cmd_idx_accessors` 打印两行
+  （`fail_count=1` 与 `fail_count=2`）。
+- **判据**：**本轮量** = `results:` 快照，或与上一轮 summary 作差；suite 行/`summary:` 只当累计台账。
+  两个口径并列**不是数据矛盾**；逐项 `PASS -` / `FAIL -` 才是用例判据 —— 不得据此把
+  `pass=181 fail=2` 读成"12 个 suite 全失败"或"新增失败"。
+- **状态**：未改代码。框架侧建议（未实施）：suite 行读"本轮增量"或显式标注 `cumulative`，
+  并与 `results` 统一口径；`itest summary` 前重置 `fail_used`（或按 idx 去重覆盖）。
+- 落点 `qsh-test-run` §5；证据 `integrated/build/run11/RESULTS.md` §5.1–§5.3、§6。

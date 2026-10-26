@@ -1,5 +1,0 @@
-43:# 一次性诊断 shell 命令（log_flood）：仅 CONFIG_I2CF_LOG_FLOOD=y 时编入。
-44-# 默认 n ⇒ 不置位时本文件不存在于构建中，既有 case 不受影响。
-45:if(CONFIG_I2CF_LOG_FLOOD)
-46-    target_sources(app PRIVATE src/log_flood.c)
-47-endif()

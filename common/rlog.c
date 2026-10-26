@@ -41,6 +41,18 @@ struct rlog_frame {
 
 static const struct mbox_dt_spec rlog_ch = MBOX_DT_SPEC_GET(DT_NODELABEL(rlog_channel), mbox);
 
+/* The mbox driver fills its per-channel fifo table by each consumer's position
+ * under &mbox (DT_INST_FOREACH_CHILD_STATUS_OKAY order), while send/probe use
+ * the "channel" cell of the same node as that array index. A board-level
+ * consumer inserted ahead of rlog_channel therefore shifts the real index and
+ * silently routes RLOG frames onto the wrong fifo (e.g. a 127-byte frame onto
+ * a 2-byte channel) without any devicetree error. Pin the two together at
+ * build time. The child index counts all children while the driver counts only
+ * status-okay ones, so this assertion is the stricter of the two. */
+BUILD_ASSERT(DT_PHA_BY_IDX(DT_NODELABEL(rlog_channel), mboxes, 0, channel) ==
+	     DT_NODE_CHILD_IDX(DT_NODELABEL(rlog_channel)),
+	     "rlog_channel mboxes channel cell must equal its child index under &mbox");
+
 /* ---- 背压量化（头文件里有对外声明；此处定义）---- */
 volatile uint32_t rlog_stat_tx_lines;
 volatile uint32_t rlog_stat_tx_retries;

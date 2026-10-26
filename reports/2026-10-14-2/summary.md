@@ -1,8 +1,0 @@
-# 810_driver_test 汇总（2026-10-14-2）
-
-| 测试 | 结果 | 通过/总数 |
-|---|---|---|
-| [mbedtls_test_case_hw_all](mbedtls_test_case_hw_all/mbedtls_test_report.md) | PASS | 42/42 |
-| [mbedtls_test_case_sw_baseline](mbedtls_test_case_sw_baseline/mbedtls_test_report.md) | PASS | 35/35 |
-
-**共 2 个测试，通过 2 个，失败 0 个**

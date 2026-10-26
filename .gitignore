@@ -112,3 +112,6 @@ projects/*/tests/tmp*/
 projects/*/tmp/
 tmp/
 __pycache__/
+
+# 整合测试固件工作区（含 build/ 与 artifacts/，不入库）
+integrated/

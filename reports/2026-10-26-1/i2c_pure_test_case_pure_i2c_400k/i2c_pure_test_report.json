@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-10-26T10:30:09.143409",
+  "board": "lsqsh_evb@2os",
+  "overall": "PASS",
+  "cases": [
+    {
+      "name": "case_pure_i2c_400k",
+      "result": "PASS",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done_conflict": false,
+      "exec_conflict": false,
+      "exec_conflict_note": "",
+      "tgt_done": "SUCCESSFUL",
+      "mem_unavailable": true,
+      "mem_state": "unavailable",
+      "zero_evidence": false,
+      "evidence_gap": [],
+      "evidence_note": "",
+      "mem_note": "\u5185\u5b58\u515c\u5e95\u672a\u6267\u884c\uff08gdb/dump \u5931\u8d25\u3001\u8d85\u65f6\u6216\u7b26\u53f7\u89e3\u6790\u5931\u8d25\uff09\u3002",
+      "tests": [
+        {
+          "name": "i2c_wave",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:delay_ms=100, rate_khz=400, rounds=100; TGT:bytes=1600, reads=1701, writes=100",
+          "reason": "",
+          "result": "PASS"
+        }
+      ]
+    }
+  ]
+}

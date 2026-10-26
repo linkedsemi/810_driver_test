@@ -21,6 +21,7 @@
  */
 
 #include "mbedtls/build_info.h"
+#include <stdlib.h>   /* calloc/free, restored after the buffer-alloc suite */
 
 #include "mbedtls/entropy.h"
 #include "mbedtls/hmac_drbg.h"
@@ -87,8 +88,29 @@ ZTEST_SUITE(st, NULL, st_heap_init, NULL, NULL, NULL);
 ZTEST_SUITE(st, NULL, NULL, NULL, NULL, NULL);
 #endif
 /* memory_buffer_alloc 必须最后执行（free 后 heap 不可用），单独套件；
- * 字母序 st < st_heap，保证在 st 全部测试之后。 */
+ * 字母序 st < st_heap，保证在 st 全部测试之后。
+ *
+ * mbedtls_memory_buffer_alloc_free() only zeroes the buffer; it does NOT
+ * restore a usable allocator. In a merged image the next suite then
+ * allocates from a dead 32 KB buffer (observed: cipher AES-GCM returned
+ * MBEDTLS_ERR_CIPHER_ALLOC_FAILED), and mbedtls_test's heap_stress_keygen
+ * verifies the MBA header chain unconditionally.
+ *
+ * Re-initialize the MBA with a fresh buffer instead of switching back to the
+ * platform allocator: this keeps both the subsequent mbedtls suites and the
+ * Zephyr-provided MBA contract working. */
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+static unsigned char st_resume_buf[32768];
+
+static void st_heap_teardown(void *data)
+{
+	(void)data;
+	mbedtls_memory_buffer_alloc_init(st_resume_buf, sizeof(st_resume_buf));
+}
+ZTEST_SUITE(st_heap, NULL, NULL, NULL, NULL, st_heap_teardown);
+#else
 ZTEST_SUITE(st_heap, NULL, NULL, NULL, NULL, NULL);
+#endif
 
 #if defined MBEDTLS_SELF_TEST
 /* Sanity check for malloc. This is not expected to fail, and is rather

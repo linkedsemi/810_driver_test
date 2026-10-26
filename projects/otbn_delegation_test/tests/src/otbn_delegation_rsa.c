@@ -119,23 +119,27 @@ ZTEST(otbn_deleg, r02_rsa_modexp_roundtrip_4096)
 }
 
 /*
- * r03: modulus sizes the OTBN RSA firmware does not implement (it has 2048 /
- * 3072 / 4096) must be rejected, never silently computed. 1024 and 1536 bits are
- * outside the set: the client rejects before any mbox traffic (-EINVAL), the
- * server rejects in the byte-level backend (-ENOTSUP).
+ * r03: modulus sizes neither side implements must be rejected, never silently
+ * computed. The sizes must fall outside BOTH whitelists, which have diverged:
+ * the client delegates only 2048/3072/4096 (mbedtls_otbn_rsa_mbox.c
+ * rsa_modulus_supported) while the server's local backend also serves 1024 and
+ * 1536 since mbedtls 1313114b3 (added for the Miller-Rabin prime candidates of
+ * RSA-2048/3072 keygen, so 1024/1536 are no longer valid rejection samples).
+ * 768 and 1792 bits stay outside both: the client rejects before any mbox
+ * traffic (-EINVAL), the server rejects in the byte-level backend (-ENOTSUP).
  */
 ZTEST(otbn_deleg, r03_reject_unsupported_modulus)
 {
 #if RSA_HAVE_BACKEND
 	static __attribute__((aligned(32))) uint8_t out[RSA_MAX_BYTES];
-	int rc_1024, rc_1536;
+	int rc_768, rc_1792;
 
-	rc_1024 = RSA_ENCRYPT(rsa2048_m, rsa2048_e, rsa2048_n, 1024, out);
-	rc_1536 = RSA_ENCRYPT(rsa2048_m, rsa2048_e, rsa2048_n, 1536, out);
+	rc_768 = RSA_ENCRYPT(rsa2048_m, rsa2048_e, rsa2048_n, 768, out);
+	rc_1792 = RSA_ENCRYPT(rsa2048_m, rsa2048_e, rsa2048_n, 1792, out);
 
-	ZT_INFO("rsa_bad_modulus", "rc_1024=%d,rc_1536=%d", rc_1024, rc_1536);
-	zassert_true(rc_1024 != 0, "1024-bit modulus accepted rc=%d", rc_1024);
-	zassert_true(rc_1536 != 0, "1536-bit modulus accepted rc=%d", rc_1536);
+	ZT_INFO("rsa_bad_modulus", "rc_768=%d,rc_1792=%d", rc_768, rc_1792);
+	zassert_true(rc_768 != 0, "768-bit modulus accepted rc=%d", rc_768);
+	zassert_true(rc_1792 != 0, "1792-bit modulus accepted rc=%d", rc_1792);
 #else
 	ztest_test_skip();
 #endif

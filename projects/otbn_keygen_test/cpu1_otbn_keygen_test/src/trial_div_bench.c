@@ -29,8 +29,14 @@
 #include "ztest_glue.h"
 #include "bench_small_primes.h"
 
+/* Overridable so the integrated image can shrink the 128 KB candidate table
+ * without changing the standalone project's default (1000). */
+#ifndef TD_CANDIDATES
 #define TD_CANDIDATES   1000
+#endif
+#ifndef TD_CAND_BYTES
 #define TD_CAND_BYTES   128
+#endif
 
 static uint8_t td_cand[TD_CANDIDATES][TD_CAND_BYTES];
 static uint64_t td_ns[TD_CANDIDATES];

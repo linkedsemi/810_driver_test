@@ -22,11 +22,12 @@
 
 /* RLOG 单出口通道（SPEC_REFERENCE §6.9.3）：本核（master）收下 slave 的 token
  * 行并加核信封原样打印，两核 token 汇成一路串口流。`channel` 单元格 = 本节点
- * 在 `&mbox` 子节点中的序号（板级 0..3，本项目追加 ⇒ 4），必须与 slave 侧一致。 */
+ * 在 `&mbox` 子节点中的枚举序（驱动按遍历序索引 FIFO，**以 zephyr.dts 为准**）：
+ * 板级现有 5 个 consumer（0..4），本项目追加 ⇒ 5，必须与 slave 侧一致。 */
 &mbox {
 	rlog_channel: rlog_channel {
 		compatible = "vnd,mbox-consumer";
-		mboxes = <&mbox 4 64 8 64 8>;
+		mboxes = <&mbox 5 64 8 64 8>;
 		mbox-names = "mbox";
 	};
 };

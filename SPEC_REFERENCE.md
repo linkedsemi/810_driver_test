@@ -1303,7 +1303,7 @@ python common/expect_check.py --audit --json                             # 机�
 
 | 模式 | cpu1 | cpu2 | 操作 |
 |---|---|---|---|
-| **XIP 标准组合（默认 XIP 场景）** | flash `0x08000000`（XIP 变体构建，XIP 执行 + boot 引导） | flash `0x08100000`（**标准 2os 构建的 RAM 固件**，由 cpu1 boot 搬运启动） | cpu1 用 `@2os_xip` 构建、cpu2 用 `@2os` 构建；两个 bin 一次会话烧进 flash（KNOWN_ISSUES #14），`--reset-and-run` 复位后 cpu1 XIP boot 统一引导 |
+| **XIP 标准组合（默认 XIP 场景）** | flash `0x08000000`（XIP 变体构建，XIP 执行 + boot 引导） | flash `0x08100000`（**标准 2os 构建的 RAM 固件**，由 cpu1 boot 搬运启动） | cpu1 用 `@2os_cpu1_xip` 构建、cpu2 用 `@2os` 构建；两个 bin 一次会话烧进 flash（KNOWN_ISSUES #14），`--reset-and-run` 复位后 cpu1 XIP boot 统一引导。<br>⚠️ **2026-10-23 实测更正**：`@2os_xip/lsqsh/cpu1` 实际是 **RAM 执行**（其 overlay 未改 `zephyr,flash`）；真 XIP 的 cpu1 target 是 `@2os_cpu1_xip/lsqsh/cpu1`（`.text @0x08010120`）。`@2os/lsqsh/cpu1_xip` 不是合法 target。 |
 | 全 RAM（单核或双核，默认测试） | RAM（`load` ELF@0x100c0000） | RAM（`restore bin@0x10000000`） | 不烧 flash，直接 CKLink GDB load（现有两遍烧录法） |
 
 要点：
@@ -1332,14 +1332,17 @@ XIP 场景的标准组合 = cpu1 XIP + cpu2 RAM：
 - cpu2 用**标准 2os 构建（RAM 固件）**，产物也烧进 flash `0x08100000`，由 cpu1 的 XIP boot 代码搬运启动（§6.7.3）
 
 ```bash
-# cpu1: XIP 变体（2os_xip）——分别用 -d 区分构建目录
+# cpu1: XIP 变体（2os_cpu1_xip）——分别用 -d 区分构建目录
 cd linkedsemi_zephyr_project/samples/<app>
-west build -p auto -b lsqsh_evb@2os_xip/lsqsh/cpu1 -d build_xip_cpu1 .
+west build -p auto -b lsqsh_evb@2os_cpu1_xip/lsqsh/cpu1 -d build_xip_cpu1 .
 # cpu2: 标准 2os（RAM 固件，不烧 XIP 变体）
 west build -p auto -b lsqsh_evb@2os/lsqsh/cpu2 -d build_cpu2 .
 ```
 
-- XIP board 名 = `lsqsh_evb@{os}_xip/lsqsh/cpu{N}`（实测 `@1os_xip`/`@2os_xip` 都可用；`{os}`+`xip` 都在 `@` 后，cpu 后缀不带 xip；1os 只有 cpu1）
+- XIP board 名（2026-10-23 实测更正）：
+  - cpu1 / 1os：`lsqsh_evb@1os_xip/lsqsh/cpu1`
+  - **cpu1 / 2os：`lsqsh_evb@2os_cpu1_xip/lsqsh/cpu1`**（`@2os_xip/lsqsh/cpu1` 是 RAM，不是 XIP）
+  - cpu2 / 2os：`lsqsh_evb@2os_xip/lsqsh/cpu2`（其 overlay 已改 `zephyr,flash` 到 XIP 分区）
 - 产物：cpu1（XIP）→ `build_xip_cpu1/zephyr/zephyr_flash_bram_xip_*.bin`（= BRAM boot header + flash 镜像合并，烧录用它）；cpu2（标准 2os）→ `build_cpu2/zephyr/zephyr_flash_*.bin`（flash 段镜像，烧录也用这个）
 
 #### 6.7.5 烧录（`scripts/flash_program.py`）
@@ -1358,6 +1361,9 @@ python 810_driver_test/scripts/flash_program.py --dump-out rb.bin \
     --dump-addr 0x08000000 --dump-len 0x1000 --compare cpu1.bin
 ```
 
+- ⚠ `--dump-out` 走**硬复位连接**（`ConnectType=1`）且**不运行**（`ResetAndRun=false`）⇒
+  读回完板子停在复位后，随后串口探针静默**不是**固件挂死；恢复 = GDB `reset`+`continue`
+  或重烧带 `--reset-and-run`（KNOWN_ISSUES #130 / `qsh-debug` `ref-flash-variants.md` §3）
 - 环境变量覆盖：`FP_EXE` / `FP_ALGO` / `FP_LOG`（test_common.sh 风格）
 - 结果：每对象 `FP_OK: <name>@<addr>`，失败 `FP_FAIL` + 退出码 1
 - 判定为双通道（CLI 退出码 + stdout/日志关键字），实测校准见 `KNOWN_ISSUES.md` 追加
@@ -1602,8 +1608,10 @@ else:
 
 **角色**：`PRIMARY`（有 UART 出口，负责统一输出）/ `SECONDARY`（不产本地 token）。
 
-**传输**：专用 mbox 通道（建议 ch6，避开板级 ch0–3 与 `mbox_test` ch4/ch5；**通道号需实测确认**）。
-载荷上限 = 通道 MTU（参考 `mbox_test` 的 64 B）。
+**传输**：专用 mbox 通道。⚠️ `mboxes` 首格是节点在 `&mbox` 下的**枚举序**（板级现有 5 个
+consumer 占 0..4，工程追加的本节点 = 5），**不是**逻辑通道号；新工程按 `zephyr.dts` 实数列
+（`common/rlog.c` 有 `BUILD_ASSERT` 守这条，序错直接构建失败）。`mbox_test` 自有的两个
+consumer 现为 5/6（KNOWN_ISSUES #132）。载荷上限 = 通道 MTU（RLOG 帧长必须 ≤ width）。
 
 ```c
 /* 统一结果上报帧（小端；magic 与 mbox_test 的 0xABCD/0xABCE 区分） */

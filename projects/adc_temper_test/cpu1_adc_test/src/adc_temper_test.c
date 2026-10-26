@@ -241,16 +241,20 @@ ZTEST(adc_temper, test_adc_setup_variants)
 	 * 做有限次建立重试：只接受 raw > 0 这一种"有效转换"结果。 */
 	int raw = 0;
 	int tries = 0;
+	int16_t t = 0;
 
+	/* Accept only a plausible reading, not merely raw > 0: the first
+	 * conversion after switching the reference back can return a
+	 * non-zero but out-of-range value (observed raw=3557 -> -267 C,
+	 * then raw=2203 -> 27 C on the next attempt). */
 	for (; tries < ADC_VARIANT_SETTLE_TRIES; tries++) {
 		raw = do_adc_read();
-		if (raw > 0) {
+		t = raw_to_celsius((uint16_t)raw);
+		if (raw > 0 && t >= 10 && t <= 40) {
 			break;
 		}
 		k_msleep(ADC_VARIANT_SETTLE_MS);
 	}
-
-	int16_t t = raw_to_celsius((uint16_t)raw);
 
 	ZT_INFO("test_adc_setup_variants", "raw=%d,tries=%d,t_deg=%d", raw, tries, (int)t);
 	zassert_true(raw > 0,

@@ -117,7 +117,7 @@ ECDSA 并把结果回填。被测/依赖源码：
 | t90_plain_api_mailbox_bound | 屏蔽客户端 otbn_crypto 通道后，调**普通** `mbedtls_ecdsa_genkey`（case_alt_via_proxy 下它=转发桩） | 无响应防护 / 绑定证明 | 3s 内返回且 rc≠0（转发桩在 `DELEGATE_REPLY_TIMEOUT_MS` 后超时；软件会 rc=0 立即返回） ⇒ 证明普通名确绑到 mbox | 契约 | 仅 `case_alt_via_proxy`：客户端 ✅ / 服务端 SKIP |
 | r01_rsa_modexp_roundtrip_2048 | 代理桩 op 0x41/0x42 → server `mbedtls_ls_otbn_rsa_modexp`（本地 OTBN RSA） | 功能通路（数值往返） | `c=m^e mod n` rc=0；`m'=c^d mod n` rc=0；**`m'==m` 逐字节** | 标准契约（固定 2048 位向量） | 双核（client 代理 / server 本地） |
 | r02_rsa_modexp_roundtrip_4096 | 同上（4096 位） | 功能通路（数值往返） | 同上 | 标准契约（固定 4096 位向量） | 双核 |
-| r03_reject_unsupported_modulus | 桩白名单分支 / `mbedtls_ls_otbn_rsa_modexp` 尺寸门 | 异常参数 | 1024/1536 位 rc≠0（客户端 `-EINVAL` / 服务端 `-ENOTSUP`） | 标准契约 | 双核 |
+| r03_reject_unsupported_modulus | 桩白名单分支 / `mbedtls_ls_otbn_rsa_modexp` 尺寸门 | 异常参数 | 768/1792 位 rc≠0（客户端 `-EINVAL` / 服务端 `-ENOTSUP`）。**不能用 1024/1536**：2026-10-22 `mbedtls 1313114b3` 起服务端本地后端支持 1024/1536（Miller-Rabin 素数候选），两核白名单已分叉 —— 客户端仍只放行 2048/3072/4096 | 标准契约 | 双核 |
 | r90_rsa_mailbox_bound | 屏蔽客户端 otbn_crypto 通道后调**显式** `mbedtls_ls_otbn_rsa_modexp_encrypt` | 无响应防护 / 绑定证明 | 返回且 rc≠0，且耗时 ≈ 10s 总线超时（`OTBN_DELEG_TIMEOUT_RSA_MS`）⇒ 证明 RSA 调用确走 mbox（软件会 rc=0 立即返回） | 契约 | 仅 `case_rsa_delegation`：客户端 ✅ / 服务端 SKIP |
 | s01_sign_verify | 客户端 `mbedtls_ls_otbn_ecdsa_sign_slot(slot 0)` → mbox op 0x23 → server 槽位查表 → 本地 OTBN sign；服务端直接调 handler | 功能通路 | rc=0；r/s 用已知公钥 verify=0 | 标准契约（固定 P256 向量） | 双核 |
 | s02_unregistered | 用永久未注册的 slot 7 签名 | 异常参数 | rc=-ENOENT | 标准契约 | 双核 |
@@ -183,7 +183,7 @@ t89_verify_bad_q_infinity | !none | contract:断言 rc≠0
 t90_plain_api_mailbox_bound | !none | contract:合取（3s 内返回 + rc≠0；软件会 rc=0 立即返回）
 r01_rsa_modexp_roundtrip_2048 | !none | contract:合取（enc rc=0 + dec rc=0 + m'==m 逐字节）
 r02_rsa_modexp_roundtrip_4096 | !none | contract:同 r01
-r03_reject_unsupported_modulus | !none | contract:断言 rc≠0（1024 与 1536 位各一）
+r03_reject_unsupported_modulus | !none | contract:断言 rc≠0（768 与 1792 位各一；两核白名单交集之外的尺寸）
 r90_rsa_mailbox_bound | !none | contract:合取（超时内返回 + rc≠0 + 耗时 ≥ 8s；软件会 rc=0 立即返回）
 s01_sign_verify | !none | contract:合取（rc=0 + 已知公钥 verify=0）
 s02_unregistered | !none | contract:断言 rc=-ENOENT
