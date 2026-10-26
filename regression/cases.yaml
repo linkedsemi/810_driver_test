@@ -17,20 +17,26 @@ cases:
   - projects\rtc_ls_test
   - projects\rtc_timer_ls_test
   - projects\otbn_test
-  - projects\otbn_selftest //mbedtls
+  # mbedtls
+  - projects\otbn_selftest
   - projects\otbn_keygen_test
   - projects\mbedtls_test
 
   - projects\i2c_pure_test
   - projects\i3c_i2c_switch_test
   - projects\i3c_dualcore_test
-  - projects\adc_temper_test  // 2路adc，温感数值比较 ±5
+  # 2 路 adc，温感数值比较 ±5
+  - projects\adc_temper_test
   - projects\dma_test
-  - projects\flash_test    //内置flash mbox代理
-  - projects\spi_test  // 三个flash测试合一  最大8KB吞吐率测试
-  - projects\qspi_flash_test //malloc ->sxy
+  # 内置 flash mbox 代理
+  - projects\flash_test
+  # 三个 flash 测试合一；最大 8KB 吞吐率测试
+  - projects\spi_test
+  # malloc -> sxy
+  - projects\qspi_flash_test
   - projects\mbox_test
-  - projects\wdt_test   // cpu1 iwdg
+  # cpu1 iwdg
+  - projects\wdt_test
   - projects\app_iwdg_cpu2_test
   - projects\iopmp_test
   - projects\spif_test
