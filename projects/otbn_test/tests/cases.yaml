@@ -10,7 +10,7 @@ meta:
   kconfig: [cpu1_otbn_test/prj.conf]
   run: tests/run_test.py
   env: 无外部接线
-  title: OTBN 点运算 / RSA / hash
+  title: OTBN 点运算 / RSA / hash / keygen（含合并的 otbn_keygen_test）
   coverage: tests/COVERAGE.md    # 工程定位 / 测试内容 / 环境需求 / 覆盖矩阵的权威源
 #
 # 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略（`#` 屏蔽 = 跳过）。

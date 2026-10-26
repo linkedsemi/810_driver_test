@@ -47,6 +47,20 @@
 | mix_sm3_stream_keygen | sm3 流式跨 keygen | 中断/时序 | digest == KAT | GM/T 0004 | ⬜ |
 | mix_ecdsa_sha256_stream | ECDSA 固件与 hash 固件切换 | 中断/时序 | genkey/sign/verify==0 且 digest == KAT | FIPS 180-4 + API 契约 | ⬜ |
 
+## Phase 4：RSA keygen（合并自 `projects/otbn_keygen_test`，2026-10-26）
+
+测试体仍在 `projects/otbn_keygen_test/cpu1_otbn_keygen_test/src/`（原位引用，
+避免与 `integrated/sets/itest_crypto_otbn` 分叉），本工程把它编入同一个镜像。
+套件 `keygen`，共 27 项：
+
+- 功能：candidate 残差/顶位、直接 API、mbedtls hook、2048/3072/4096 正确性
+  与确定性、ref_vector KAT、RNG 错误传播、session 不泄漏、非对齐拒绝。
+- KAT/bench：modexp KAT（128/192/256/384/512 B、4 B 边界、f4）与 bench
+  （128/192 B modexp、随机计数、无内部 DRBG、trial division）。
+- `TD_CANDIDATES`：独立工程默认 1000（128 KB 表），合并镜像用 100（CMake 传入），
+  与 integrated 保持一致。
+- 详细覆盖矩阵见 `projects/otbn_keygen_test/tests/COVERAGE.md`，本表不重复。
+
 ## 说明
 
 - 确定性测试的预期值全部内嵌固件（`src/otbn_api_test.c` / `src/mix_test.c` /

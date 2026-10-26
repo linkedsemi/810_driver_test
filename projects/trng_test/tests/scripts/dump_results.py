@@ -55,6 +55,11 @@ TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 # 增删测试项后必须重新核对：
 #   nm --numeric-sort <elf> | grep _ztest_unit_test__trng__
 TEST_NAMES = [
+    # suite trng0 (APB ring-oscillator) — link order first: '0' sorts before '_'
+    "apb_basic_16", "apb_distinct_32", "apb_invalid_args", "apb_isr_busywait",
+    "apb_large_1024", "apb_monobit_8k", "apb_not_all_ff", "apb_not_all_zero",
+    "apb_throughput",
+    # suite trng (DesignWare)
     "autocorr_8k", "basic_16", "block_freq_8k", "concurrent_get",
     "distinct_32", "invalid_args", "isr_busywait", "isr_nonblock",
     "large_1024", "long_seq_1m", "monobit_8k", "not_all_ff",

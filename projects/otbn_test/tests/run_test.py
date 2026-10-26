@@ -334,7 +334,9 @@ def main():
     ap.add_argument("--case", default="case_default")
     ap.add_argument("--session-dir", default=None)
     ap.add_argument("--tgt-uart", default=None)
-    ap.add_argument("--timeout", type=float, default=420, help="单 case 采集窗口（含 RSA-4096 keygen，勿小于 300）")
+    ap.add_argument("--timeout", type=float, default=1500,
+                    help="单 case 采集窗口（api 11 + keygen 27 + mix 7 + perf 6 "
+                         "+ z_keygen 1 = 52；含 RSA-4096 keygen，勿小于 1320）")
     args = ap.parse_args()
     cases = [args.case_only] if args.case_only else [args.case]
     # 与 dump_results.py TEST_NAMES 同源（链接段 SORT_BY_NAME 升序，见其注释）

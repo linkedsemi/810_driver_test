@@ -30,6 +30,7 @@
 LOG_MODULE_DECLARE(trng_test, LOG_LEVEL_INF);
 
 extern const struct device *trng_dev;
+extern const struct device *trng0_dev;
 
 /* 大数据缓冲放 .bss（cpu1 SRAM 充足），不占 ztest 线程栈：
  *   monobit_8k    8192B
@@ -512,4 +513,162 @@ ZTEST(trng, isr_nonblock)
 		      (unsigned int)sizeof(buf_isr_nb));
 	zassert_false(buf_is_const(buf_isr_nb, sizeof(buf_isr_nb), 0x00),
 		      "isr nonblock output all 0x00");
+}
+
+/* ==================================================================
+ * trng0 — APB ring-oscillator TRNG (linkedsemi,ls-apb-trng)
+ *
+ * A separate module and driver from trng1 (DesignWare).  It is not the
+ * system entropy source in this image (chosen stays on trng1), so these
+ * cases drive it directly.  The driver fills a 64B pool from the MATCH
+ * interrupt (2 bytes per match) and busy-polls 16-bit words in ISR mode.
+ * ================================================================== */
+
+ZTEST_SUITE(trng0, NULL, NULL, NULL, NULL, NULL);
+
+/* 1. Blocking 16B: return 0 and the buffer must actually be written. */
+ZTEST(trng0, apb_basic_16)
+{
+	uint8_t buf[16];
+
+	memset(buf, 0xA5, sizeof(buf));
+
+	int ret = entropy_get_entropy(trng0_dev, buf, sizeof(buf));
+
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+	zassert_false(buf_is_const(buf, sizeof(buf), 0xA5),
+		      "16B output equals sentinel: driver returned success without writing");
+}
+
+/* 2. 256B not all zero. */
+ZTEST(trng0, apb_not_all_zero)
+{
+	memset(buf_256, 0xA5, sizeof(buf_256));
+
+	int ret = entropy_get_entropy(trng0_dev, buf_256, sizeof(buf_256));
+
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+	zassert_false(buf_is_const(buf_256, sizeof(buf_256), 0xA5),
+		      "output still sentinel: driver returned success without writing");
+	zassert_false(buf_is_const(buf_256, sizeof(buf_256), 0x00),
+		      "all 256 bytes are 0x00");
+}
+
+/* 3. 256B not all 0xFF. */
+ZTEST(trng0, apb_not_all_ff)
+{
+	memset(buf_256, 0xA5, sizeof(buf_256));
+
+	int ret = entropy_get_entropy(trng0_dev, buf_256, sizeof(buf_256));
+
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+	zassert_false(buf_is_const(buf_256, sizeof(buf_256), 0xA5),
+		      "output still sentinel: driver returned success without writing");
+	zassert_false(buf_is_const(buf_256, sizeof(buf_256), 0xFF),
+		      "all 256 bytes are 0xFF");
+}
+
+/* 4. Invalid arguments. */
+ZTEST(trng0, apb_invalid_args)
+{
+	int ret = entropy_get_entropy(trng0_dev, NULL, 16);
+
+	zassert_equal(ret, -EINVAL, "NULL buf ret %d != -EINVAL", ret);
+
+	ret = entropy_get_entropy(trng0_dev, buf_256, 0);
+	zassert_equal(ret, -EINVAL, "len=0 ret %d != -EINVAL", ret);
+}
+
+/* 5. ISR busywait path: returns the requested length. */
+ZTEST(trng0, apb_isr_busywait)
+{
+	int ret = entropy_get_entropy_isr(trng0_dev, buf_256, 32,
+					  ENTROPY_BUSYWAIT);
+
+	zassert_equal(ret, 32, "isr busywait ret %d != 32", ret);
+	zassert_false(buf_is_const(buf_256, 32, 0x00),
+		      "busywait output all 0x00");
+}
+
+/* 6. 1024B request (larger than the 64B pool). */
+ZTEST(trng0, apb_large_1024)
+{
+	int ret = entropy_get_entropy(trng0_dev, buf_1024, sizeof(buf_1024));
+
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+	zassert_false(buf_is_const(buf_1024, sizeof(buf_1024), 0x00),
+		      "all 1024 bytes are 0x00");
+	zassert_true(memcmp(buf_1024, buf_1024 + 256, 256) != 0,
+		     "1024B quarters repeat (q1 == q2)");
+}
+
+/* 7. 8KB monobit: same 46%..54% window as the trng1 case. */
+ZTEST(trng0, apb_monobit_8k)
+{
+	int ret = entropy_get_entropy(trng0_dev, buf_mono, sizeof(buf_mono));
+
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+
+	uint32_t ones = count_ones(buf_mono, sizeof(buf_mono));
+	uint32_t total = (uint32_t)sizeof(buf_mono) * 8u;
+	uint32_t lo = total * 46u / 100u;
+	uint32_t hi = total * 54u / 100u;
+	double percent = 100.0 * (double)ones / (double)total;
+
+	ZT_INFO("apb_monobit_8k", "ones=%u,percent=%.2f", ones, percent);
+	zassert_true(ones >= lo && ones <= hi,
+		     "ones %u out of [%u, %u]", ones, lo, hi);
+}
+
+/* 8. Throughput: APB TRNG delivers 2 bytes per hardware match, so use a
+ * moderate size to keep the case bounded.  Report both MB/s and Mbps. */
+#define TRNG0_PERF_BYTES 4096
+
+ZTEST(trng0, apb_throughput)
+{
+	uint32_t t0 = k_cycle_get_32();
+	int ret = entropy_get_entropy(trng0_dev, buf_mono, TRNG0_PERF_BYTES);
+	uint32_t t1 = k_cycle_get_32();
+
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+	zassert_false(buf_is_const(buf_mono, TRNG0_PERF_BYTES, 0x00),
+		      "throughput output all 0x00");
+
+	uint64_t us = k_cyc_to_us_floor64(t1 - t0);
+	/* 1 byte/us = 1 MB/s (decimal); APB TRNG is slow, so also report KB/s. */
+	double mb_s = (double)TRNG0_PERF_BYTES / (double)(us ? us : 1);
+	double kb_s = mb_s * 1000.0;
+	double mbps = 8.0 * mb_s;
+
+	LOG_INF("trng0 throughput: %u bytes in %llu us (%.4f MB/s, %.2f KB/s, %.2f Mbps)",
+		(unsigned int)TRNG0_PERF_BYTES, (unsigned long long)us,
+		mb_s, kb_s, mbps);
+	ZT_INFO("apb_throughput",
+		"bytes=%u,us=%llu,mb_s=%.4f,kb_s=%.2f,mbps=%.2f",
+		(unsigned int)TRNG0_PERF_BYTES, (unsigned long long)us,
+		mb_s, kb_s, mbps);
+}
+
+/* 9. 32 x 64B blocks must be pairwise distinct. */
+ZTEST(trng0, apb_distinct_32)
+{
+	bool all_distinct = true;
+	int ret = 0;
+
+	for (int i = 0; i < 32 && ret == 0; i++) {
+		ret = entropy_get_entropy(trng0_dev, buf_dist[i],
+					  sizeof(buf_dist[i]));
+	}
+	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
+
+	for (int i = 0; i < 32 && all_distinct; i++) {
+		for (int j = i + 1; j < 32; j++) {
+			if (memcmp(buf_dist[i], buf_dist[j],
+				   sizeof(buf_dist[i])) == 0) {
+				all_distinct = false;
+				break;
+			}
+		}
+	}
+	zassert_true(all_distinct, "duplicate 64B block found");
 }

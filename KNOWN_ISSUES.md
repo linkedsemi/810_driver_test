@@ -451,6 +451,10 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
 - `_detect_board`（`test_common.sh:142`）按**目录名关键词**判板：含 `controller`/`master`/`host` →
   `CONTROLLER_BOARD`，含 `target`/`slave`/`device` → `TARGET_BOARD`，**都不含即
   `ERROR: cannot detect board`**（如 `cpu1_wdt_test`）→ 该类 case 不能用 `build_test`。
+- 新实例（2026-10-26，`perf_test`）：双核目录用非角色名 `cpu1_perf_test`/`cpu2_perf_peer` ⇒
+  `./test.sh` 在**任何编译之前**即 fail-loud、`run_test.py`（`build_via_test_sh_raise`）同步 rc=1；
+  规约 = `qsh-test-gen` §1.1（双核目录名必须带角色词）+ `qsh-test-validate` §1.2（生成后核
+  `_detect_board` 对该目录名可用）。**脚本判据未改**，本条改进诉求仍开放。
 - 改进诉求（是否改脚本待用户裁定）：给构建函数加额外 CMake 变量透传口；`_detect_board` 加
   1os/2os 或调用方显式传 board 的兜底。见 `OPEN_ITEMS.md` O-14。
 - 残留：`wdt_test/tests/case_destructive_reset/test.sh:47` 仍硬编码 `-b lsqsh_evb@2os/lsqsh/cpu1`
@@ -516,6 +520,13 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   ⇒ "离线已验证超时分支正确跳过"**只在未开 `set -e` 时成立**。
 - 判据：任何 `var=$(外部命令)` 后跟 `$?` 判断的代码，在带 `set -e` 的脚本里都要复核；修法 =
   `if ! raw="$(cmd)"; then …` 或 `raw="$(cmd)" || rc=$?`（本文件 `test_common.sh:328` 注释即此约定）。
+- **同族第二种：`realpath`（无 `-e`）对不存在的末尾路径退 0 ⇒ `|| echo ""` 兜底永不触发**（G-TESTSH-REALPATH-OPTIONAL-OVERLAY，2026-10-26 实测）：GNU `realpath <不存在的文件>` **打印该路径并退 0**
+  （`realpath -e` 才退 1）⇒ `X="$(realpath … 2>/dev/null || echo "")"` 的"文件不存在则给空值"是死写法，
+  空期望变成把不存在的 `app.overlay` 传给 `-DDTC_OVERLAY_FILE`，构建在 DT 预处理阶段报
+  `fatal error: …/app.overlay: No such file or directory`（形似源码/DT 缺失）。判据 =
+  `realpath <不存在的文件>; echo $?` 退 0；修法 = `[ -f ]` 判定后赋值（空值时 `build_test`/
+  `build_single_test` 不追加 `-D`），或 `realpath -e`。生成/校验规则 `qsh-test-gen` §1.5 /
+  `qsh-test-validate` §1.7。
 - 通法（跨硬件）：`debug-knowledge` common 域 `set-e-swallows-command-substitution-rc.md`；
   执行侧指针 `qsh-test-run` §4.2。
 - 状态：本体属 **O-24 工作区改动（未提交）**；`set -e` 死代码的同批处置属 **O-25（已修 2026-09-21，忠实探针 A/B 验证：修前无 WARN 无标记行 rc=124 → 修后 WARN + 标记行 + rc=0）**。**代码未提交**。两处 `find` 现已改为 `raw="$(…)" || rc=$?`。
@@ -1003,6 +1014,17 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   （`0x100bffff` 以上即 cpu1 入口区）。驱动为每个 consumer **同时**分配 TX+RX 两个 region ⇒
   **单帧 4 KB 物理上不可能**，大块数据只能分片（`case_mbox_big_crc` 用 79 片 × 64 B 帧 + 端到端 CRC32）。
   容量上界要顺着 `zephyr,memory-region = "MBOX"` 反查 SRAM 布局。
+- **逐 consumer 预算 = TX region + RX region 各 `12 + width×depth` 字节（G-MBOX-4K-BUDGET，2026-10-26 实测补算）**：
+  `mbox_linkedsemi.c:311-327` 对每个 `status="okay"` 子节点生成 TX+RX 两个 region，各
+  `sizeof(struct fifo_env)(=12) + tx/rx_fifo_width × depth`（tx/rx 等宽等深时 = `2×(12+w×d)`）。
+  板级现有 5 个 consumer 共 **280 B**（24×1 / 32×1 / 8×1 / 8×1 / 2×4），
+  工程自加通道只能从剩余 ~3.8 KB 里扣，且**两核共用同一
+  份 DT 消费集**。实测 perf_test 曾加到 4 个 `64×8` 通道（+4192 B，合计 **4472 B**）⇒ 两核
+  `zephyr_pre0.elf` 均报 `region 'MBOX' overflowed by 376 bytes`；降到 `64×4`×4 + `128×2`
+  后 5 通道合计 **2960 B**（`objdump -h …/mbox_linkedsemi.c.obj` 的 `MBOX` 段 `0xb90`）通过。
+  **判据** = 该段 Size vs DT `mbox_memory` 的 `DT_SIZE_K(4)`；**别按 RAM/SRAM 总量排查**
+  （独立 carve-out），也别只核一核。生成/校验规则 `qsh-test-gen` §1.6 第 33 条 /
+  `qsh-test-validate` §1.3。
 - **板级 ch0 = `mbox_consumer_qspi1`，在双核构建里是 flash delegation 专线**：cpu1 `soc_flash_ls.c:506`、
   cpu2 `soc_flash_ls_client.c:84` 都注册了回调，往 ch0 打测试流量会被 delegation 协议互相解析 ⇒
   consumer 覆盖只能在板级未占用的序号里选（本条写定时为 **ch1..ch5**；板级 consumer 集合会增长——
@@ -2086,3 +2108,44 @@ gdb `load` 仅 **4s**（写包提速已生效）。
 - **状态**：未改代码。框架侧建议（未实施）：suite 行读"本轮增量"或显式标注 `cumulative`，
   并与 `results` 统一口径；`itest summary` 前重置 `fail_used`（或按 idx 去重覆盖）。
 - 落点 `qsh-test-run` §5；证据 `integrated/build/run11/RESULTS.md` §5.1–§5.3、§6。
+
+---
+
+**134. 主线程栈 4096 B 装不下 `mbedtls_ls_otbn_rsa_modexp()` 的 4 个 `MBEDTLS_MPI_MAX_SIZE` 缓冲 ⇒ 首次调用即 `ZEPHYR FATAL ERROR 2: Stack overflow`（G-CPU2-MAIN-STACK，2026-10-26 实测；16384 复测通过）**
+- **机制（源码逐行）**：`modules/crypto/mbedtls/library/rsa_alt.c:456-463` 在栈上声明
+  `n_le/exp_le/in_le/out_le[MBEDTLS_MPI_MAX_SIZE]`；`MBEDTLS_MPI_MAX_SIZE = 1024`
+  （`mbedtls/bignum.h:73`）⇒ **仅这 4 个数组 = 4096 B**，再加 `rsa_otbn_modexp()` 内部帧。
+  同一事实在 `zephyr/soc/linkedsemi/lsqsh/otbn/otbn_delegation.c:150-161` 的注释里已记录
+  （服务端因此用 8 KB 独立线程）。RSA keygen 也是同量级：`rsa_alt.c:314-317` 含
+  `p_le/q_le[512]` + `n_le/d_le[1024]` ≈ 3 KB。
+- **形貌/判据**：`ZEPHYR FATAL ERROR 2: Stack overflow on CPU 0`、
+  `Current thread: … (main)`、store fault（`sp`/`mtval` 落在低地址）；崩溃点**恰在
+  重型 crypto 项**，本核其后各项无结果行。**同批另一核依赖它的项会超时/缺 token**
+  （实测 cpu1 `roundtrip` → `echo timeout at seq 0`，1.018 s）—— 归因先扫两核日志，
+  别按失败项所在核的驱动/回环排查（判读见 `qsh-test-compare` §4.1）。核算 = `build/<role>/zephyr/.config` 的
+  `CONFIG_MAIN_STACK_SIZE` 与 `bignum.h` 的 `MBEDTLS_MPI_MAX_SIZE`（ztest 默认在 main 线程跑）。
+- **实测（perf_test `case_default`）**：cpu2 `prj.conf` 仅把 `CONFIG_MAIN_STACK_SIZE`
+  4096→**16384**、`-p always` 重建（`.config` 读到 16384）后，cpu1 **21/21** + cpu2 **11/11**
+  PASS、两核 `SUCCESSFUL`（**32/32**）；`rsa2048_modexp` PASS 且 `ops/s=15.86`（us=63071）；
+  无 panic/复位/超时。⇒ **4096 是唯一必要因**，无需改函数为独立线程或静态/堆缓冲。
+- **修法**：重型 crypto 工程的 main 栈按 **16384** 配（实测通过值；4096 实测必崩）。
+  通用核算式 `MAIN_STACK_SIZE ≥ Σ(调用链上最大一组栈缓冲) + 余量`，别只看单个上限宏。
+- 落点 `qsh-test-gen` §1.6 第 31 条 · 校验 `qsh-test-validate` §1.3 · 同族 #123（独立线程栈）。
+
+---
+
+**135. cpu2 开 SHA/SM3 硬件 ALT 依赖 `&dmac2`（板级默认 disabled），而两核同用 dmac2 会让 cpu1 的 SHA 性能塌到超时（G-SHA-HWALT-DMAC2，2026-10-26 实测）**
+- **编译期依赖**：`sha256_alt.c:824-846` 在
+  `(CONFIG_MBEDTLS_SHA224_SHA256_LINKEDSEMI_HARDWARE_ALT || CONFIG_MBEDTLS_SM3_LINKEDSEMI_HARDWARE_ALT) && CONFIG_DMA`
+  下无条件 `DEVICE_DT_GET(DT_NODELABEL(dmac2))`（`CONFIG_SHA224_SHA256_SM3_DMA1` 默认未定义 ⇒ 恒选 dmac2）。
+  而 `zephyr/dts/riscv/linkedsemi/lsqsh.dtsi:163-177` 的 `dmac2` 与 cpu2 板级均默认 `disabled`
+  ⇒ 编译报 `__device_dts_ord_<N> undeclared`（**节点有 DT ordinal、没有 device**），
+  不是头文件/驱动缺失。修法 = 该核 overlay 加 `&dmac2 { status = "okay"; };`
+  （与 #82 的 DW SPI 同一依赖；perf_test cpu1 已如此）。
+- **运行期代价（实测）**：给 cpu2 也打开 dmac2 后两核同用同一控制器，cpu1 的 sha256 perf
+  从 ~44 µs 塌到 **10,000,116 µs/轮**（每轮 10 s 超时）并报
+  `E: dmac@40042000: status_intr = 0`；cpu2 侧换回 OTBN ALT（不碰 dmac2）后 cpu1 恢复
+  **23~70 MB/s**。⇒ cpu2 硬件加密引擎方案必须计入两核 DMA 争用。
+- **判据**：只改 cpu2 配置、cpu1 既有项突然超时 ⇒ **先疑 DMA 争用**，别按 cpu1 驱动回归排查；
+  编译报 `__device_dts_ord_*` 落在 SHA ALT ⇒ 先核该核 DT 的 `dmac2` status。
+- 落点 `qsh-test-gen` §1.6 第 32 条 · 校验 `qsh-test-validate` §1.3（WARN）。

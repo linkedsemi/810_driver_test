@@ -3,7 +3,9 @@
  *
  * ADC temperature sensor overlay (cpu1, lsqsh_evb)
  *
- * Enables ADC2 with alias "testadc" for on-die temperature sensor (ch13).
+ * Enables both ADC instances for the on-die temperature sensors: ADC1 ch13
+ * (alias "testadc") and ADC2 ch13 (alias "testadc2").  The sample README
+ * documents ch13 as the dedicated temperature channel on ADC1 and ADC2.
  * LinkedSemi ADC 驱动用 conversion_mode/data_align 等非标准属性，
  * 需从 linkedsemi_zephyr_project/samples/adc/adc_temper 复制。
  */
@@ -17,10 +19,29 @@
 	};
 	aliases {
 		testadc = &adc1;
+		testadc2 = &adc2;
 	};
 };
 
 &adc1 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	conversion_mode = <regular_mode>;
+	data_align = <ADC_DATAALIGN_RIGHT>;
+	continuous_conv_mode = <discontinuous>;
+	nbr_of_conversion = <1>;
+	discontinuous_conv_mode = <discontinuous>;
+	nbr_of_disc_conversion = <0>;
+	trig_type = <ADC_SOFTWARE_TRIGT>;
+	adc_drive_type = <BINBUF_DIRECT_DRIVE_ADC>;
+	adc_clk_div = <74>;
+	clk_cfg = <ADC_CH_CLOCK_DIV1>;
+	injected_offset = <0>;
+	fif_ctrl1 = <0xFFFF>;
+};
+
+&adc2 {
 	status = "okay";
 	#address-cells = <1>;
 	#size-cells = <0>;

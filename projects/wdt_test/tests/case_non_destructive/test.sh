@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# WDT non-destructive test
+# cpu1_iwdg non-destructive test
 #
 # What is tested:
-#   LinkedSemi WDT driver (sec_iwdg): invalid params, setup+feed, disable, two-timeout.
+#   LinkedSemi cpu1_iwdg driver (sec_iwdg): invalid params, setup+feed, disable, two-timeout.
 #   非破坏性（不触发复位）。
 #
 # Usage:

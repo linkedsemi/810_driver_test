@@ -310,4 +310,125 @@ ZTEST(adc_temper, test_adc_full_scale_bound)
 		     "temperature %d C out of range [-40, 125]", t);
 }
 
+/* ==================================================================
+ * Dual temperature sensor (ADC1 ch13 vs ADC2 ch13)
+ *
+ * The SoC exposes one dedicated temperature channel (ch13) on each ADC
+ * instance.  This case reads both and checks:
+ *   1. each reading is plausible (0..50 C, user-defined room window);
+ *   2. the two sensors agree within ADC_TS_MAX_DIFF_C.
+ * ================================================================== */
+
+#define ADC_TS_MIN_C       0
+#define ADC_TS_MAX_C       50
+#define ADC_TS_MAX_DIFF_C  5
+#define ADC_TS_TRIES       50   /* 50 x 10 ms = 500 ms establish window */
+#define ADC_TS_RETRY_MS    10
+
+static const struct device *adc_dev2;
+static bool adc_dev2_configured;
+
+static int setup_channel_on(const struct device *dev)
+{
+	struct adc_channel_cfg cfg = {
+		.channel_id = ADC_TEMPER_CHANNEL,
+		.reference = ADC_REF_INTERNAL,
+		.acquisition_time = ADC_SAMPLETIME_15CYCLES,
+	};
+
+	return adc_channel_setup(dev, &cfg);
+}
+
+static int read_raw_from(const struct device *dev)
+{
+	struct adc_sequence sequence = {
+		.buffer = sample_buffer,
+		.buffer_size = buf_size,
+		.options = NULL,
+	};
+
+	memset(sample_buffer, 0, buf_size);
+	if (adc_read(dev, &sequence) != 0) {
+		return -1;
+	}
+	return (int)sample_buffer[0];
+}
+
+/* A successful read clears the driver's conversion rank, so this also makes a
+ * following channel_setup() legal.  Retry until a plausible conversion appears:
+ * the first conversion after a setup/reference switch can be out of range
+ * (observed in test_adc_setup_variants). */
+static bool read_temp_stable(const struct device *dev, int *raw_out, int16_t *t_out)
+{
+	for (int i = 0; i < ADC_TS_TRIES; i++) {
+		int raw = read_raw_from(dev);
+
+		if (raw > 0) {
+			int16_t t = raw_to_celsius((uint16_t)raw);
+
+			if (t >= ADC_TS_MIN_C && t <= ADC_TS_MAX_C) {
+				*raw_out = raw;
+				*t_out = t;
+				return true;
+			}
+		}
+		k_msleep(ADC_TS_RETRY_MS);
+	}
+	return false;
+}
+
+/* TC-11: both on-die temperature sensors read plausibly and agree. */
+ZTEST(adc_temper, test_dual_sensor_agree)
+{
+	int raw1 = 0;
+	int raw2 = 0;
+	int16_t t1 = 0;
+	int16_t t2 = 0;
+	int diff;
+
+	adc_dev2 = DEVICE_DT_GET(DT_ALIAS(testadc2));
+	zassert_true(device_is_ready(adc_dev2), "ADC2 device not ready");
+
+	/* Rank accounting: each setup increments conversion_rank and a successful
+	 * read clears it.  On the first run ADC2 has never been configured; on
+	 * later runs a read resets its rank before the re-setup. */
+	if (!adc_dev2_configured) {
+		zassert_equal(setup_channel_on(adc_dev2), 0,
+			      "ADC2 channel setup failed");
+		adc_dev2_configured = true;
+	} else {
+		(void)read_raw_from(adc_dev2);
+		zassert_equal(setup_channel_on(adc_dev2), 0,
+			      "ADC2 channel re-setup failed");
+	}
+
+	(void)read_raw_from(adc_dev);
+	zassert_equal(setup_channel_on(adc_dev), 0,
+		      "ADC1 channel setup failed");
+
+	zassert_true(read_temp_stable(adc_dev, &raw1, &t1),
+		     "ADC1 reading never entered [%d, %d] C",
+		     ADC_TS_MIN_C, ADC_TS_MAX_C);
+	zassert_true(read_temp_stable(adc_dev2, &raw2, &t2),
+		     "ADC2 reading never entered [%d, %d] C",
+		     ADC_TS_MIN_C, ADC_TS_MAX_C);
+
+	diff = (t1 > t2) ? (t1 - t2) : (t2 - t1);
+
+	ZT_INFO("test_dual_sensor_agree",
+		"raw1=%d,t1=%d,raw2=%d,t2=%d,diff=%d,range=[%d,%d],max_diff=%d",
+		raw1, (int)t1, raw2, (int)t2, diff,
+		ADC_TS_MIN_C, ADC_TS_MAX_C, ADC_TS_MAX_DIFF_C);
+
+	zassert_true(t1 >= ADC_TS_MIN_C && t1 <= ADC_TS_MAX_C,
+		     "ADC1 temperature %d C outside [%d, %d] C",
+		     (int)t1, ADC_TS_MIN_C, ADC_TS_MAX_C);
+	zassert_true(t2 >= ADC_TS_MIN_C && t2 <= ADC_TS_MAX_C,
+		     "ADC2 temperature %d C outside [%d, %d] C",
+		     (int)t2, ADC_TS_MIN_C, ADC_TS_MAX_C);
+	zassert_true(diff <= ADC_TS_MAX_DIFF_C,
+		     "sensor difference %d C exceeds %d C (t1=%d, t2=%d)",
+		     diff, ADC_TS_MAX_DIFF_C, (int)t1, (int)t2);
+}
+
 ZTEST_SUITE(adc_temper, NULL, adc_temper_setup, NULL, NULL, NULL);

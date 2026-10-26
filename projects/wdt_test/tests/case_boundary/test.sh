@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# WDT boundary / error-path test
+# cpu1_iwdg boundary / error-path test
 #
 # What is tested:
-#   LinkedSemi WDT driver（zephyr/drivers/watchdog/wdt_iwdg_ls.c）的非破坏性
+#   LinkedSemi cpu1_iwdg driver（zephyr/drivers/watchdog/wdt_iwdg_ls.c）的非破坏性
 #   边界与错误分支，实例 = sec_iwdg（HART 复位域）+ pmu_iwdg（SOC 复位域）：
 #     - install_timeout: window.min != 0 拒 / window.max == 0 拒
 #     - install_timeout: HAL_IWDG_IS_MATCH 按实例匹配 flags（RESET_CPU_CORE / RESET_SOC）

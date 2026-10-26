@@ -81,6 +81,11 @@ PASS, FAIL, MISSING, NOT_RUN, SKIP = "PASS", "FAIL", "MISSING", "NOT_RUN", "SKIP
 # 2026-09-18（P1a 后）：固件实有 15 项（原列表只列了 P1a 之前的 9 项，
 # 导致报告漏 6 项、失败项 reason 无处归）；已按上述 nm 实测链接序补全。
 TEST_NAMES = [
+    # suite trng0 (APB ring-oscillator) — link order first: '0' sorts before '_'
+    "apb_basic_16", "apb_distinct_32", "apb_invalid_args", "apb_isr_busywait",
+    "apb_large_1024", "apb_monobit_8k", "apb_not_all_ff", "apb_not_all_zero",
+    "apb_throughput",
+    # suite trng (DesignWare)
     "autocorr_8k", "basic_16", "block_freq_8k", "concurrent_get",
     "distinct_32", "invalid_args", "isr_busywait", "isr_nonblock",
     "large_1024", "long_seq_1m", "monobit_8k", "not_all_ff",

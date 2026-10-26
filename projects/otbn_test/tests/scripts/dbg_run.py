@@ -17,7 +17,9 @@ UART role discovery (dynamic):
       so the port role is resolved from actual output, no hardcoding.
     - Explicit override: --tgt-uart COM16.
 
-Assumes firmware is already built under tests/<case>/build/target.
+Loads whichever image the project's build layout produced (first existing wins):
+  tests/<case>/build/zephyr/zephyr.elf          (run_test.py, build_subdir="")
+  tests/<case>/build/target/zephyr/zephyr.elf   (test.sh / build_single_test)
 """
 import argparse
 import os
@@ -121,9 +123,14 @@ def main():
     args = ap.parse_args()
 
     build = TESTS_DIR / args.case / "build"
-    target_elf = (build / "zephyr" / "zephyr.elf").as_posix()
-    if not Path(target_elf).exists():
-        sys.exit(f"ERROR: not built: {target_elf}")
+    candidates = [
+        build / "zephyr" / "zephyr.elf",             # run_test.py (build_subdir="")
+        build / "target" / "zephyr" / "zephyr.elf",  # test.sh (build_single_test)
+    ]
+    target_elf = next((p.as_posix() for p in candidates if p.exists()), None)
+    if target_elf is None:
+        sys.exit("ERROR: not built: " +
+                 " / ".join(p.as_posix() for p in candidates))
 
     dbg_run_preflight()   # F1：DS 不健康先自愈，起不来则明确中止（不退化 error 138）
     names = discover_ports([p for p in (args.tgt_uart,) if p])

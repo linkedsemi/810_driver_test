@@ -60,15 +60,29 @@ TEST_NAMES = [
     "api_rsa_keygen_3072", "api_sha224_kat", "api_sha256_kat",
     "api_sha256_varlen", "api_sha384_kat", "api_sha512_kat",
     "api_sm3_kat", "api_sm4_kat",
-    # mix 套件（链接序 11..17）
+    # keygen 套件（链接序 11..37；合并自 otbn_keygen_test）
+    "candidate_residue_and_topbits", "direct_apis_ok", "mbedtls_gen_key_ok",
+    "ref_vector_kat", "rng_error_propagates", "rsa_2048_correctness",
+    "rsa_2048_deterministic", "rsa_3072_ok", "rsa_4096_ok",
+    "session_no_leak", "unaligned_rejected",
+    "zzz_bench_modexp_128b", "zzz_bench_modexp_192b",
+    "zzz_bench_no_internal_drbg", "zzz_bench_random_counts",
+    "zzz_bench_trial_division",
+    "zzz_modexp_kat_n128b_random", "zzz_modexp_kat_n192b_random",
+    "zzz_modexp_kat_n256b_random", "zzz_modexp_kat_n384b_hostkat",
+    "zzz_modexp_kat_n4b_base0", "zzz_modexp_kat_n4b_base1",
+    "zzz_modexp_kat_n4b_basenm1", "zzz_modexp_kat_n4b_exp0",
+    "zzz_modexp_kat_n4b_exp1", "zzz_modexp_kat_n512b_f4_hostkat",
+    "zzz_modexp_kat_n512b_hostkat",
+    # mix 套件（链接序 38..44）
     "mix_ecdsa_sha256_stream", "mix_keygen_sha256_keygen",
     "mix_sha256_keygen_seq", "mix_sha256_stream_keygen",
     "mix_sha512_stream_keygen", "mix_sign_sha256_stream",
     "mix_sm3_stream_keygen",
-    # perf 套件（链接序 18..23）
+    # perf 套件（链接序 45..50）
     "api_ecdsa_p256_kat", "api_ecdsa_p384", "api_ecdsa_sm2",
     "perf_ecdsa_p256", "perf_rsa2048_sign", "perf_sha256_64k",
-    # z_keygen 套件（链接序 24）
+    # z_keygen 套件（链接序 51）
     "api_rsa_keygen_4096",
 ]
 

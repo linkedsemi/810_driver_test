@@ -2,10 +2,10 @@
 
 > P1a 建档（2026-09-17）：本工程此前**无 COVERAGE.md**，按 `SPEC_REFERENCE.md` §6.5.3 模板新建。
 
-- 驱动: `zephyr/drivers/adc/adc_ls.c`（`linkedsemi_ls_adc`；本板别名 `testadc` → `adc1`）
+- 驱动: `zephyr/drivers/adc/adc_ls.c`（`linkedsemi_ls_adc`；本板别名 `testadc` → `adc1`、`testadc2` → `adc2`）
 - 工程: `810_driver_test/projects/adc_temper_test`
 - 类型: **单核**（只有 `cpu1_adc_test/`）→ board `lsqsh_evb@1os/lsqsh/cpu1`，cpu1 入口 `0x10000000`
-- 外部路径: **无**（`adc1` 只用片内温感通道 `ch13`，`ls_hal_adcv2.h`：internal channel、无外部引脚）
+- 外部路径: **无**（`adc1` / `adc2` 各用片内温感通道 `ch13`，`ls_hal_adcv2.h`：internal channel、无外部引脚）
 - 套件: `adc_temper`（`ZTEST_SUITE(adc_temper, NULL, adc_temper_setup, NULL, NULL, NULL)`，setup 为**套件级**）
 - 接口: `adc_channel_setup()` / `adc_read()`
 
@@ -17,14 +17,14 @@
 2. **只有一次成功的 `adc_read()`** 会经 `ADC_GetValue()` 把 `conversion_rank` 清 0
   （`adc_ls.c:253`）。所以"连续两次 channel_setup"必然第二次 `-EINVAL`，
   而当用例需要多次 setup 时必须**在每次 setup 前先做一次成功读取**来复位 rank。
-3. `adc1` 的 `ch13`（温感）在 `adc_ls_channel_setup()` 里有专门快路径
+3. `adc1` / `adc2` 的 `ch13`（温感）在 `adc_ls_channel_setup()` 里有专门快路径
   （`adc_ls.c:621-637`）：写 `MISC.ADC_REG_SMPHLD=1`、`BYP_CFG=0xffffffff`、
   `REG_CTRL0.SEQ00=13 / SEQ01=1`、`REG_CTRL1=0`、`CH_CFG` 与 `INJ_CTRL.REG_SEQLEN`。
 4. 参考源/驱动类型分支在 `ADC_VrefType_SetConfig()`（`adc_ls.c:256-293`）：
   `ADC_REF_VDD_1` / `ADC_REF_EXTERNAL0` / `ADC_REF_INTERNAL`(default) → 不同 ADR 字段组合。
 5. 温度换算（本工程自用公式）：`T = (2330.7 - raw) / 4.5807`（`raw_to_celsius()`）。
 
-## 覆盖矩阵（套件 `adc_temper`，10 → **9 项**；2026-09-18 删 1）
+## 覆盖矩阵（套件 `adc_temper`，**10 项**；2026-09-18 删 1，2026-10-26 新增双温感 1）
 
 | 测试项 | 驱动路径(函数+分支) | 维度 | 预期数据 | 预期来源 | 状态 |
 |--------|--------------------|------|----------|----------|------|
@@ -38,6 +38,7 @@
 | **test_adc_setup_variants** | `ADC_VrefType_SetConfig()` 三参考源分支（`:262/267/272`）+ `adc_ls_channel_setup()` 采样时间字段（`:640`）；**还原默认后经有限次建立重试取有效转换** | 功能通路+边界长度 | `acquisition_time ∈ {1cycle, 15cycles}` 与 `reference ∈ {INTERNAL, VDD_1, EXTERNAL0}` 四次 setup 均 `== 0`；还原默认后 ≤50×10 ms 重试窗口内取到 `raw > 0` 且 `T ∈[10,40]` | 驱动源码 + 量程；**`raw==0` 的语义 = 采样错误被驱动静默吞掉（缺陷 N2：`ADC_RegularGetValue()` `adc_ls.c:89-104` 的 ERR 分支只清标志、不写 buffer，而 `adc_read()` 仍返回 0），不是"电压真是 0"**；变体档（VDD_1/EXTERNAL0/1cycle）对片内温感非有效工作点，切换期间确实产生采样错误。驱动 N2 修复后本项需改判。见 TRIAGE_MISC_2026-09-18.md §3 | ⏳ |
 | **test_adc_rank_guard** | `adc_ls_channel_setup()` 的 rank 守卫 else 分支（`:678-681`） | 异常参数 | 连续两次 setup（中间无 read）→ 第二次 `-EINVAL`；复位后可正常读出 | 驱动源码 `#2` | ⏳ |
 | **test_adc_full_scale_bound** | `ADC_RegularGetValue()` + init 里的 `ADC_RES` 置位（`:478-482`） | 边界长度 | `raw ∈ (0, 4095]`（12 位满量程）；`T ∈ [-40,125]` | `reg_adcv2_type.h` `ADC_ADC_RES_MASK` | ⏳ |
+| **test_dual_sensor_agree**（2026-10-26 新增） | 两个 ADC 实例的 `adc_ls_channel_setup()` + `adc_read()`（各自 `ch13` 温感快路径） | 功能通路 + 跨实例一致性 | ADC1/ADC2 各自的 `T ∈ [0,50]` ℃；两路差值 ≤ **5** ℃；`ZT_INFO` 上报 `raw1/t1/raw2/t2/diff` | 用户需求（合理范围 + 差值）；sample README 明确 “ADC1/ADC2 的 13 通道专用测温感” | ⏳ 待编译/实测 |
 
 > 状态：`☐` = 既有项（历史未回填勾选）；`⏳` = **P1a 新增，仅编译通过，待 P6 首次实测**。
 

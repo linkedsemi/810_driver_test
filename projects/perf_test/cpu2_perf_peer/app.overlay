@@ -1,0 +1,40 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * perf_test cpu2 (peer) overlay.  Console/memory layout come from the common
+ * overlays injected in CMake; this file only adds the mbox consumers.
+ * The mboxes first cell is the node's enumeration index under &mbox; the five
+ * board-level consumers occupy 0..4, so this project appends 5/6.
+ */
+
+&mbox {
+	perf_ch5: perf_ch5 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 5 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch6: perf_ch6 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 6 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch7: perf_ch7 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 7 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch8: perf_ch8 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 8 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch9: perf_ch9 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 9 128 2 128 2>;
+		mbox-names = "mbox";
+	};
+};

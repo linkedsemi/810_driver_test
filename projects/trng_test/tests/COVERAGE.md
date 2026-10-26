@@ -1,6 +1,7 @@
 # TRNG 测试覆盖矩阵
 
 - 驱动: `zephyr/drivers/entropy/entropy_ls_trng.c`（DesignWare TRNG，`trng1: dwtrng@40004000`）
+  ＋ `zephyr/drivers/entropy/entropy_ls_apb_trng.c`（APB ring-oscillator TRNG，`trng0: trng@400a2000`；2026-10-26 加入）
 - 外部路径: **无**（片内模拟熵源，cpu1 安全域，CLAUDE.md §14 免环境确认）
 - 接口: Zephyr entropy API `entropy_get_entropy(dev, buf, len)` / `entropy_get_entropy_isr`（**len 为 uint16_t**，65536 会截断为 0 → 见 ENTROPY_API_UINT16_LENGTH_OVERFLOW.md）
 - 关键常量: `GEN_BYTES_PER_CMD=16`（128 bit/命令）、`LS_TRNG_POOL_SIZE=128`、
@@ -78,6 +79,27 @@
 
 ---
 
+## trng0（APB ring-oscillator TRNG，2026-10-26 新增）
+
+- 驱动：`zephyr/drivers/entropy/entropy_ls_apb_trng.c`（`linkedsemi,ls-apb-trng`）。
+- 与 trng1 是**不同硬件模块、不同驱动**：池 64 B（`CONFIG_ENTROPY_LS_APB_TRNG_POOL_SIZE`），
+  ISR 每次 MATCH 只写 2 B；ISR busywait 走 `trng_poll16()` 逐 16-bit 轮询。
+- 本镜像的 `zephyr,entropy` 仍指向 trng1，trng0 仅由测试直接驱动。
+- 用例名统一加 `apb_` 前缀（`trng0::apb_basic_16` 等）：报告层按裸测试名汇总，
+  与 trng1 重名会让后跑的 suite 覆盖先跑的（假 PASS 风险）。
+
+| 测试项 | 驱动路径(函数+分支) | 维度 | 预期数据 | 预期来源 | 状态 |
+|--------|--------------------|------|----------|----------|------|
+| apb_basic_16 | `ls_apb_trng_get_entropy` 主循环 | 功能通路 | ret==0；输出 ≠ 哨兵 0xA5 | API 契约 | ✅ |
+| apb_not_all_zero | 同上 | 统计/性质 | 非全 0 | 熵源性质 | ✅ |
+| apb_not_all_ff | 同上 | 统计/性质 | 非全 0xFF | 熵源性质 | ✅ |
+| apb_invalid_args | `!buf` / `!len` 入口分支 | 异常参数 | -EINVAL | API 契约 | ✅ |
+| apb_isr_busywait | `ls_apb_trng_get_entropy_isr` + `trng_poll16`（BUSYWAIT） | 中断/时序 | ret==32 | API 契约 | ✅ |
+| apb_large_1024 | 跨 64 B pool 多轮循环 | 边界长度 | ret==0；非全 0；四分块不全同 | API 契约 | ✅ |
+| apb_monobit_8k | 输出统计 | 统计/性质 | ones 占比 46%~54% | 二项分布 | ✅ |
+| apb_throughput | 4096 B 计时 | 性能 | ret==0；上报 MB/s / KB/s / Mbps | §13.4 INFO | ✅ |
+| apb_distinct_32 | 32×64 B | 统计/性质 | 两两不重复 | 熵源性质 | ✅ |
+
 ## 独立预期（机器可读）
 
 > 格式 / 判定口径 / 伪独立识别规则见 `common/expect_check.py` 文件头。
@@ -106,4 +128,13 @@ isr_busywait | ret == 0 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO
 large_1024 | ret == 0 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
 invalid_args | ret == -EINVAL | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
 distinct_32 | ret == 0 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_basic_16 | ret == 0 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_not_all_zero | ret == 0 | contract:API 契约 + 哨兵（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_not_all_ff | ret == 0 | contract:API 契约 + 哨兵（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_invalid_args | ret == -EINVAL | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_isr_busywait | ret == 32 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_large_1024 | ret == 0 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
+apb_monobit_8k | ones in [32000,33536]; percent in [48.83,51.17] | handcalc:二项分布 B(65536,0.5) ⇒ σ=128，取 ±6σ（与 trng1 同名口径）
+apb_throughput | bytes == 4096 | handcalc:TRNG0_PERF_BYTES；mb_s/kb_s 无确定预期 ⇒ 不设门限
+apb_distinct_32 | ret == 0 | contract:API 契约（★无 INFO 通道 ⇒ 恒为 NO_ACTUAL）
 ```

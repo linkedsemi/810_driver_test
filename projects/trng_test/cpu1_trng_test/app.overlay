@@ -3,6 +3,9 @@
  *
  * TRNG 单核测试 overlay：指定 zephyr,entropy = trng1 并使能。
  * （熵源选择必须显式 chosen，否则随机子系统可能落到其他熵设备）
+ *
+ * trng0（APB ring-oscillator TRNG）是独立模块，本工程同时测试，
+ * 但不作为系统熵源——chosen 仍指向 trng1。
  */
 
 / {
@@ -12,6 +15,10 @@
 };
 
 &trng1 {
+	status = "okay";
+};
+
+&trng0 {
 	status = "okay";
 };
 

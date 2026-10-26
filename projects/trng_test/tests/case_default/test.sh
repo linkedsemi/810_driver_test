@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-# TRNG single-core test (cpu1 secure domain, DesignWare TRNG)
+# TRNG single-core test (cpu1 secure domain, DesignWare + APB TRNG)
 #
 # What is tested:
-#   entropy_ls_trng 驱动的全部功能路径：基本获取、非全 0/全 F、ISR busywait、
-#   大请求（>128B pool）、无效参数、monobit 统计、多块唯一性、64KB 吞吐
-#   （8x8192 分片，单次恰 2^19 bits 触发 ADVANCE_STATE 隐藏分支）。
+#   (A) trng1（entropy_ls_trng / DesignWare）全部功能路径：基本获取、非全 0/全 F、
+#       ISR busywait、大请求（>128B pool）、无效参数、monobit 统计、多块唯一性、
+#       64KB 吞吐（8x8192 分片，单次恰 2^19 bits 触发 ADVANCE_STATE 隐藏分支）。
+#   (B) trng0（entropy_ls_apb_trng / APB ring-oscillator，独立模块）：基本获取、
+#       非全 0/全 F、ISR busywait、大请求、无效参数、monobit、4096B 吞吐（MB/s）、
+#       32×64B 唯一性。
 #
 # CPU1 (target role, TGT token):
 #   - 单核工程，无对侧核；test_main 主动自驱动跑完所有 ZTEST。
 #
 # Normal behavior:
-#   9 项测试全部 PASS，结尾 SUMMARY:END 9/9 PASS + DONE:PASS。
+#   24 项测试全部 PASS（trng1 15 项 + trng0 9 项），结尾 SUMMARY:END 24/24 PASS + DONE:PASS。
 #
 # Abnormal behavior:
 #   任一测试 FAIL 会打 FAIL token + 可归因 reason（§13.5）；
 #   驱动/硬件坏时典型：entropy_get_entropy ret 非 0、全 0 输出、monobit 越界。
 #
 # Hardware IO connections:
-#   无外部接线（TRNG 为片内模拟熵源 dwtrng@40004000，cpu1 安全域，§14 片内）。
+#   无外部接线（片内模拟熵源：trng1 dwtrng@40004000 + trng0 trng@400a2000，
+#   cpu1 安全域，§14 片内）。
 #
 # Build artifacts:
 #   - tests/case_default/build/target/
@@ -82,7 +86,7 @@ echo -e "${COLOR_GREEN}=========================================================
 echo ""
 echo -e "${COLOR_YELLOW}Test: ${TEST_NAME}${COLOR_RESET}"
 echo ""
-echo -e "${COLOR_YELLOW}What: entropy_ls_trng 全路径：basic/非全0/非全F/ISR busywait/大请求/无效参数/monobit 统计/多块唯一性/64KB 吞吐。${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}What: trng1(DW) 15 项 + trng0(APB) 9 项：basic/非全0/非全F/ISR busywait/大请求/无效参数/monobit 统计/多块唯一性/吞吐（trng1 64KB、trng0 4096B）。${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_YELLOW}Normal: 9/9 PASS + DONE:PASS。${COLOR_RESET}"
 echo ""

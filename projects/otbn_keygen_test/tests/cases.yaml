@@ -1,5 +1,10 @@
 # otbn_keygen_test —— 工程识别信息 + 本工程启用的测试 case
 #
+# ⚠️ 2026-10-26：本工程的测试体已合并进 projects/otbn_test（suite `keygen`），
+#    不再在 regression/cases.yaml 登记。源码保留在原位，作为 otbn_test 与
+#    integrated/sets/itest_crypto_otbn 的共享源（避免复制分叉）。
+#    独立构建/运行能力仅为历史保留，日常回归请走 otbn_test。
+#
 # ⚠️ 顶部 meta 块**只是给人和外部工具读的识别信息**；run_all.py 只消费 `cases:` 段，
 #    改 meta 不影响回归。各字段均由工程目录/代码导出（改工程即随之变化）。
 #

@@ -1,0 +1,15 @@
+{
+  "archive_version": 1,
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 61
+    }
+  },
+  "timeout": 120,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\adc_temper_test\\tests\\run_test.py",
+  "script_md5": "cdcba20db99d8479bd52e90ed5413b58",
+  "timestamp": "2026-10-26T16:03:50"
+}

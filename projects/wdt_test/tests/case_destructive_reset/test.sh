@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WDT destructive reset test - 触发 sec_iwdg 硬件复位
+# cpu1_iwdg destructive reset test - 触发 sec_iwdg 硬件复位
 #
 # 流程：
 #   1. 构建普通 2os 固件（RAM 地址 0x100c0000）

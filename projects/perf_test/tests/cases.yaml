@@ -1,0 +1,17 @@
+# perf_test —— 工程识别信息 + 本工程启用的测试 case
+#
+# ⚠️ 顶部 meta 块只是给人和外部工具读的识别信息；run_all.py 只消费 `cases:` 段。
+#
+meta:
+  board: lsqsh_evb@2os
+  cores: 双核
+  firmware: [cpu1_perf_test, cpu2_perf_peer]
+  kconfig: [cpu1_perf_test/prj.conf, cpu2_perf_peer/prj.conf]
+  run: tests/run_test.py
+  env: 无外部接线
+  title: 性能吞吐（TRNG / 加密 / DMA / mbox）
+  coverage: tests/COVERAGE.md
+
+cases:
+  # Single case: cpu1 hardware engines + cpu2 OTBN; all output on cpu1.
+  - case_default

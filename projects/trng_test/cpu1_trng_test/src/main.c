@@ -18,6 +18,10 @@ LOG_MODULE_REGISTER(trng_test, LOG_LEVEL_INF);
 /* dwtrng@40004000（cpu1 安全域，DesignWare TRNG） */
 const struct device *trng_dev = DEVICE_DT_GET(DT_NODELABEL(trng1));
 
+/* trng@400a2000（cpu1 安全域，APB ring-oscillator TRNG）——独立模块，
+ * 与 trng1 不是同一个驱动，单独成套测试。 */
+const struct device *trng0_dev = DEVICE_DT_GET(DT_NODELABEL(trng0));
+
 void test_main(void)
 {
 	LOG_INF("[CPU1 TRNG] TRNG test started");   /* 角色 banner（harness 依赖） */

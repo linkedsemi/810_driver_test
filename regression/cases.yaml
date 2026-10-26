@@ -19,7 +19,8 @@ cases:
   - projects\otbn_test
   # mbedtls
   - projects\otbn_selftest
-  - projects\otbn_keygen_test
+  # otbn_keygen_test 已合并进 otbn_test（2026-10-26），不再单独登记回归
+  # - projects\otbn_keygen_test
   - projects\mbedtls_test
 
   - projects\i2c_pure_test
@@ -35,7 +36,7 @@ cases:
   # malloc -> sxy
   - projects\qspi_flash_test
   - projects\mbox_test
-  # cpu1 iwdg
+  # cpu1_iwdg
   - projects\wdt_test
   - projects\app_iwdg_cpu2_test
   - projects\iopmp_test
@@ -46,6 +47,8 @@ cases:
   - projects\otbn_delegation_test
   - projects\emmc_test
   - projects\pwm_test
+  # 性能吞吐（2os 双核，约 2~3 分钟；只打印速率，不设门限）
+  - projects\perf_test
 
 
 # trng、flash、加解密、dma、mbox性能

@@ -1,8 +1,10 @@
-# wdt 测试覆盖矩阵
+# cpu1_iwdg 测试覆盖矩阵
 
 > 被测驱动：`zephyr/drivers/watchdog/wdt_iwdg_ls.c`（`linkedsemi,ls-watchdog`）。
-> 实例（DT）：`sec_iwdg`@0x400a1800（HART 复位域，cpu1）、`pmu_iwdg`@0x4002f800
-> （SOC 复位域，cpu1）、`app_iwdg`@0x40099000（HART 复位域，cpu2）。
+> 本工程主实例 = **cpu1_iwdg** `sec_iwdg`@0x400a1800（HART 复位域，cpu1）；
+> `pmu_iwdg`@0x4002f800（SOC 复位域，cpu1）作为第二实例在 `case_boundary` /
+> `case_pmu_iwdg_full_reset` 覆盖；`app_iwdg`@0x40099000（HART 复位域，cpu2）
+> 由独立工程 `app_iwdg_cpu2_test` 覆盖。
 > 全部为**片内**外设，无引脚接线（SPEC_REFERENCE §6.6）。
 >
 > 状态列口径：`✅ 待实测` = 用例已实现且编译通过，P6 首次实机回归后对表；

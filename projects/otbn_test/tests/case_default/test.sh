@@ -8,12 +8,16 @@
 #                  ecdsa p256 定 k KAT / p384 / sm2；perf_* 性能 INFO 上报
 #   Phase 2 mix_*  OTBN 固件混用复现：RSA keygen/modexp 与 sha256/sha512/sm3
 #                  来回穿插（已知问题：混用导致 hash 结果出错，本组测试判定该 bug）
+#   Phase 3 keygen_* RSA 密钥生成（合并自 projects/otbn_keygen_test）：
+#                  candidate 残差/顶位、直接 API、mbedtls hook、2048/3072/4096
+#                  正确性与确定性、ref_vector KAT、RNG 错误传播、session 泄漏、
+#                  非对齐拒绝、modexp KAT 与 bench（TD_CANDIDATES 降到 100）。
 #
 # CPU1 (target role, TGT token):
-#   - 单核工程，无对侧核；main() 主动自驱动跑完三个阶段。
+#   - 单核工程，无对侧核；main() 主动自驱动跑完所有套件。
 #
 # Normal behavior:
-#   各测试项 START→PASS，结尾 SUMMARY:END <passed>/<ran> PASS + DONE:PASS。
+#   52 项测试 START→PASS，结尾 SUMMARY:END <passed>/<ran> PASS + DONE:PASS。
 #   （若 RSA/SHA256 混用 bug 未修复，mix_* 项 FAIL 并带 byte[i] 差异 reason。）
 #
 # Abnormal behavior:

@@ -1,0 +1,85 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * perf_test cpu1 overlay (lsqsh_evb@2os, target).
+ *
+ * MBOX consumers are appended after the five board-level consumers
+ * (qspi/otbn/espi/vuart/pcc1 = 0..4), so their mboxes first cell is 5/6.
+ * Keep this in sync with the cpu2 peer overlay.
+ */
+
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+		zephyr,entropy = &trng1;
+	};
+};
+
+&trng1 {
+	status = "okay";
+};
+
+&trng0 {
+	status = "okay";
+};
+
+&dmac1 {
+	status = "okay";
+};
+
+&dmac2 {
+	status = "okay";
+};
+
+/* qspi1 boot flash: the perf suite only touches the rwfs partition. */
+&flash1 {
+	status = "okay";
+};
+
+/* qspi2 board NOR (32 MiB): raw flash API throughput. */
+&qspi2 {
+	status = "okay";
+	auto-wait-ready;
+	auto-wait-interval = <1000>;
+
+	flash2: flash2@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(50)>;
+		spi-max-buswidth = <4>;
+		status = "okay";
+	};
+};
+
+&mbox {
+	perf_ch5: perf_ch5 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 5 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch6: perf_ch6 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 6 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch7: perf_ch7 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 7 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch8: perf_ch8 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 8 64 4 64 4>;
+		mbox-names = "mbox";
+	};
+
+	perf_ch9: perf_ch9 {
+		compatible = "vnd,mbox-consumer";
+		mboxes = <&mbox 9 128 2 128 2>;
+		mbox-names = "mbox";
+	};
+};

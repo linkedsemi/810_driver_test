@@ -3,16 +3,17 @@
 #
 # What is tested:
 #   LinkedSemi ADC 驱动 ch13 片内温感：基本读取、原始值边界、温度范围计算、
-#   纯函数单测（raw→celsius）、采样稳定性、多次读取一致性。
+#   采样稳定性、多次读取一致性；以及 ADC1/ADC2 两个温感的一致性
+#   （各自 ∈ 0..50 ℃，两路差值 ≤ 5 ℃）。
 #
 # CPU1 (target role, TGT token):
 #   - 单核工程，test_main 自驱动跑完所有 ZTEST。
 #
 # Normal behavior:
-#   6 项测试全部 PASS，结尾 SUMMARY:END 6/6 PASS + DONE:PASS。
+#   10 项测试全部 PASS，结尾 SUMMARY:END 10/10 PASS + DONE:PASS。
 #
 # Hardware IO connections:
-#   无外部接线（片内温感 ch13，CLAUDE.md §14 片内标注）。
+#   无外部接线（adc1 / adc2 的片内温感 ch13，CLAUDE.md §14 片内标注）。
 #
 # Build artifacts:
 #   - tests/case_default/build/target/
