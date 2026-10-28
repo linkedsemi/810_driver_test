@@ -4,10 +4,10 @@
 # What is tested:
 #   (A) 套件 `spi`（18 项，外部: 无）
 #       zephyr/drivers/spi/spi_ls.c 全 API：device_ready/DT 契约 / configure 位回读(MSTR-CPOL-CPHA-LSBFIRST-DS-SSOE-TXFTH) / 分频表七档与纯位宽 / 频率上限±1 / NULL 入参短路 / 长度扫描 1..256 / 全双工与单工通路 / 半双工与 TI 模式异常返回 / release 契约 / 同指针重配的分频漂移(固化) / HOLD_ON_CS 的 SPE 保持 / LOCK_ON 持锁释放 / 双线程并发 / 复位终态与恢复。
-#   (B) 套件 `spi_loopback`（8 项，外部: SPI1↔SPI3 跳线）
-#       spi3(DW SPI, master) ↔ spi1(LS SPI, slave) 真实主从回环：链路探测 /
-#       多长度与 FIFO 边界逐字节比对 / 数据模式矩阵 / 256B 上限 / 主只发从只收 /
-#       从设备返回值=recv_frames / 连续多轮状态隔离。判据是**逐字节比对**，不是"返回 0"。
+#   (B) 套件 `spi_flash`（11 项，外部: 无 —— 板载 spif3 master -> flash4_0）
+#       spif3 master -> spi4 -> flash4_0（jedec,spi-nor / spi_nor_multi_dev）：
+#       flash ready/JEDEC ID、擦除全 0xFF、对齐/非对齐读 1..4096 B、
+#       对齐/非对齐写 1..256 B（擦除后写读逐字节比对）。
 #
 # CPU1 (target role, TGT token):
 #   - Single-core project, no peer core; test_main drives all ZTESTs itself.
@@ -20,16 +20,13 @@
 #   actual values); -ETIMEDOUT on a transceive means the driver's TXE ISR chain
 #   did not advance; a load access fault (serial goes silent) means the known
 #   NULL-deref defect on the configure error path fired.
-#   `spi_loopback` 中链路探测失败时，除 link_probe 外的用例会 **SKIP**（不是 FAIL）。
+#   若板载 flash4_0 不在位，spi_flash 套件会在 suite setup 失败（设备/JEDEC 契约）。
 #
 # Hardware IO connections:
 #   (A) 套件 `spi`：无外部接线（片内）。spi1 = PA00/PA01/PA02 + CS GPIOA 3；
 #       spi2 = PJ12/PJ13/PJ14 + CS GPIOJ 15（板级 pinctrl 指定）。总线上无从设备。
-#   (B) 套件 `spi_loopback`：**外部: SPI1↔SPI3 跳线** ——
-#       spi1 PA00/PA01/PA02 ↔ spi3 PG14/PG15/PG03 四线直连（SCK↔SCK / MOSI↔MOSI /
-#       MISO↔MISO / CS↔CS）；spi3 = master，spi1 = slave。CS 在固件侧一律不驱动
-#       （避免两根 GPIO 输出对推）。该跳线由用户口述，细节见 tests/COVERAGE.md
-#       「回环可行性结论」。**跑本 case 前请确认跳线在位。**
+#   (B) 套件 `spi_flash`：**外部: 无** —— 板载 spif3 master -> spi4 -> flash4_0。
+#       测试区从 1 MiB 起（0x100000/0x110000/0x120000），不碰前 1 MiB。
 #
 # Build artifacts:
 #   - tests/case_default/build/target/
@@ -97,15 +94,15 @@ echo ""
 echo -e "${COLOR_YELLOW}Test: ${TEST_NAME}${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_YELLOW}What: (A) 套件 spi 18 项——zephyr/drivers/spi/spi_ls.c 全 API：device_ready/DT 契约 / configure 位回读(MSTR-CPOL-CPHA-LSBFIRST-DS-SSOE-TXFTH) / 分频表七档与纯位宽 / 频率上限±1 / NULL 入参短路 / 长度扫描 1..256 / 全双工与单工通路 / 半双工与 TI 模式异常返回 / release 契约 / 同指针重配的分频漂移(固化) / HOLD_ON_CS 的 SPE 保持 / LOCK_ON 持锁释放 / 双线程并发 / 复位终态与恢复。${COLOR_RESET}"
-echo -e "${COLOR_YELLOW}      (B) 套件 spi_loopback 8 项——spi3(DW,master)↔spi1(LS,slave) 真实主从回环：链路探测 / 多长度与 FIFO 边界逐字节比对 / 数据模式矩阵 / 256B 上限 / 主只发从只收 / 从设备返回值=recv_frames / 连续多轮状态隔离。${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}      (B) 套件 spi_flash 11 项——spif3(master)->spi4->flash4_0 板载通路：malloc 只读冒烟、ready/JEDEC、擦除全 0xFF、静态/malloc 缓冲的对齐与非对齐读 1..4096 B、写 1..256 B（擦除后写读逐字节比对）。${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_YELLOW}Normal: all items PASS + PROJECT EXECUTION SUCCESSFUL.${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_YELLOW}Abnormal: FAIL - <name> + zassert reason (file:line, expected vs actual).${COLOR_RESET}"
 echo ""
-echo -e "${COLOR_YELLOW}Feedback: cpu1 uart1（COM16/17, CH342）；banner 'CPU1 SPI_MASTER' -> TGT.${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}Feedback: cpu1 uart1（COM24, CH342）；banner 'CPU1 SPI_MASTER' -> TGT.${COLOR_RESET}"
 echo ""
-echo -e "${COLOR_YELLOW}IO: (A) 片内，无外部接线——spi1 = PA00/PA01/PA02 + CS GPIOA 3；spi2 = PJ12/PJ13/PJ14 + CS GPIOJ 15。 (B) 外部: SPI1↔SPI3 跳线——spi1 PA00/PA01/PA02 ↔ spi3 PG14/PG15/PG03 四线直连（SCK/MOSI/MISO/CS），spi3=master / spi1=slave，固件侧不驱动 CS。跑 (B) 前确认跳线在位。${COLOR_RESET}"
+echo -e "${COLOR_YELLOW}IO: (A) 片内，无外部接线——spi1 = PA00/PA01/PA02 + CS GPIOA 3；spi2 = PJ12/PJ13/PJ14 + CS GPIOJ 15。 (B) 无外部接线——板载 spif3 master -> spi4 -> flash4_0，测试区 0x100000/0x110000/0x120000。${COLOR_RESET}"
 echo ""
 echo -e "${COLOR_GREEN}Build OK:${COLOR_RESET}"
 echo "  ${TEST_BUILD_DIR}"

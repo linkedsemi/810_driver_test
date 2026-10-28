@@ -9,13 +9,11 @@
 | 寄存器字段回读 | `SPI_CR1`/`SPI_CR2` 目标字段 == 写入值 | 器件寄存器定义（`reg_spi_type.h` 结构体/枚举位宽） |
 | 分频档编码 | `/8../256 → BR = 2..7` | HAL `ls_hal_spi_i2s.h:182-187`（与驱动 `scaler[]` 同序） |
 | 频率约束 | 上限 `clock/8`、下限安全点 `clock>>8` | `spi_ls.c:118-121,123-129`，本板 clock = 75 MHz |
-| **回环比对序列**（P4.6，套件 `spi_loopback`） | 由固件自生成的确定性 pattern：`buf[i] = seed + i`，`seed` 按用例取值（见 `src/spi_loopback.c`）；判据为 `master_rx == slave_tx` 且 `slave_rx == master_tx` | 固件内联，无需外部向量文件 |
-| **从设备返回值** | `slave_ret == len`（已收帧数） | `spi_ls.c:362-366` + `spi_context.h:174-178` |
+| **Flash 读写序列**（2026-10-27，套件 `spi_flash`） | 由固件自生成的确定性 pattern：`buf[i] = seed + 3*i + (i >> 5)`；写后读回逐字节比对；擦除后回读必须全 0xFF | 固件内联，无需外部向量文件 |
 
 **分区的外部条件**：
 
 - 套件 `spi`（原有 18 项）：`外部: 无` —— `spi1`/`spi2` 总线上没有 DT 声明的从设备，
   全部判据来自驱动源码/寄存器语义，不预设任何外部器件值（见 COVERAGE.md「跳过项」）。
-- 套件 `spi_loopback`（P4.6 新增 8 项）：**`外部: SPI1↔SPI3 跳线`** —— 对端是**本芯片自己的
-  `spi1`**（作从设备），不是外部器件，故预期值仍是固件自生成的 pattern，
-  不需要 NIST/官方一类外部黄金向量。跳线细节见 COVERAGE.md「回环可行性结论」。
+- 套件 `spi_flash`（2026-10-27 新增 10 项）：`外部: 无` —— spif3 master -> spi4 -> flash4_0
+  （板载 NOR），读写擦除均通过板载器件验证，不需要外部跳线或黄金向量文件。

@@ -1,89 +1,40 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * spi_test overlay（单核 cpu1 安全域）：使能被测驱动 spi_ls.c 的两个实例
- * spi1 / spi2，以及它们的 CS GPIO 端口。
+ * spi_test overlay（单核 cpu1 安全域）。
  *
- * ⚠️ 实例范围（见 tests/COVERAGE.md「实例范围」）：
- *   只有 `spi1`(@4008a000) / `spi2`(@4008a400) 的 compatible 是
- *   `linkedsemi,ls-spi`（= zephyr/drivers/spi/spi_ls.c）。
- *   `spi3` / `spi4` 是 `snps,designware-spi`（spi_dw.c），**不属本工程** ——
- *   pfr_tpm 的 samples/spi_master_communication 走的是 `spif3 → spi4` 的
- *   master 通路（驱动 NOR flash），该通路已由 P4 的 spif_test 覆盖。
+ * 两套被测路径：
+ *   A. 原有 18 项：spi1 / spi2（linkedsemi,ls-spi -> zephyr/drivers/spi/spi_ls.c）
+ *      片内 pinctrl + CS GPIO，无外部接线。
+ *   B. 新增 flash 访问：spif3（linkedsemi,spi-filter）master 态 -> spi4
+ *      （snps,designware-spi）-> flash4_0（jedec,spi-nor /
+ *      zephyr/drivers/flash/spi_nor_multi_dev.c）。板载，无外部接线。
  *
- * 外部条件（SPEC_REFERENCE §6.6）：
- *   片内：spi1 / spi2 的 SCK/MOSI/MISO + CS 均由板级 pinctrl 指定
- *   （lsqsh_evb_pinctrl.dtsi:381-391），spi1/spi2 自身**无需任何外部接线**，
- *   总线上**没有 DT 声明的从设备** —— 这两路（原有 18 项）的判据来自驱动源码
- *   与寄存器语义，不依赖从设备应答；需要从设备参与的判据见 COVERAGE.md「跳过项」。
- *   **P4.6 新增**：spi1 与 spi3 之间的**外部跳线**回环用例
- *   （`外部: SPI1↔SPI3 跳线`，四线直连 SCK↔SCK / MOSI↔MOSI / MISO↔MISO / CS↔CS），
- *   见 tests/COVERAGE.md「回环用例」。
+ * 2026-10-27：删除 SPI1↔SPI3 外部跳线回环（spi_loopback.c 已删），
+ *             spif3 只作为 flash4_0 的 master 使用。
  */
+
+#include "lsqsh_pinctrl_pfr_tpm.dtsi"
 
 / {
 	chosen {
 		zephyr,console = &uart1;
 	};
+
+	aliases {
+		/* spif3 master 态驱动 flash4_0；用例统一从这两个 alias 取设备 */
+		spifilter = &spif3;
+		spiflash = &flash4_0;
+	};
 };
+
+/* -------------------------------------------------------------------------- */
+/* A. 原有 spi_ls 用例：spi1 / spi2                                            */
+/* -------------------------------------------------------------------------- */
 
 /* spi1：PA00=SCK / PA01=MOSI / PA02=MISO，CS = gpioa 3（板级 pinctrl 已声明） */
 &spi1 {
 	status = "okay";
-
-	/*
-	 * ===== C1 修复（2026-09-18）：补 spi1 的 **NSS（从模式片选输入）** =====
-	 *
-	 * 依据（vendor 自己的从设备例程，不是推测）：
-	 *   modules/hal/linkedsemi/examples/peripheral/spi_i2s/spi_it_slave/main.c:71-79
-	 *   该例程把 SPI2 配成从设备，**逐个 pin 显式初始化**，其中包含 NSS：
-	 *       pinmux_spi2_slave_clk_init(SPI_CLK_PIN);   // PB12
-	 *       pinmux_spi2_slave_nss_init(SPI_CS_PIN);    // PB13   <== 必需
-	 *       pinmux_spi2_slave_mosi_init(SPI_MOSI_PIN); // PB14
-	 *       pinmux_spi2_slave_miso_init(SPI_MISO_PIN); // PB15
-	 *   `spi_slave_nss_io_cfg()`（ls_soc_gpio.c 同源实现）= 上拉 + **输入**：
-	 *       io_pull_write(nss, IO_PULL_UP); io_cfg_input(nss);
-	 *   ⇒ 从模式下 NSS 是**输入**（本机不驱动它，因此与主机的 CS 不存在对推），
-	 *     但必须 pinmux 出来；不配 NSS 则从设备永远不被选中。
-	 *
-	 * 板级事实：`lsqsh_evb_pinctrl.dtsi:381-385` 只为 spi1 布了
-	 *   SCK(PA00)/MISO(PA02)/MOSI(PA01) 三个节点，**没有 NSS 节点**
-	 *   （对比 le501x/ls101x 两个板的 pinctrl 都带了 `spi1_cs_*`/`spi1_nss_*`）。
-	 *   本工程按 vendor 从设备例程补齐。
-	 *
-	 * 引脚取 PA03 的依据：
-	 *   ① 板级 `&spi1 { cs-gpios = <&gpioa 3 GPIO_ACTIVE_LOW>; }`
-	 *      —— 板级把 spi1 的片选**焊盘**当普通 GPIO 用；同一文件里
-	 *      `&spi3 { cs-gpios = <&gpiog 13 ...>, <&gpiog 12 ...>; }`
-	 *      与复用宏 SPI3_CSN0_FUNC2_PG13 / SPI3_CSN1_FUNC2_PG12 **逐脚对应**，
-	 *      说明该板的约定就是「cs-gpios 指向该实例的 CSN/NSS 焊盘」；
-	 *      故 spi1 的 cs-gpios（GPIOA 3）= SPI1_NSS 焊盘。
-	 *   ② 复用宏：lsqsh-pinctrl_func_1.h:29
-	 *      `SPI1_NSS_FUNC1_IDX19_PINMUX_PA(XX)`（PA 端口、功能号 19）。
-	 *      ⚠️ 该宏的 XX 是**任意** PA 引脚（宏是模板），「PA03 就是 idx19 那个焊盘」
-	 *      属**强推断而非图证** —— 见报告「仍需实机确认的点」。
-	 *
-	 * pinctrl-0 必须在这里**整体重写**（DT 叠加是属性替换，不是追加）：
-	 * 板级原值为 <&spi1_clk_pa00 &spi1_miso_pa02 &spi1_mosi_pa01>，此处追加 NSS。
-	 */
-	pinctrl-0 = <&spi1_nss_pa03 &spi1_clk_pa00 &spi1_miso_pa02 &spi1_mosi_pa01>;
-	pinctrl-names = "default";
-};
-
-/*
- * spi1 的 NSS 引脚（SPI1 片选焊盘，从模式**输入**）。
- *
- * 属性对齐 vendor 从设备例程的 `spi_slave_nss_io_cfg()`：
- *   input-enable  ⇒ io_cfg_input()      （NSS 为输入，本机不驱动）
- *   bias-pull-up  ⇒ io_pull_write(..., IO_PULL_UP)（主机未驱动/未接线时保持未选中）
- * **不**加 output-enable：从设备绝不驱动 NSS（避免与主机 CS 对推）。
- */
-&pinctrl {
-	spi1_nss_pa03: spi1_nss_pa03 {
-		pinmux = <SPI1_NSS_FUNC1_IDX19_PINMUX_PA(03)>;
-		input-enable;
-		bias-pull-up;
-	};
 };
 
 /* spi2：PJ12=SCK / PJ13=MOSI / PJ14=MISO，CS = gpioj 15（板级 pinctrl 已声明） */
@@ -92,90 +43,67 @@
 };
 
 /*
- * spi1 的 CS 在 GPIOA（公共层 gpio_toggle.dtsi 已把 gpioa 置 okay），
- * spi2 的 CS 在 GPIOJ —— 必须显式使能，否则 spi_ls_init() 的
- * spi_context_cs_configure_all()（spi_ls.c:462）返回 -ENODEV，
- * spi2 会静默地"设备不就绪"。
+ * spi2 的 CS 在 GPIOJ —— 板级已使能该端口；这里显式保留，避免板级配置变动时
+ * spi_ls_init() 的 spi_context_cs_configure_all() 静默 -ENODEV。
  */
 &gpioj {
 	status = "okay";
 };
 
-/* ==========================================================================
- * P4.6 新增：SPI1↔SPI3 外部跳线回环（见 tests/COVERAGE.md「回环用例」）
- *
- *   从设备 = spi1（linkedsemi,ls-spi → spi_ls.c，PA00=SCK/PA01=MOSI/PA02=MISO）
- *   主设备 = spi3（snps,designware-spi → spi_dw.c，PG14=SCK/PG15=IO0/PG03=IO1）
- *
- * 方向选择依据（见 COVERAGE.md「回环可行性结论」）：
- *   - spi1 在 Zephyr QSH pinctrl 头里有硬件 NSS 复用宏
- *     （SPI1_NSS_FUNC1_IDX19_PINMUX_PA/PC/PI）；
- *   - 全树（zephyr/、modules/lib/pfr_tpm/、linkedsemi_zephyr_project/）里
- *     spi3/spi4 只被当 **master** 用（DT `serial-target` 恒为 false，
- *     而 spi_dw.c:407-416 要求该属性为真才允许从模式）。
- *   ⇒ 有证据支持的方向是 spi3=master / spi1=slave。
- *   ⚠️ C1 更正（2026-09-18）：本条原写「spi3 没有任何 NSS 复用宏」是**错的** ——
- *     `SPI3_CSN0_FUNC2_PG13_PINMUX` / `SPI3_CSN1_FUNC2_PG12_PINMUX` 确实存在
- *     （lsqsh-pinctrl_func_2_3_4.h:119-120，当时按 `NSS`/`CS` 搜而漏了 `CSN`）。
- *     故「spi3 不能当从设备」应从"不可能"降为"未证伪"；本轮不改方向
- *     （改方向要同时动 serial-target 与 DW 从模式两条未验证路径，风险更大）。
- *
- * ⚠️ 与 spif_test（P4.7）的关键差异：那里为了把 spi3 的 net 让给 SPIF 的
- *    master 态引脚，显式清空了 `&spi3 { pinctrl-0 = <>; }`。本工程**不启用 SPIF**，
- *    故保留 spi3 自己的板级 pinctrl（PG14/PG15/PG03/PE01/PE00），
- *    由 spi3 自己驱动 SCK/MOSI。
- * ========================================================================== */
+/* -------------------------------------------------------------------------- */
+/* B. 新增 flash 访问：spif3 -> spi4 -> flash4_0                               */
+/* -------------------------------------------------------------------------- */
 
-&spi3 {
+/*
+ * spif3 的配对 filter 是 spif4（spi_filter.c:1497-1502 的
+ * spif_spi_check_dev_name_arr）。spif_switch_to_master() 会 device_get_binding
+ * 配对节点；若 spif4 未使能会命中 __ASSERT_NO_MSG(0)，故必须一起打开。
+ * spif4 只保持默认（filter）态，不切 master。
+ */
+&spif3 {
+	cmd-page-program-quad-addr-quad-data = <0xc2>;
+	cmd-quad-spi-mode-enter = <0x38>;
+	cmd-quad-spi-mode-exit = <0xff>;
 	status = "okay";
-	/*
-	 * spi3 无子节点 ⇒ `timing_calibration_delay_arr[]` 为空数组，而
-	 * spi_dw.c:467-469 在 master 且未禁用校准时会下标访问它（越界读 .rodata）。
-	 * 本工程用不到该特性，显式关闭（同 spif_test 未踩中是因为其 spi3 走 SPIF
-	 * master 引脚、pinctrl 清空后另行处理）。
-	 */
-	timing-calibration-disabled;
+};
 
-	/*
-	 * ===== C1 修复（2026-09-18）：主设备 CS 的来源 =====
-	 *
-	 * 板级已给 spi3 声明片选：
-	 *   `lsqsh_evb_pinctrl.dtsi:394 cs-gpios = <&gpiog 13 GPIO_ACTIVE_LOW>,
-	 *                                          <&gpiog 12 GPIO_ACTIVE_LOW>;`
-	 * 且这两个焊盘的复用宏确实存在：
-	 *   lsqsh-pinctrl_func_*: SPI3_CSN0_FUNC2_PG13_PINMUX / SPI3_CSN1_FUNC2_PG12_PINMUX
-	 *   （上一轮 COVERAGE.md「回环可行性结论 §3」写「spi3 没有任何 NSS 复用宏」
-	 *     是**错的**；本宏列表见报告 ①。）
-	 *
-	 * 本工程**保持板级原样**（GPIO 片选，不加 CSN 复用），理由：
-	 *   - spi_dw.c 对 GPIO 片选有完整支持：spi_dw.c:793-794 与 :1029 / :1170 / :1183 /
-	 *     :1314 / :1341 都走 `spi_cs_is_gpio(config)` → `spi_context_cs_control()`，
-	 *     由 SPI 驱动在传输前后拉/放 GPIO；
-	 *   - 若改成硬件 CSN，就必须 `/delete-property/ cs-gpios` 以免
-	 *     `spi_context_cs_configure_all()`（spi_dw.c:2083）在 init 阶段把 PG13 配回
-	 *     GPIO 输出、把 CSN 复用顶掉；改 GPIO 片选则无需动板级属性。
-	 *
-	 * 真正的修复在**用例侧**：`src/spi_loopback.c` 的 `lb_cfg_m` 现在显式带上
-	 * `.cs.gpio = SPI_CS_GPIOS_DT_SPEC_GET(spi3)`（= GPIOG 13）。
-	 * 上一轮 `lb_cfg_m` 是全零结构体 ⇒ 主设备**既不驱动 GPIO CS、也没写对字宽**，
-	 * 这是 link_probe 失败的直接原因之一（见报告 ②）。
-	 *
-	 * 从设备一侧一律不配 CS（`lb_cfg_s.cs.gpio.port = NULL`）—— 只让主机一侧推 CS。
-	 */
+&spif4 {
+	cmd-page-program-quad-addr-quad-data = <0xc2>;
+	cmd-quad-spi-mode-enter = <0x38>;
+	cmd-quad-spi-mode-exit = <0xff>;
+	status = "okay";
 };
 
 /*
- * spi3 节点自带 `dmas = <&dmac2 0 DMA_SPI3_RX>, <&dmac2 0 DMA_SPI3_TX>`，
- * 而 spi_dw.c:2221 的 `DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(inst, rx))`
- * 要求该 DMA 控制器**已使能**，否则链接期报 `__device_dts_ord_N undeclared`；
- * 同时 `CONFIG_DMA_DW_LLI_POOL_SIZE`（drivers/dma/Kconfig.dw_common）也只有在
- * DW DMA 驱动编入时才有定义。
- * 本回环走的是 spi_dw.c 的通用 IRQ 通路（:692-817），不碰 DMA，故使能 dmac2
- * 只为满足 DT/编入依赖，与 spif_test（P4.7）同一处理方式。
+ * spi4 的总线引脚由 spif3 的 master pinctrl（pinctrl-2）驱动，DW SPI 控制器
+ * 自己的板级 pinctrl 必须让出来（pfr_tpm dtsi 已清空，这里再显式写一次）。
+ * flash4_0 挂在 spi4 的 CS0 上。
+ */
+&spi4 {
+	cs-gpios = <&gpioi 0 GPIO_ACTIVE_LOW>;
+	pinctrl-0 = <>;
+	pinctrl-names = "default";
+	dmas = <&dmac2 6 DMA_SPI4_RX>, <&dmac2 6 DMA_SPI4_TX>;
+	dma-names = "rx", "tx";
+	status = "okay";
+
+	flash4_0: flash4@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(50)>;
+		spi-max-buswidth = <4>;
+		re-init-support;
+		status = "okay";
+	};
+};
+
+/*
+ * spif3/spi4 的 dmas 引用 dmac2；spi_dw.c 要求 DMA 控制器已使能，
+ * 且 CONFIG_DMA_DW_LLI_POOL_SIZE 只在 DW DMA 编入时才有定义。
  */
 &dmac2 {
 	status = "okay";
 };
 
-/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛） */
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）。 */
 #include "../../../common/gpio_toggle.dtsi"

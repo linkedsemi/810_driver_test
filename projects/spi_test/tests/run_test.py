@@ -73,7 +73,8 @@ PASS, FAIL, MISSING, NOT_RUN, SKIP = "PASS", "FAIL", "MISSING", "NOT_RUN", "SKIP
 
 # 链接序 = ztest_unit_test 段 SORT_BY_NAME 字典序，与 ztest_glue 的 tr_record
 # idx 对齐；**必须与 scripts/dump_results.py 的 TEST_NAMES 逐字同序**（§1.8）。
-# 2026-09-17（P4.6）：新增 `spi_loopback` 套件 8 项，排在 `spi` 套件之后。
+# 2026-10-27：删除 `spi_loopback` 套件 8 项（外部跳线不可用），新增
+# `spi_flash` 套件 10 项（spif3 master -> flash4_0 板载通路）。
 # 核对命令：nm --numeric-sort <elf> | grep _ztest_unit_test__
 TEST_NAMES = [
     "concurrent_two_threads", "configure_datasize16", "configure_freq_boundary",
@@ -82,11 +83,16 @@ TEST_NAMES = [
     "lock_on_hold_release", "post_reset_state", "reconfigure_same_cfg_prescaler",
     "release_semantics", "transceive_duplex_pair", "transceive_length_sweep",
     "transceive_null_bufs", "transceive_tx_only_rx_only",
-    # ---- P4.6 新增：SPI1↔SPI3 外部跳线回环（套件 spi_loopback）----
-    "link_probe", "repeat_roundtrips_state_isolation",
-    "roundtrip_fifo_boundary", "roundtrip_length_sweep",
-    "roundtrip_master_tx_slave_rx", "roundtrip_max_length_256",
-    "roundtrip_pattern_matrix", "slave_ret_recv_frames",
+    # ---- 新增：spif3 master -> flash4_0 的 flash 访问（套件 spi_flash）----
+    # 链接序 = 完整符号 _ztest_unit_test__spi_flash__<name> 的字典序
+    "alloc_read_smoke",
+    "erase_all_ff", "flash_ready",
+    "read_aligned_len_sweep",
+    "read_malloc_aligned_len_sweep", "read_malloc_unaligned_len_sweep",
+    "read_unaligned_len_sweep",
+    "write_aligned_len_sweep",
+    "write_malloc_aligned_len_sweep", "write_malloc_unaligned_len_sweep",
+    "write_unaligned_len_sweep",
 ]
 
 
@@ -113,11 +119,9 @@ def evaluate_case(case, lines, test_names, mem_data):
         if t and t["reason"]:
             reasons[name] = t["reason"]
         if st == SKIP:
-            # ztest_test_skip()：用例因前置外部条件不满足而主动跳过
-            # （本工程 = SPI1<->SPI3 回环跳线未接，见 COVERAGE.md）。
+            # ztest_test_skip()：用例因前置条件不满足而主动跳过。
             # 归为 SKIP：**不计入 ran**（与 NOT_RUN 同理），因此不影响 case_ok
-            # —— 报告里单独标注 skipped=N。2026-09-18：此前 SKIP 被算进分母，
-            # 把 17 PASS + 2 FAIL + 7 SKIP 报成 "17/26"，通过率被系统性低估。
+            # —— 报告里单独标注 skipped=N。
             results[name] = SKIP
             notes[name] = "src=token(skip)"
             continue
@@ -152,21 +156,18 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
     if case_ok is None:   # 兜底：调用方未传判定结果时不猜 PASS
         case_ok = (execution == "SUCCESSFUL" and ran > 0 and passed == ran)
     lines = [
-        '# SPI master (spi_ls) 驱动测试报告',
+        '# SPI (spi_ls + spif3 flash) 驱动测试报告',
         "",
         *format_report_header(
             DRIVER_NAME, case, BOARD,
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             env=env_line, execution=execution, mem_line=mem_line,
             result=f"{'PASS' if case_ok else 'FAIL'} ({passed}/{ran})"),
-        # 接线如实分列两个套件（2026-09-23 修正）：
-        #   原值写死「无」，而 P4.6 起套件 `spi_loopback`（8 项）有外部前置条件，
-        #   该行会把"跳线未接导致的 FAIL"误导成"驱动缺陷"（本轮任务书即据此行误判）。
-        #   与 cases.yaml `meta.env` 及 COVERAGE.md「回环可行性结论」逐 pin 一致。
-        '- 接线: 套件 `spi`（18 项）无 —— spi1/spi2 片内引脚组 + 板级 CS GPIO，总线上无从设备；'
-        '套件 `spi_loopback`（8 项）需 `外部: SPI1↔SPI3 跳线`'
-        '（SCK PA00↔PG14 / MOSI PA01↔PG15 / MISO PA02↔PG03 / CS PA03↔PG13），'
-        '跳线未接时 7 项 SKIP、`link_probe` FAIL',
+        # 接线如实分列两个套件：
+        #   `spi`       —— spi1/spi2 片内引脚组 + 板级 CS GPIO，无外部接线；
+        #   `spi_flash` —— 板载 spif3 master -> spi4 -> flash4_0，无外部接线。
+        '- 接线: 套件 `spi`（18 项）无外部接线 —— spi1/spi2 片内引脚组 + 板级 CS GPIO；'
+        '套件 `spi_flash`（10 项）无外部接线 —— 板载 spif3 master -> spi4 -> flash4_0',
         *([""] + ["> " + missing_evidence_note(missing)] if missing else []),
         "",
         "## 测试项结果",
@@ -179,7 +180,7 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
         if st == PASS or st == NOT_RUN:
             reason = ""
         elif st == SKIP:
-            reason = '前置外部条件不满足（SPI1<->SPI3 回环跳线未接）；不计入分母'
+            reason = '前置条件不满足；不计入分母'
         elif st == MEM_NOEVID:
             # R8：mem 取到的项 —— 理由串必须与"驱动/测试失败"分开表述
             reason = MEM_WEAK_ITEM_NOTE + (

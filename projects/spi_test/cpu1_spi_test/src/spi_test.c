@@ -800,7 +800,7 @@ ZTEST(spi, post_reset_state)
 	zassert_equal(cr1_after & SPI_CR1_MSTR_MASK, 0U, "复位后 CR1.MSTR 应为 0");
 	/* 该 IP 的 **复位默认档** 不是全 0：实测 cr1_after = 0x10，即 BR 字段 = 2 = /8。
 	 * 复位确已生效的证据：MSTR 由复位前的 1 变为 0（本 suite 无任何从模式配置，
-	 * 唯一写 MSTR=0 的 spi_ls.c:90 只在从模式分支，且 spi_loopback 在本 suite 之后执行）。
+	 * 唯一写 MSTR=0 的 spi_ls.c:90 只在从模式分支，且本 suite 不配置从模式）。
 	 * 旁证：驱动 spi_ls.c:65-66 每次 configure 开头都把 BR 写回 scaler[0]（也是 /8），
 	 * 即作者本就以 /8 作安全默认档。详见 TRIAGE_MISC_2026-09-18.md §2。 */
 	zassert_equal(cr1_after & SPI_CR1_BR_MASK, SPI_LS_BR_DIV8,

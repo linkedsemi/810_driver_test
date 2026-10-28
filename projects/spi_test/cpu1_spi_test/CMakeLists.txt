@@ -6,10 +6,12 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(cpu1_spi_test)
 
 # 项目特定源文件
+# 2026-10-27: spi_loopback.c 删除（外部 SPI1↔SPI3 跳线不可用），
+#             新增 spif3 -> flash4_0 的 flash 访问用例。
 target_sources(app PRIVATE
     src/main.c
     src/spi_test.c
-    src/spi_loopback.c)
+    src/spi_flash.c)
 
 # 项目特定 include 目录
 target_include_directories(app PRIVATE

@@ -9,8 +9,8 @@ meta:
   firmware: [cpu1_spi_test]
   kconfig: [cpu1_spi_test/prj.conf]
   run: tests/run_test.py
-  env: 需接线：spi3(PG13) ↔ spi1(PA03) 跳线
-  title: spi_ls.c（spi1/spi2）回环
+  env: 无外部接线；板载 spif3 master -> spi4 -> flash4_0
+  title: spi_ls.c（spi1/spi2）+ spif3->flash4_0 访问
   coverage: tests/COVERAGE.md    # 工程定位 / 测试内容 / 环境需求 / 覆盖矩阵的权威源
 #
 # 只有 `cases:` 之后、以 `- ` 开头的行才是 case；`#` 开头一律忽略（`#` 屏蔽 = 跳过）。

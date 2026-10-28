@@ -53,8 +53,7 @@ TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 # 真实链接序可能相反）。与 glue 的 tr_record idx（注册顺序）对齐；每次
 # 增删测试项后必须重新核对：
 #   nm --numeric-sort <elf> | grep _ztest_unit_test__spi__
-# 2026-09-17（P4.6）：新增 `spi_loopback` 套件 8 项，链接序排在 `spi` 套件
-# 之后（`...spi__` 的第三段以 'l' 开头、`...spi__` 以 '_' 开头，'_'(0x5F) < 'l'(0x6C)）。
+# 2026-10-27：删除 `spi_loopback`，新增 `spi_flash` 10 项，链接序排在 `spi` 套件之后。
 TEST_NAMES = [
     "concurrent_two_threads", "configure_datasize16", "configure_freq_boundary",
     "configure_lsb_first", "configure_mode_bits", "configure_prescaler_table",
@@ -62,11 +61,15 @@ TEST_NAMES = [
     "lock_on_hold_release", "post_reset_state", "reconfigure_same_cfg_prescaler",
     "release_semantics", "transceive_duplex_pair", "transceive_length_sweep",
     "transceive_null_bufs", "transceive_tx_only_rx_only",
-    # ---- P4.6 新增：SPI1↔SPI3 外部跳线回环（套件 spi_loopback）----
-    "link_probe", "repeat_roundtrips_state_isolation",
-    "roundtrip_fifo_boundary", "roundtrip_length_sweep",
-    "roundtrip_master_tx_slave_rx", "roundtrip_max_length_256",
-    "roundtrip_pattern_matrix", "slave_ret_recv_frames",
+    # ---- 新增：spif3 master -> flash4_0 的 flash 访问（套件 spi_flash）----
+    "alloc_read_smoke",
+    "erase_all_ff", "flash_ready",
+    "read_aligned_len_sweep",
+    "read_malloc_aligned_len_sweep", "read_malloc_unaligned_len_sweep",
+    "read_unaligned_len_sweep",
+    "write_aligned_len_sweep",
+    "write_malloc_aligned_len_sweep", "write_malloc_unaligned_len_sweep",
+    "write_unaligned_len_sweep",
 ]
 
 # 公共模块统一符号名（test_results.h）：结果数组 + reason 数组基址
