@@ -97,18 +97,19 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `otbn_selftest` | 单核 | 否 | mbedtls selftest 全量套件 |
 | `otbn_keygen_test` | 单核 | 否 | OTBN RSA 密钥生成（确定性/三尺寸/正确性/mbedtls hook） |
 | `mbedtls_test` | 单核 | 否 | 软件/硬件/OTBN 混合加密配置 |
+| `crypto_api_test` | 单核 | 否 | **Zephyr crypto 驱动 API**（`cipher_*_op` / `hash_*`）：SM4 五模式 + SHA224/256/384/512 + SM3 |
 | `adc_temper_test` | 单核 | 否 | 片内 ADC 温感 (ch13) 读取 |
 | `dma_test` | 单核 | 否 | DMA (dmac1) M2M 传输 |
 | **`flash_test`** | 单核 | 否 | **`qspi1` 挂的引导 flash**（系统的一部分，4 MiB）—— 与 `qspi_flash_test` 是**两颗不同的 flash、两套驱动栈** |
-| `wdt_test` | 单核 | 否 | WDT (sec_iwdg) 非破坏性用例 |
+| `sec_iwdg_cpu1_test` | 单核 | 否 | WDT (sec_iwdg) 非破坏性用例 |
 | `iopmp_test` | 单核 | 否 | IOPMP HAL 寄存器操作 |
 | `i2c_pure_test` | 双核 | **是** | I2C5（cpu2 master）↔ I2C6（cpu1 slave） |
 | `i3c_i2c_switch_test` | 双核 | **是** | I3C/I2C 动态切换 |
 | `i3c_dualcore_test` | 双核 | **是** | I3C 主从跨核通信 |
 | `mbox_test` | 双核 | 否 | cpu1↔cpu2 共享 SRAM 邮箱 |
 | **`app_iwdg_cpu2_test`** | **双核** | 否 | cpu2 侧 app_iwdg 复位与上报 |
-| **`spi_test`** | 单核 | **是** | `spi_ls.c`（`spi1`/`spi2`）；回环需 **`spi3`(PG13) ↔ `spi1`(PA03)** 跳线 |
-| **`spif_test`** | 单核 | 否 | PFR `spi_filter`；master 模式经 `spi4` 驱动**板上 flash** |
+| **`spi_test`** | 单核 | 否 | `spi_ls.c`（`spi1`/`spi2`，片内 pinctrl 无外接从设备）；`spif3` master → `spi4` → 板载 `flash4_0`，**无外部接线** |
+| **`spif_test`** | 单核 | 部分 | PFR `spi_filter`；master 模式直驱板载 `flash4_0` **无需接线**；`loopback_*` 6 项需 `spif1`(master) ↔ `spif3`(filter in) **6 线跳线**（单线模式最少 4 根） |
 | **`spid_test`** | 单核 | **是** | TPM SPI slave；用 SoC 自己的 SPI master 自环 |
 | **`i2cf_test`** | 单核 | **是** | PFR `i2c_filter`；**I2C4 ↔ I2CF4** + 外接 EEPROM |
 | **`eth_test`** | 单核 | 部分 | `case_mdio` **无需接线**；`case_link`/`arp_icmp`/`udp_echo` 需**网线接 PC** |
@@ -133,6 +134,7 @@ python regression/run_all.py --dry-run      # 只列启用 case，不执行
 | `i3c_i2c_switch_test` | 同 `i3c_dualcore_test` |
 | `i2c_pure_test` | 同 `i3c_dualcore_test`（I2C 模式复用） |
 | `eth_test` | `case_mdio`：**无**（片内 MDIO + 板载 RTL8211F PHY）<br>`case_link`：**板载 RJ45 ↔ PC 网口（网线）**，对端网口须上电且开启自协商 |
+| `spif_test` | **仅 `loopback_*`（6 项）需要**：`spif1`(master 态, pinctrl-2) ↔ `spif3`(filter 态 in 侧, pinctrl-0 前半) 跳线。<br>CSN **PI08 ↔ PI02**、CLK **PG00 ↔ PF08**、IO0 **PF15 ↔ PF04**、IO1 **PF13 ↔ PF02**、IO2 **PH01 ↔ PF10**、IO3 **PH03 ↔ PF06**<br>当前回环用例为 **1 MHz / 8 bit / 单线** SPI（`LOOP_FREQ MHZ(1)`、`SPI_WORD_SET(8)`），**最少需 CS/CLK/IO0/IO1 四根**；IO2/IO3 这里按 6 线全接登记。<br>✅ **2026-10-29 实测确认跳线在位**：回环 6/6 PASS（`reports/2026-10-29-1/spif_test_case_default/`）。判据不是"碰巧过了"——四组 `loopback_filter_*` 的 `SPIF_DMA_DATA` 原始值互不相同（合法/合法 `0x0`、地址错 `0x3000045`、命令错 `0x3000002`），且 `ERROR_CMD`/`ERROR_ADDR` 精确复现 `0x03`/`0x4000`，说明 `spif3` 确实看到了 `spif1` 发出的总线事务。<br>历史 `scripts/io_probe_run1_uart.txt` 的 `PI08<->PI02`（`54 measured cross-links`）只作旁证：该日志是一次性诊断且混有旧接线，不能单独作为接线证据。<br>`spif3` out 侧（PI00/PF09/PF05/PF03/PF11/PF07）→ 板载 `flash4_0` 为**板级通路**，不需要跳线。 |
 
 ---
 

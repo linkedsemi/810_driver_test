@@ -1,0 +1,15 @@
+{
+  "archive_version": 1,
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "cores": {
+    "TGT": {
+      "port": null,
+      "lines": 215
+    }
+  },
+  "timeout": 60.0,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\spif_test\\tests\\run_test.py",
+  "script_md5": "691fad6dda751253057fdc28957b5270",
+  "timestamp": "2026-10-29T18:33:24"
+}

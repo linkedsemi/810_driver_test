@@ -2,6 +2,18 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 
+# ---------------------------------------------------------------------------
+# pfr_tpm 模块注册。
+# 注意：zephyr/west.yml **没有**注册该模块（`west list` 无此项，
+# `modules/lib/zephyr_pfr_tpm` 也不存在；真身是 modules/lib/pfr_tpm）。
+# app.overlay 里的 "lsqsh_pinctrl_pfr_tpm.dtsi" 只能靠这里就地注册才能被 DT 预处理找到，
+# 否则报 "fatal error: lsqsh_pinctrl_pfr_tpm.dtsi: No such file or directory"。
+# 用相对路径推算（CMAKE_CURRENT_SOURCE_DIR 上溯 4 级 = 工作区根），换工作区/WSL 仍可用。
+# ---------------------------------------------------------------------------
+get_filename_component(PFR_TPM_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../modules/lib/pfr_tpm" ABSOLUTE)
+set(EXTRA_ZEPHYR_MODULES ${PFR_TPM_DIR})
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(cpu1_spi_test)
 

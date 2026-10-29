@@ -9,7 +9,7 @@ meta:
   firmware: [cpu1_spif_test]
   kconfig: [cpu1_spif_test/prj.conf]
   run: tests/run_test.py
-  env: 无外部接线
+  env: 部分需外部接线：loopback_* 需 spif1(master) ↔ spif3(filter in) 6 线跳线（1MHz 单线模式最少 4 根）；其余用例直驱板载 flash4_0，无需接线
   title: PFR spi_filter；master/flash + spif1-spif3 filter 回环
   coverage: tests/COVERAGE.md    # 工程定位 / 测试内容 / 环境需求 / 覆盖矩阵的权威源
 #

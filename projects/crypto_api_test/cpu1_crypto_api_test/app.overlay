@@ -1,0 +1,29 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * crypto_api_test 单核 overlay（cpu1 安全域）。
+ *
+ * 三颗加密引擎节点在 SoC dtsi 里默认 status="disabled"，而驱动 Kconfig
+ * （CRYPTO_LINKEDSEMI_{SM4,SHA256,SHA512}）的 depends 是
+ * DT_HAS_LINKEDSEMI_*_ENABLED ⇒ 不使能节点时 Kconfig 根本不存在。
+ *
+ * 这里统一使能三个节点，但 prj.conf 已把三个驱动 Kconfig 钉成 n，
+ * 实际编入哪颗由各 case 的 case.conf 决定 —— 未使能驱动的节点不会生成
+ * 实例、不注册 SYS_INIT、不占中断。
+ */
+
+&sm4 {
+	status = "okay";
+};
+
+&sha256 {
+	status = "okay";
+};
+
+&sha512 {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛）：
+ * 使能 GPIOA（PA05/PA07 翻转线程所在端口），label 调整只改公共文件。 */
+#include "../../../common/gpio_toggle.dtsi"
