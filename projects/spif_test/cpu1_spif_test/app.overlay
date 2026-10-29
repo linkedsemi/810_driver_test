@@ -24,8 +24,13 @@
 
 / {
 	aliases {
+		/* 回环路径：spif1 发命令/数据，spif3 作 filter/passthrough 监视。
+		 * spifmaster/spifiltermaster 都指向 spif1；spif/spifilter 指向 spif3。
+		 * 旧的 spifmaster=&spif3 是 spif3-master 用例遗留，已纠正。 */
 		spif = &spif3;
-		spifmaster = &spif3;
+		spifilter = &spif3;
+		spifiltermaster = &spif1;
+		spifmaster = &spif1;
 	};
 
 	chosen {

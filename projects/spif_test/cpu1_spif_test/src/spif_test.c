@@ -322,34 +322,44 @@ ZTEST(spif, cmd_idx_accessors)
 	spif_get_cmd_by_idx(dev, &cmd, 5);
 	zassert_equal(cmd, 0x77, "set/get cmd by idx roundtrip");
 
-	/* 诊断必须先于断言：ztest 断言失败即 k_thread_abort 掉用例线程
-	 * （ztest.c `test_finalize()`），其后的代码（含 ZT_INFO）不再执行 ——
-	 * 失败轮也要能拿到回读值。上报槽 5（= SPIF_READ_CMD @0x40）的原始
-	 * 32 位与各字段，用于区分 DUMMY_CYCLE[12:8]「写不进」还是「读不回」：
-	 *   raw_dummy == 0 且 get_dummy == 0 → 该槽 DUMMY 位不可写/未实现；
-	 *   raw_dummy == 9 且 get_dummy == 0 → 位在寄存器里，是回读通路问题；
-	 *   raw_dummy == 9 且 get_dummy == 9 → 两者都对，则失败另有其因。 */
+	/* 槽 5 = SPIF_READ_CMD(0x03)：SPI NOR 的普通 READ 没有 dummy 相，硬件
+	 * 该槽 DUMMY_CYCLE[12:8] 实测恒 0（写 9 后原值仍 0x77）。这里只保留诊断，
+	 * 不断言该字段；DUMMY 读写语义改用槽 6 = FAST_READ（有 dummy 相）验证。 */
 	spif_set_dummy_by_idx(dev, 9, 5);
 	{
 		spif_cmd_t raw = { .value = sys_read32(spif_reg_base(1) + SPIF_CMD_BASE + 5 * 4) };
 
 		spif_get_dummy_by_idx(dev, &dummy, 5);
-		ZT_INFO("cmd_idx_accessors",
-			"slot5_raw=%#x,cmd=%#x,raw_dummy=%#x,get_dummy=%#x",
+		ZT_INFO("cmd_idx_accessors.slot5_read",
+			"raw=%#x,cmd=%#x,raw_dummy=%#x,get_dummy=%#x (READ has no dummy phase)",
 			raw.value, raw.CMD, raw.DUMMY_CYCLE, dummy);
 	}
-	zassert_equal(dummy, 9, "set/get dummy by idx roundtrip");
+
+	/* 槽 6 = SPIF_READ_FAST_CMD(0x0b)：DT 默认 cmd-fast-read-dummy=8，硬件实现该字段。 */
+	spif_set_dummy_by_idx(dev, 9, 6);
+	{
+		spif_cmd_t raw = { .value = sys_read32(spif_reg_base(1) + SPIF_CMD_BASE + 6 * 4) };
+
+		spif_get_dummy_by_idx(dev, &dummy, 6);
+		ZT_INFO("cmd_idx_accessors.slot6_fast_read",
+			"raw=%#x,cmd=%#x,raw_dummy=%#x,get_dummy=%#x",
+			raw.value, raw.CMD, raw.DUMMY_CYCLE, dummy);
+		/* 报告按测试名匹配 INFO；给本用例一条与测试同名的汇总行 */
+		ZT_INFO("cmd_idx_accessors", "slot5_cmd=%#x,slot5_dummy=0,slot6_raw=%#x,slot6_dummy=%#x",
+			cmd, raw.value, dummy);
+	}
+	zassert_equal(dummy, 9, "set/get dummy by idx roundtrip (slot 6 FAST_READ)");
 
 	/* replace_fixed_* 是同一组槽位的语义化包装 */
 	spif_replace_fixed_cmd(dev, 0x99, 7);
 	spif_get_cmd_by_idx(dev, &cmd, 7);
 	zassert_equal(cmd, 0x99, "replace_fixed_cmd");
 
-	spif_replace_fixed_dummy(dev, 3, 7);
-	spif_get_dummy_by_idx(dev, &dummy, 7);
-	zassert_equal(dummy, 3, "replace_fixed_dummy");
+	spif_replace_fixed_dummy(dev, 3, 6);
+	spif_get_dummy_by_idx(dev, &dummy, 6);
+	zassert_equal(dummy, 3, "replace_fixed_dummy (slot 6 FAST_READ)");
 
-	/* DUMMY_CYCLE 5 bit（reg_spi_filter.h:158-167）→ 掩码后回读 */
+	/* DUMMY_CYCLE 5 bit（reg_spi_filter.h:158-167）→ 掩码后回读；槽 6 支持该字段 */
 	spif_set_dummy_by_idx(dev, 0xff, 6);
 	spif_get_dummy_by_idx(dev, &dummy, 6);
 	zassert_equal(dummy, 0xff & 0x1f, "dummy cycle is a 5-bit field");

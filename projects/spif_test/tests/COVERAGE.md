@@ -1,28 +1,41 @@
 # SPI filter (PFR/TMP SPI monitor) 测试覆盖矩阵
 
-- 驱动: `modules/lib/pfr_tpm/drivers/pfr/spi/spi_filter.c`
-- 接口: `modules/lib/pfr_tpm/drivers/pfr/spi/spi_filter.h`；寄存器定义 `reg_spi_filter.h`
+- 驱动: `modules/lib/zephyr_pfr_tpm/drivers/pfr/spi/spi_filter.c`
+- 接口: `modules/lib/zephyr_pfr_tpm/drivers/pfr/spi/spi_filter.h`；寄存器定义 `reg_spi_filter.h`
 - 实例: `spif1..4` @ `0x40070000 / 0x40072000 / 0x40074000 / 0x40076000`（overlay 全 `okay`）
   - 配对 SPI master（dtsi `spi` 属性）：spif1/spif2 → `spi3`；spif3/spif4 → `spi4`
   - `index` 属性 = 0/1/2/3（`spif_get_ctrl_idx()`）
 - 外部路径: **有** —— master 模式直驱总线上挂的 NOR flash
   - `外部: SPIF3 在 master 模式下经 spi4 的 CS0(GPIOI 0) 驱动板上 flash`（需要该 flash 在位）
   - `外部: SPIF1 在 master 模式下经 spi3 的 CS0(GPIOI 8) 驱动板上 flash`（`master_read_with_addr`，参考资产 `spi_monitor_filter` 的 master 路径）
+  - `外部: spif1(master) + spif3(filter/passthrough) 读 flash3_0`（`loopback_filter_*` 四组合 / `loopback_jedec` / `loopback_read_addr`，参考资产 `samples/spi_monitor_filter`：spif3 开滤波/passthrough，spif1 经 spi3 CS0 发 0x9F / 0x03；**spif3 的 in 侧外部接到 spif1/spi3 总线，out 侧接 spi4 flash**）
   - 其余寄存器级用例零外部条件
 - 关键常量: `SPIF_FIXED_CMD_TABLE_NUM=30`、`SPIF_GENERAL_CMD_TABLE_NUM=40`、
   `SPIF_CMD_TABLE_NUM=70`（`spi_filter.h:17-19`）；`SPIF_ADDR_PRIV_REG_NUN=512`、
   `SPIF_ADDR_WHITELIST_SIZE=MB(256)`（`spi_filter.h:16,23`）
 
-## ⚠️ 已知基线：`cmd_idx_accessors` 长期 FAIL（**保持现状是裁定，不是待修缺陷**）
+## `cmd_idx_accessors`（2026-10-29 实机复核完成；旧裁定已被新指令取代）
 
-> **一句话**：本工程 `case_default` 长期停在 **17/18**，唯一 FAIL 即 `cmd_idx_accessors`。
-> 该断言在 **索引 5 槽位**上**不可满足** —— 属 **硬件/表结构事实**，**不是驱动缺陷**。
-> **用户 2026-09-23 裁定：保持现状、登记为已知基线**（与 `spi_test::link_probe` 同性质）。
-> **判据未改动是有意的**（不放宽断言是本项目纪律）—— 后来者**不要再去"修"它**。
+> **2026-10-29 用户新指令**：先判断是测试代码问题还是驱动问题；确认不是测试代码后再看驱动怎么改。
+>
+> **复核结论（2026-10-29 实机确认）**：旧断言在 **索引 5 = SPIF_READ_CMD(0x03)** 上要求
+> DUMMY_CYCLE 可写/可回读。实测 `CMD` 可写（0x77），`DUMMY` 恒 0（raw 位段即 0）。
+> SPI NOR 的普通 READ 命令本身没有 dummy 相，该槽 DUMMY 字段硬件固定 0；
+> 驱动 `spif_set_dummy_by_idx()` 是标准读-改-写，同槽 CMD/EN 正常 ⇒ **不是驱动掩码缺陷**。
+> 因此把 DUMMY 往返判据移到 **索引 6 = SPIF_READ_FAST_CMD(0x0b)**（DT 默认 dummy=8，
+> 硬件实现该字段），槽 5 保留 CMD 往返 + DUMMY 诊断。
+>
+> 实机证据（`reports/2026-10-29-1/spif_test_case_default/serial_TGT.log`）：
+> ```
+> INFO cmd_idx_accessors.slot5_read: raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0 (READ has no dummy phase)
+> INFO cmd_idx_accessors.slot6_fast_read: raw=0x90b,cmd=0xb,raw_dummy=0x9,get_dummy=0x9
+>  PASS - cmd_idx_accessors
+> ```
+> ⇒ **测试代码选槽问题；驱动不需要修改**。`spif_test case_default` 由 17/18 变为 **24/24 PASS**。
 
 | 项 | 内容 |
 |---|---|
-| 失败断言 | `cpu1_spif_test/src/spif_test.c:341` `zassert_equal(dummy, 9, "set/get dummy by idx roundtrip")`<br>（基线行号 `:327`；`:341` 只是新增诊断 `ZT_INFO` 造成的行移，**判据文本一字未改**） |
+| 失败断言 | `cpu1_spif_test/src/spif_test.c:351` `zassert_equal(dummy, 9, "set/get dummy by idx roundtrip")`<br>（基线行号 `:327`；现行为槽 6 版本，判据文本相应改为 `slot 6 FAST_READ`） |
 | 测什么 | 命令表**按索引访问**：命令行 / 使能位 / **DUMMY 周期数**都应正确往返（DUMMY 为 5 bit，`0xff` 应被截断为 `0x1f`） |
 | 实测现象（上板） | 索引 5 槽位：**命令行 ✓、使能位 ✓、DUMMY 周期数 ✗**<br>`INFO cmd_idx_accessors: slot5_raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0`（`reports/2026-09-23-1/spif_test_case_default/serial_TGT.log:38`）<br>关键：**原始寄存器**的 `[12:8]` 位段就是 `0`（`raw_dummy=0`），不只是 API 回读不对 |
 | 确定性 | `reports/2026-09-21-1` / `2026-09-22-1` / `2026-09-23-1` **三轮全 FAIL**，非 flaky |
@@ -35,48 +48,53 @@
 - **位域布局（LSB-first）错**：`spif_cmd_t` 布局 `CMD[7:0] / DUMMY_CYCLE[12:8] / EN[31]` 正确；同文件 `spif_cfg_t` 的位序已被 `cold_reset_state` 实测按住（`cfg=0x40` = `IP_LOCK` bit6）。
 - **同槽其它位也坏**：同用例 `:321-323` 的 **CMD** 往返（`0x77`）PASS；`cmd_table_add_remove` 固定表段的 **EN** 回读 PASS ⇒ 该槽 **CMD/EN 均正常，唯独 DUMMY 位段**。
 
-### 为什么**不**改用例 / **不**删断言（重要，防后续误改）
+### 当前处置（2026-10-29，已完成）
 
-- **保持 FAIL 是 2026-09-23 的裁定**（`OPEN_ITEMS.md` O-31），**不是疏漏、不是"待修"、不是"遗留缺陷"**。
-- 放宽（改 `ztest_test_skip()` / 删断言 / 换槽位）会**掩盖这个真实读数**；本项目纪律 = **判定前不得放宽判据**。
-- ⚠️ **最易踩的误判**（本项曾被误判过一轮）：它与同工程的 `passthrough_mode_switch` **形似而实反** —— 后者是**真驱动缺陷**、已修（`spi_filter.c` 增加 `gpio_ana_enabled` 比对，上板 `FAIL→PASS`，提交 `334ab30`）；**本项不是**驱动缺陷，**照那个思路去改驱动会白费**。
-
-### 旁注（⚠ **推测，未核实**，仅作追查线索）
-
-驱动有「固定命令占用表头前 `SPIF_FIXED_CMD_TABLE_NUM`(=30) 个槽位」的机制，**推测**索引 5 正是一个**固定命令槽**（SPIF 语义上普通 `READ` 无 dummy 相）。**此条未核实**，不作结论、不据此改动任何东西。
+- 槽 5 = `SPIF_READ_CMD(0x03)`，SPI NOR 普通 READ 无 dummy 相，DUMMY 字段硬件固定 0
+  ⇒ 原断言**选错槽位**，属**测试代码问题**，不是驱动缺陷。
+- 已把 DUMMY 往返判据移到槽 6 = `SPIF_READ_FAST_CMD(0x0b)`（DT 默认 dummy=8）；
+  槽 5 保留 CMD 往返与 DUMMY 诊断。
+- 实机确认：槽 6 写 9 → 原始寄存器 `0x90b`、回读 9；`cmd_idx_accessors` PASS。
+  **驱动未修改**；`spif_test case_default` **24/24 PASS**（`reports/2026-10-29-1`）。
 
 ## 用例 → 实例分配（保证用例间零残留）
 
 | 实例 | 用例 | 理由 |
 |---|---|---|
-| spif1 (idx 0) | cold_reset_state / filter_enable_bit / reg_lock_unlock / sck_threshold_config / addr_whitelist_fill / addr_privilege_guard / addr_privilege_valid_region / **master_read_with_addr** | 寄存器级；**从不设置 `flash_size`**，使 `addr_privilege_guard` 的 `flash_size==0` 前置恒成立。`master_read_with_addr` 用 spif1 作 master（配对 spi3） |
-| spif2 (idx 1) | cmd_idx_accessors / cmd_table_add_remove / cmd_table_full_boundary / **passthrough_mode_switch** | 命令表类，互不干扰且自清理；passthrough 只动 pinctrl，收尾切回 filter |
-| spif3 (idx 2) | pinctrl_state_switch / master_read_jedec_id | 管脚/总线类（master 模式） |
+| spif1 (idx 0) | cold_reset_state / filter_enable_bit / reg_lock_unlock / sck_threshold_config / addr_whitelist_fill / addr_privilege_guard / addr_privilege_valid_region / **master_read_with_addr** / **loopback_filter_* 四组合 / loopback_jedec / loopback_read_addr（master）** | 寄存器级；**从不设置 `flash_size`**，使 `addr_privilege_guard` 的 `flash_size==0` 前置恒成立。`master_read_with_addr` 用 spif1 作 master（配对 spi3） |
+| spif2 (idx 1) | cmd_idx_accessors / cmd_table_add_remove / cmd_table_full_boundary / **passthrough_mode_switch** | 命令表类，互不干扰且自清理；passthrough 只动 pinctrl，收尾切回 filter；回环用例还把它当 spif1 的 sibling 切回 filter |
+| spif3 (idx 2) | pinctrl_state_switch / master_read_jedec_id / **loopback_filter_* 四组合 / loopback_jedec / loopback_read_addr（filter）** | 管脚/总线类（master 模式）；回环用例把它置 filter/passthrough 并设 `flash_size=MB(32)`（驱动无 set-0，属本实例持久状态，不影响其他实例的判据）；矩阵用例末尾清回命令表/地址权限 |
 | spif4 (idx 3) | addr_mode_config / flash_size_boundary | 改变 `dev_data->flash_size`（不可逆：驱动无 set-0 接口），隔离到独立实例 |
 | （只读遍历） | bus_pairing | 不改变任何实例状态，只比对 `spif_spi_dev()`/`spif_spi_cs()` 与 DT 声明 |
 
 | 测试项 | 驱动路径(函数+分支) | 维度 | 预期数据 | 预期来源 | 状态 |
 |--------|--------------------|------|----------|----------|------|
-| device_ready | `SPI_FILTER_INIT`（`spi_filter.c:1799-1901`）：`.spi = DEVICE_DT_GET(DT_INST_PHANDLE(inst, spi))`、`.cs = GPIO_DT_SPEC_INST_GET(inst, cs_gpios)`、`.index = DT_INST_PROP(inst, index)`；`spif_get_ctrl_idx()`（`:195`）、`spif_spi_dev()`（`:1407`）、`spif_spi_cs()`（`:1416`） | 功能通路 | 4 实例 ready；`ctrl_idx == 0..3`；配对 spi 设备非 NULL 且 ready；cs gpio 端口非 NULL 且 ready | DT 绑定契约（`linkedsemi,spi-filter.yaml` 的 `spi`/`cs-gpios`/`index`） | ⏳ |
-| cold_reset_state | `linkedsemi_spi_filter_cold_reset()`（`:1629-1730`）：clock off → reset toggle → clock on → pinctrl → `spif_reg_unlock` → `spif_memset_addr_whitelist(1)` → 固定表 30 槽写入（`:1676-1682`）→ `SPIF_TARGET_ADDR=0xffffffff`、`SPIF_BCMD_RANGE=7`（`:1683-1684`）→ `SPIF_CFG` 初值（`:1685-1693`）→ `spif_clk_check_config(0,2,BIT(12)-1,false)`（`:1701`）→ `SPIF_INTR_MASK`（`:1702-1706`） | 复位/掉电 | `CFG.EN==0`、`OPERATION_MODE==0`、`ADDR_3B_4B_SEL==0`、`TARGET_ADDR_MODE_SEL==0`、`IP_LOCK==1`、`DMA_EN==0`；`SPIF_TARGET_ADDR==0xffffffff`；`SPIF_BCMD_RANGE==0x7`；`INTR_MASK.ERROR_OVERFLOW/ERROR==1`、`TARGET_ADDR==0`；固定表 30 槽 EN 全为 0；槽 0 的 CMD == DT `cmd-page-program` | 驱动源码常量 + DT 属性 | ⏳ |
-| filter_enable_bit | `spif_enable()`（`:1617-1628`）与 `spif_filter_enable()`（`:1171-1185`）只改 `SPIF_CFG.EN` | 功能通路 | true → `CFG.EN==1`，false → `CFG.EN==0`（两种 API 各验一次） | 驱动源码（同一寄存器位） | ⏳ |
-| reg_lock_unlock | `spif_reg_unlock()`（`:1187-1195`）写 `IP_LOCK=1`；`spif_reg_lock()`（`:1197-1205`）写 `IP_LOCK=0` | 功能通路 | `reg_unlock → IP_LOCK==1`；`reg_lock → IP_LOCK==0` | 驱动源码（**API 名与写入值反相**，见「上游缺陷观察」#6） | ⏳ |
-| sck_threshold_config | `spif_clk_check_config()`（`:1207-1237`）：写 `SPIF_SCK_SET.SCK_DIV`（3 bit）、`SPIF_SCK_FQC_HI`、`SPIF_SCK_FQC_LO`、`SPIF_INTR_MASK.SCK_CHECK` | 功能通路 | `SCK_DIV==5`；`SCK_FQC_HI==2`；`SCK_FQC_LO==100`；`SCK_CHECK==1`，再以 `enable_intr=false` 置 0 | 寄存器字段位宽（`reg_spi_filter.h:170-206`） | ⏳ |
-| addr_mode_config | `spif_4byte_mode_config()`（`:1372`）/ `spif_3byte_mode_config()`（`:1360`）写 `SPIF_CFG.ADDR_3B_4B_SEL` | 功能通路 | 4B 模式 → `ADDR_3B_4B_SEL==1`；3B 模式 → `==0` | 驱动源码。**注**：不用 `spif_addr_mode_peek()` —— 它返回的是 `ADDR_3B_4B_FLAG`（状态位，另一 bit），不是 SEL | ⏳ |
-| cmd_idx_accessors | `spif_set_cmd_by_idx()`（`:960`）/ `spif_get_cmd_by_idx()`（`:1041`）/ `spif_set_dummy_by_idx()`（`:1011`）/ `spif_get_dummy_by_idx()`（`:1059`）/ `spif_replace_fixed_cmd()`（`:979`）/ `spif_replace_fixed_dummy()`（`:1030`） | 功能通路 | CMD 与 DUMMY_CYCLE 按 idx 读写往返一致；DUMMY_CYCLE 为 5 bit → `0xff` 回读 `0x1f` | 寄存器字段位宽（`spif_cmd_t`：CMD[7:0]、DUMMY_CYCLE[12:8]、EN[31]） | ⏳ |
-| cmd_table_add_remove | `spif_add_general_cmd()`（`:813-850`）、`spif_get_cmd_slot()`（`:356`）、`spif_get_general_cmd_slot()`（`:339`）、`spif_remove_general_cmd()`（`:1077-1109`，未命中 → `-EINVAL`）；**＋固定表分支**：`spif_add_cmd()`（`:855-900`，第二循环 `:879-889`）、`spif_set_cmd_by_idx()`（`:964-981`，只改 HW、不动 SW 镜像）、`spif_remove_cmd()`（`:1115-1154`） | 功能通路+异常参数 | add 后槽位存在；remove 后 `get_general_cmd_slot()` 返回 `-ENOSR`；重复 remove → `-EINVAL`；**固定表段**（制造 HW/SW 不一致后）：`spif_get_cmd_slot(0x03)` 先返回 `-ENOSR`，`spif_add_cmd(0x03)` 后目标槽 `CMD==0x03` 且 **`EN==1`** | API 契约 + 驱动源码。固定表段是**缺陷 #1 修复的回归护栏**（修复前 EN 保持 0 ⇒ 该段必 FAIL），**只断言 `CMD`/`EN`**（union 未清零，缺陷 #20） | ⏳ |
-| cmd_table_full_boundary | `spif_add_general_cmd()` 耗尽 general 表 → `-ENOSR`（`:838-841`） | 边界长度 | 前 40 个 add 全 0；**第 41 个 → `-ENOSR`**（容量 = `SPIF_GENERAL_CMD_TABLE_NUM=40`）；用例末尾清空 40 槽 | 驱动源码常量（±1 边界） | ⏳ |
-| addr_whitelist_fill | `spif_memset_addr_whitelist()`（`:798-811`）→ `spif_memset_read/write_addr_whitelist()`（`:756-796`）：num=0 → 全 0；num=1 → 全 `0xffffffff`；非法 num → 仅 `DEV_ERR`、**不改寄存器**（`:802-806`）。回读经**间接 SRAM 读端口**（`:471-502` 时序：`SPIF_READ_SRAM_ADDR`→`SPIF_READ_ADDR_REQ`→轮询→`SPIF_READ_SRAM_DATA`） | 功能通路+异常参数 | 读/写两个窗口（各 512 寄存器）首/尾寄存器与 num 对应；num=2 后寄存器保持不变 | 驱动源码 + `SPIF_ADDR_PRIV_REG_NUN=512`；**回读路径**：该表对 CPU **直读恒 0**（写窗只写不读，驱动自身也从不直读：`CONFIG_SPI_FILTER_ADDR_WHITELIST_BUF=y` 时读 SW 镜像 `:454-469`）⇒ 用例改用间接端口复刻，见 TRIAGE_QSPI_SPIF_2026-09-18.md §2 S2 | ⏳ |
-| addr_privilege_guard | `spif_address_privilege_config()`（`:738-754`）在 `flash_size==0` 时透传 `_op()` 返回值；`_op` 守卫：`addr >= MB(256) \|\| len == 0` → `-EINVAL`（`:653-656`） | 异常参数+边界长度 | `addr == MB(256)` → `-EINVAL`；`addr > MB(256)` → `-EINVAL`；`len == 0` → `-EINVAL`；`addr == MB(256) - KB(16)`（上界内）→ `0` | 驱动源码（±1 边界）。**前置**：spif1 的 `flash_size` 必须为 0（默认值；本工程从不在 spif1 上调 `spif_flash_size_set`）。⚠️ 守卫分支命中驱动缺陷 #1（未配对 release），本项安全性论证见下 | ⏳ |
-| addr_privilege_valid_region | `spif_address_privilege_config_op()`（`:636-736`）镜像路径（`CONFIG_SPI_FILTER_ADDR_WHITELIST_BUF=y` → `spif_peek_rw_area()`（`:455-469`））；`reg_off = addr/KB(512)`、`bit_off = (addr%KB(512))/KB(16)`（`:678-679`）与 `total_bit_num` 循环（`:690-732`）。回读经**间接 SRAM 读端口**（同 `addr_whitelist_fill`） | 功能通路 | 前置整片清 0 后，`MB(1)..+KB(16)` 的 READ 窗口 `reg_off=2` 位 0 置 1（寄存器 == `0x1`）；同区间 DISABLE → 清 0；WRITE 窗口独立寄存器 == `0x1` | 驱动源码 + 地址/长度换算公式；**回读路径**同 `addr_whitelist_fill`（直读恒 0 ⇒ 改走间接端口），见 TRIAGE_QSPI_SPIF_2026-09-18.md §2 S3 | ⏳ |
-| flash_size_boundary | `spif_flash_size_set()`（`:181-193`）守卫：`size == 0 \|\| !IS_ALIGNED(MB(256), size)` → `-EINVAL`；`spif_flash_size_get()`（`:174-179`） | 边界长度 | `0` → `-EINVAL`；`3`（不能整除）→ `-EINVAL`；`MB(256)+1` → `-EINVAL`；`MB(256)` → `0` 且回读一致；`KB(64)` → `0` 且回读一致 | 驱动源码（`IS_ALIGNED(a,b)` ≡ `a % b == 0`） | ⏳ |
-| pinctrl_state_switch | `spif_switch_to_filter()`（`:1478-1487`，`pinctrl_apply_state(DEFAULT)` + `spif_enable(true)`）、`spif_switch_to_master()`（`:1540-1544` → `spif_switch_to_master_handle()` `:1505-1538`，相邻实例 master 态检查 → `-EBUSY`）、`spif_pinctrl_filter/master_mode_check()`（`:1456,1468`） | 功能通路 | 先确保相邻 spif4 在 filter 态；`switch_to_filter → filter_mode_check()==true`；`switch_to_master → 0 且 master_mode_check()==true`；切回后 `CFG.EN==1` | 驱动源码（pinctrl 状态表比对实管脚 func） | ⏳ |
-| master_read_jedec_id | `spif_switch_to_master()`（`:1540`）+ `spif_spi_dev()`（`:1407`）/`spif_spi_cs()`（`:1416`）取配对 SPI 与 CS，`spi_transceive()` 发 `0x9F` | 功能通路 | SPI 事务返回 0；**实测 3 字节 JEDEC ID 经 `ZT_INFO` 上报**（不预设厂商值，基准待 P6 实测） | 外部器件（NOR flash JEDEC 读 ID 契约） | ⏳ |
-| passthrough_mode_switch | `spif_passthrough_analog_mux_enable()`（`:1552-1561`：恒 `pinctrl_apply_state(PASSTHROUGH)`，**忽略 `enable`**）+ `spif_pinctrl_passthrough_mode_check()`（`:1468` → `spif_pinctrl_mode_check()` `:1424-1450`，比对 pinctrl 状态表与实管脚 func）+ `spif_switch_to_filter()`（`:1478-1487`：`pinctrl_apply_state(DEFAULT)` + `spif_enable(true)`） | 功能通路 | cold_reset 后 `filter_mode_check()==true` 且 `passthrough_mode_check()==false`；使能后 `passthrough_mode_check()==true` 且 `filter_mode_check()==false`（两态互斥）；切回 filter 后 `filter_mode_check()==true`、`passthrough_mode_check()==false` | 驱动源码（pinctrl 三态状态表 default/passthrough/master） | ⏳ |
-| bus_pairing | DT 静态契约：`SPI_FILTER_INIT` 的 `.spi = DEVICE_DT_GET(DT_INST_PHANDLE(inst, spi))`、`.cs = GPIO_DT_SPEC_INST_GET(inst, cs_gpios)`；访问器 `spif_spi_dev()`（`:1407`）/ `spif_spi_cs()`（`:1416`） | 功能通路 | 4 实例：`spif_spi_dev(dev)` 指针 == `DT_PHANDLE(spifN, spi)` 解析出的设备；`spif_spi_cs(dev)` 的 port+pin == DT `cs-gpios`（spif1→spi3/GPIOI8、spif2→spi3/GPIOG2、spif3→spi4/GPIOI0、spif4→spi4/GPIOQ0） | DT 声明（模块 dtsi `&spifN { spi=…; cs-gpios=…; }`）。**零外部条件** | ⏳ |
-| master_read_with_addr | `spif_switch_to_master()`（`:1540`）+ `spif_spi_dev()`/`spif_spi_cs()` 取配对 spi3 与 CS，`spi_transceive()` 发 `0x03 + 24bit 地址`（复刻参考资产 `spi_monitor_send_read_addr()` 的命令形态） | 功能通路 | SPI 事务返回 0；读回字节经 `ZT_INFO` 上报（不预设器件值） | 外部器件（spi3 总线上 NOR flash 读契约）。`spif1` 的相邻实例为 `spif2`（驱动内 `spif_spi_check_dev_name_arr`）。⚠️ **待实测确认器件存在**：参考资产有该路径但**无实测输出佐证**（其 `README.rst` 是 hello_world 模板）；**P6 登记时带 `#` 屏蔽，由父会话处理**（裁定 2026-09-17） | ⏳ |
+| device_ready | `SPI_FILTER_INIT`（`spi_filter.c:1799-1901`）：`.spi = DEVICE_DT_GET(DT_INST_PHANDLE(inst, spi))`、`.cs = GPIO_DT_SPEC_INST_GET(inst, cs_gpios)`、`.index = DT_INST_PROP(inst, index)`；`spif_get_ctrl_idx()`（`:195`）、`spif_spi_dev()`（`:1407`）、`spif_spi_cs()`（`:1416`） | 功能通路 | 4 实例 ready；`ctrl_idx == 0..3`；配对 spi 设备非 NULL 且 ready；cs gpio 端口非 NULL 且 ready | DT 绑定契约（`linkedsemi,spi-filter.yaml` 的 `spi`/`cs-gpios`/`index`） | ✅ 2026-10-29 PASS |
+| cold_reset_state | `linkedsemi_spi_filter_cold_reset()`（`:1629-1730`）：clock off → reset toggle → clock on → pinctrl → `spif_reg_unlock` → `spif_memset_addr_whitelist(1)` → 固定表 30 槽写入（`:1676-1682`）→ `SPIF_TARGET_ADDR=0xffffffff`、`SPIF_BCMD_RANGE=7`（`:1683-1684`）→ `SPIF_CFG` 初值（`:1685-1693`）→ `spif_clk_check_config(0,2,BIT(12)-1,false)`（`:1701`）→ `SPIF_INTR_MASK`（`:1702-1706`） | 复位/掉电 | `CFG.EN==0`、`OPERATION_MODE==0`、`ADDR_3B_4B_SEL==0`、`TARGET_ADDR_MODE_SEL==0`、`IP_LOCK==1`、`DMA_EN==0`；`SPIF_TARGET_ADDR==0xffffffff`；`SPIF_BCMD_RANGE==0x7`；`INTR_MASK.ERROR_OVERFLOW/ERROR==1`、`TARGET_ADDR==0`；固定表 30 槽 EN 全为 0；槽 0 的 CMD == DT `cmd-page-program` | 驱动源码常量 + DT 属性 | ✅ 2026-10-29 PASS |
+| filter_enable_bit | `spif_enable()`（`:1617-1628`）与 `spif_filter_enable()`（`:1171-1185`）只改 `SPIF_CFG.EN` | 功能通路 | true → `CFG.EN==1`，false → `CFG.EN==0`（两种 API 各验一次） | 驱动源码（同一寄存器位） | ✅ 2026-10-29 PASS |
+| reg_lock_unlock | `spif_reg_unlock()`（`:1187-1195`）写 `IP_LOCK=1`；`spif_reg_lock()`（`:1197-1205`）写 `IP_LOCK=0` | 功能通路 | `reg_unlock → IP_LOCK==1`；`reg_lock → IP_LOCK==0` | 驱动源码（**API 名与写入值反相**，见「上游缺陷观察」#6） | ✅ 2026-10-29 PASS |
+| sck_threshold_config | `spif_clk_check_config()`（`:1207-1237`）：写 `SPIF_SCK_SET.SCK_DIV`（3 bit）、`SPIF_SCK_FQC_HI`、`SPIF_SCK_FQC_LO`、`SPIF_INTR_MASK.SCK_CHECK` | 功能通路 | `SCK_DIV==5`；`SCK_FQC_HI==2`；`SCK_FQC_LO==100`；`SCK_CHECK==1`，再以 `enable_intr=false` 置 0 | 寄存器字段位宽（`reg_spi_filter.h:170-206`） | ✅ 2026-10-29 PASS |
+| addr_mode_config | `spif_4byte_mode_config()`（`:1372`）/ `spif_3byte_mode_config()`（`:1360`）写 `SPIF_CFG.ADDR_3B_4B_SEL` | 功能通路 | 4B 模式 → `ADDR_3B_4B_SEL==1`；3B 模式 → `==0` | 驱动源码。**注**：不用 `spif_addr_mode_peek()` —— 它返回的是 `ADDR_3B_4B_FLAG`（状态位，另一 bit），不是 SEL | ✅ 2026-10-29 PASS |
+| cmd_idx_accessors | `spif_set_cmd_by_idx()`（`:960`）/ `spif_get_cmd_by_idx()`（`:1041`）/ `spif_set_dummy_by_idx()`（`:1015`）/ `spif_get_dummy_by_idx()`（`:1063`）/ `spif_replace_fixed_cmd()`（`:979`）/ `spif_replace_fixed_dummy()`（`:1034`） | 功能通路 | CMD 与 DUMMY_CYCLE 按 idx 读写往返一致（DUMMY 用槽 6 FAST_READ；槽 5 READ 无 dummy 相，仅诊断）；DUMMY_CYCLE 为 5 bit → `0xff` 回读 `0x1f` | 寄存器字段位宽（`spif_cmd_t`：CMD[7:0]、DUMMY_CYCLE[12:8]、EN[31]）+ 槽 6 的 DT 默认 dummy=8 | ✅ 2026-10-29 PASS |
+| cmd_table_add_remove | `spif_add_general_cmd()`（`:813-850`）、`spif_get_cmd_slot()`（`:356`）、`spif_get_general_cmd_slot()`（`:339`）、`spif_remove_general_cmd()`（`:1077-1109`，未命中 → `-EINVAL`）；**＋固定表分支**：`spif_add_cmd()`（`:855-900`，第二循环 `:879-889`）、`spif_set_cmd_by_idx()`（`:964-981`，只改 HW、不动 SW 镜像）、`spif_remove_cmd()`（`:1115-1154`） | 功能通路+异常参数 | add 后槽位存在；remove 后 `get_general_cmd_slot()` 返回 `-ENOSR`；重复 remove → `-EINVAL`；**固定表段**（制造 HW/SW 不一致后）：`spif_get_cmd_slot(0x03)` 先返回 `-ENOSR`，`spif_add_cmd(0x03)` 后目标槽 `CMD==0x03` 且 **`EN==1`** | API 契约 + 驱动源码。固定表段是**缺陷 #1 修复的回归护栏**（修复前 EN 保持 0 ⇒ 该段必 FAIL），**只断言 `CMD`/`EN`**（union 未清零，缺陷 #20） | ✅ 2026-10-29 PASS |
+| cmd_table_full_boundary | `spif_add_general_cmd()` 耗尽 general 表 → `-ENOSR`（`:838-841`） | 边界长度 | 前 40 个 add 全 0；**第 41 个 → `-ENOSR`**（容量 = `SPIF_GENERAL_CMD_TABLE_NUM=40`）；用例末尾清空 40 槽 | 驱动源码常量（±1 边界） | ✅ 2026-10-29 PASS |
+| addr_whitelist_fill | `spif_memset_addr_whitelist()`（`:798-811`）→ `spif_memset_read/write_addr_whitelist()`（`:756-796`）：num=0 → 全 0；num=1 → 全 `0xffffffff`；非法 num → 仅 `DEV_ERR`、**不改寄存器**（`:802-806`）。回读经**间接 SRAM 读端口**（`:471-502` 时序：`SPIF_READ_SRAM_ADDR`→`SPIF_READ_ADDR_REQ`→轮询→`SPIF_READ_SRAM_DATA`） | 功能通路+异常参数 | 读/写两个窗口（各 512 寄存器）首/尾寄存器与 num 对应；num=2 后寄存器保持不变 | 驱动源码 + `SPIF_ADDR_PRIV_REG_NUN=512`；**回读路径**：该表对 CPU **直读恒 0**（写窗只写不读，驱动自身也从不直读：`CONFIG_SPI_FILTER_ADDR_WHITELIST_BUF=y` 时读 SW 镜像 `:454-469`）⇒ 用例改用间接端口复刻，见 TRIAGE_QSPI_SPIF_2026-09-18.md §2 S2 | ✅ 2026-10-29 PASS |
+| addr_privilege_guard | `spif_address_privilege_config()`（`:738-754`）在 `flash_size==0` 时透传 `_op()` 返回值；`_op` 守卫：`addr >= MB(256) \|\| len == 0` → `-EINVAL`（`:653-656`） | 异常参数+边界长度 | `addr == MB(256)` → `-EINVAL`；`addr > MB(256)` → `-EINVAL`；`len == 0` → `-EINVAL`；`addr == MB(256) - KB(16)`（上界内）→ `0` | 驱动源码（±1 边界）。**前置**：spif1 的 `flash_size` 必须为 0（默认值；本工程从不在 spif1 上调 `spif_flash_size_set`）。⚠️ 守卫分支命中驱动缺陷 #1（未配对 release），本项安全性论证见下 | ✅ 2026-10-29 PASS |
+| addr_privilege_valid_region | `spif_address_privilege_config_op()`（`:636-736`）镜像路径（`CONFIG_SPI_FILTER_ADDR_WHITELIST_BUF=y` → `spif_peek_rw_area()`（`:455-469`））；`reg_off = addr/KB(512)`、`bit_off = (addr%KB(512))/KB(16)`（`:678-679`）与 `total_bit_num` 循环（`:690-732`）。回读经**间接 SRAM 读端口**（同 `addr_whitelist_fill`） | 功能通路 | 前置整片清 0 后，`MB(1)..+KB(16)` 的 READ 窗口 `reg_off=2` 位 0 置 1（寄存器 == `0x1`）；同区间 DISABLE → 清 0；WRITE 窗口独立寄存器 == `0x1` | 驱动源码 + 地址/长度换算公式；**回读路径**同 `addr_whitelist_fill`（直读恒 0 ⇒ 改走间接端口），见 TRIAGE_QSPI_SPIF_2026-09-18.md §2 S3 | ✅ 2026-10-29 PASS |
+| flash_size_boundary | `spif_flash_size_set()`（`:181-193`）守卫：`size == 0 \|\| !IS_ALIGNED(MB(256), size)` → `-EINVAL`；`spif_flash_size_get()`（`:174-179`） | 边界长度 | `0` → `-EINVAL`；`3`（不能整除）→ `-EINVAL`；`MB(256)+1` → `-EINVAL`；`MB(256)` → `0` 且回读一致；`KB(64)` → `0` 且回读一致 | 驱动源码（`IS_ALIGNED(a,b)` ≡ `a % b == 0`） | ✅ 2026-10-29 PASS |
+| loopback_filter_legal_both | `loopback_setup()`（0x03 在白名单、0x4000 allow）→ spif1 master 发 `0x03 + 0x004000` → 读 `SPIF_DMA_DATA` | 功能通路+过滤判据 | `CMD_ERR==0`、`ADDR_ERR==0`；SPI 事务返回 0 | 驱动/HW 语义：命令合法 + 地址合法无 ERROR；`spi_filter.c:240-268` ISR | ✅ 2026-10-29 PASS，`raw=0, cmd_err=0, addr_err=0` |
+| loopback_filter_legal_cmd_bad_addr | `loopback_setup()` 后 `spif_address_privilege_config(READ, DISABLE, 0x4000, 16K)`；spif1 发 `0x03 + 0x004000` | 功能通路+过滤判据 | `CMD_ERR==0`、`ADDR_ERR==1`、`ERROR_CMD==0x03`、`ERROR_ADDR==0x4000`；SPI 事务返回 0 | 驱动/HW 语义：命令合法 + 地址非法报 ADDR_ERR；`reg_spi_filter.h` 的 `spif_dma_data_t` | ✅ 2026-10-29 PASS，`raw=0x3000045, cmd_err=0, addr_err=1, error_cmd=0x3, error_addr=0x4000` |
+| loopback_filter_bad_cmd_legal_addr | `loopback_setup()` 后 `spif_remove_cmd(spif3, 0x03)`；spif1 发 `0x03 + 0x004000` | 功能通路+过滤判据 | `CMD_ERR==1`、`ADDR_ERR==0`、`ERROR_CMD==0x03`；SPI 事务返回 0 | 驱动/HW 语义：命令非法 + 地址合法报 CMD_ERR | ✅ 2026-10-29 PASS，`raw=0x3000002, cmd_err=1, addr_err=0, error_cmd=0x3` |
+| loopback_filter_bad_cmd_bad_addr | `loopback_setup()` 后同时移除 0x03 + `DISABLE 0x4000`；spif1 发 `0x03 + 0x004000` | 功能通路+过滤判据 | `CMD_ERR==1`、`ADDR_ERR==0`（先查命令，命中即上报）、`ERROR_CMD==0x03`；SPI 事务返回 0 | 驱动/HW 语义：命令非法 + 地址非法时地址不再检查 | ✅ 2026-10-29 PASS，`raw=0x3000002, cmd_err=1, addr_err=0, error_cmd=0x3` |
+| loopback_jedec | `linkedsemi_spi_filter_cold_reset()`（`:1629`）→ `spif_flash_size_set(MB(32))` → `spif_filter_enable` → `spif_passthrough_analog_mux_enable` → `spif_add_cmd(0x9f/0x03)` → `spif_switch_to_filter(spif2)` → `spif_switch_to_master(spif1)`（`:1540`）→ `spi_transceive(spif_spi_dev(spif1), 0x9F)` | 功能通路+外部器件 | `spif3` filter/passthrough 态检查通过；`spif1` master 态检查通过；SPI 事务返回 0；JEDEC 3 字节非全 0 且非全 0xFF | 参考资产 `samples/spi_monitor_filter/src/main.c` 的 `spi_monitor_jedec_id()`；外部 flash3_0（spi3 CS0=GPIOI8） | ✅ 2026-10-29 PASS，`jedec=ef4021` |
+| loopback_read_addr | 同 `loopback_jedec` 的前置；`spi_transceive(spif_spi_dev(spif1), 0x03 + 0x004000)`，读 8 字节 | 功能通路+外部器件 | SPI 事务返回 0；读回字节经 `ZT_INFO` 上报（不预设器件值） | 参考资产 `spi_monitor_send_read_addr()`（0x03 + 24bit addr）；外部 flash3_0 | ✅ 2026-10-29 PASS，`data=ff0a01ed` |
+| pinctrl_state_switch | `spif_switch_to_filter()`（`:1478-1487`，`pinctrl_apply_state(DEFAULT)` + `spif_enable(true)`）、`spif_switch_to_master()`（`:1540-1544` → `spif_switch_to_master_handle()` `:1505-1538`，相邻实例 master 态检查 → `-EBUSY`）、`spif_pinctrl_filter/master_mode_check()`（`:1456,1468`） | 功能通路 | 先确保相邻 spif4 在 filter 态；`switch_to_filter → filter_mode_check()==true`；`switch_to_master → 0 且 master_mode_check()==true`；切回后 `CFG.EN==1` | 驱动源码（pinctrl 状态表比对实管脚 func） | ✅ 2026-10-29 PASS |
+| master_read_jedec_id | `spif_switch_to_master()`（`:1540`）+ `spif_spi_dev()`（`:1407`）/`spif_spi_cs()`（`:1416`）取配对 SPI 与 CS，`spi_transceive()` 发 `0x9F` | 功能通路 | SPI 事务返回 0；**实测 3 字节 JEDEC ID 经 `ZT_INFO` 上报**（不预设厂商值，基准待 P6 实测） | 外部器件（NOR flash JEDEC 读 ID 契约） | ✅ 2026-10-29 PASS |
+| passthrough_mode_switch | `spif_passthrough_analog_mux_enable()`（`:1552-1561`：恒 `pinctrl_apply_state(PASSTHROUGH)`，**忽略 `enable`**）+ `spif_pinctrl_passthrough_mode_check()`（`:1468` → `spif_pinctrl_mode_check()` `:1424-1450`，比对 pinctrl 状态表与实管脚 func）+ `spif_switch_to_filter()`（`:1478-1487`：`pinctrl_apply_state(DEFAULT)` + `spif_enable(true)`） | 功能通路 | cold_reset 后 `filter_mode_check()==true` 且 `passthrough_mode_check()==false`；使能后 `passthrough_mode_check()==true` 且 `filter_mode_check()==false`（两态互斥）；切回 filter 后 `filter_mode_check()==true`、`passthrough_mode_check()==false` | 驱动源码（pinctrl 三态状态表 default/passthrough/master） | ✅ 2026-10-29 PASS |
+| bus_pairing | DT 静态契约：`SPI_FILTER_INIT` 的 `.spi = DEVICE_DT_GET(DT_INST_PHANDLE(inst, spi))`、`.cs = GPIO_DT_SPEC_INST_GET(inst, cs_gpios)`；访问器 `spif_spi_dev()`（`:1407`）/ `spif_spi_cs()`（`:1416`） | 功能通路 | 4 实例：`spif_spi_dev(dev)` 指针 == `DT_PHANDLE(spifN, spi)` 解析出的设备；`spif_spi_cs(dev)` 的 port+pin == DT `cs-gpios`（spif1→spi3/GPIOI8、spif2→spi3/GPIOG2、spif3→spi4/GPIOI0、spif4→spi4/GPIOQ0） | DT 声明（模块 dtsi `&spifN { spi=…; cs-gpios=…; }`）。**零外部条件** | ✅ 2026-10-29 PASS |
+| master_read_with_addr | `spif_switch_to_master()`（`:1540`）+ `spif_spi_dev()`/`spif_spi_cs()` 取配对 spi3 与 CS，`spi_transceive()` 发 `0x03 + 24bit 地址`（复刻参考资产 `spi_monitor_send_read_addr()` 的命令形态） | 功能通路 | SPI 事务返回 0；读回字节经 `ZT_INFO` 上报（不预设器件值） | 外部器件（spi3 总线上 NOR flash 读契约）。`spif1` 的相邻实例为 `spif2`（驱动内 `spif_spi_check_dev_name_arr`）。⚠️ **待实测确认器件存在**：参考资产有该路径但**无实测输出佐证**（其 `README.rst` 是 hello_world 模板）；**P6 登记时带 `#` 屏蔽，由父会话处理**（裁定 2026-09-17） | ✅ 2026-10-29 PASS |
 
-> 状态标记：`⏳` = **P4 新增，仅编译通过，待 P6 首次实测**。
+> 状态标记：`✅ 2026-10-29 PASS` = 实机 24/24 通过（证据 `reports/2026-10-29-1/spif_test_case_default/serial_TGT.log`）。
 
 ## 跳过项
 
@@ -110,7 +128,7 @@
 >
 > | 资产 | 与本工程的关系 | 处置 |
 > |---|---|---|
-> | `spi_monitor_filter\`（**模块内不存在**，`modules/lib/pfr_tpm/samples/` 无同名目录 —— 用户新给） | `src/main.c`：`spif3`(filter) + `spif1`(master)，`cold_reset → flash_size MB(32) → filter_enable → passthrough → switch_to_master(spif1) → 裸 spi_transceive(0x9f)/(0x03+addr) → 读 flash3_0 JEDEC`。与模块 `spi_monitor_*` 家族（11 个）同骨架，`LOG_MODULE` 名 `spi_monitor_01_003_005` 对应命令 0x01/0x03/0x05 白名单类 | **按 810 规范重写为 ztest**：断言可确定的部分（`passthrough_mode_switch` / `bus_pairing` / `master_read_with_addr`）；日志/镜像/`spif_add_cmd` 部分跳过（见上） |
+> | `spi_monitor_filter`（**模块内存在**：`modules/lib/zephyr_pfr_tpm/samples/spi_monitor_filter/`；用户版本与模块版内容有差异） | `src/main.c`：`spif3`(filter) + `spif1`(master)，`cold_reset → flash_size MB(32) → filter_enable → passthrough → switch_to_master(spif1) → 裸 spi_transceive(0x9f)/(0x03+addr) → 读 flash3_0 JEDEC`。与模块 `spi_monitor_*` 家族（11 个）同骨架，`LOG_MODULE` 名 `spi_monitor_01_003_005` 对应命令 0x01/0x03/0x05 白名单类 | **按 810 规范重写为 ztest**：断言可确定的部分（`passthrough_mode_switch` / `bus_pairing` / `master_read_with_addr`）；日志/镜像/`spif_add_cmd` 部分跳过（见上） |
 > | `spi_master_communication\`（模块内**有**同名 sample，内容有差异） | 与模块版的差异见下方「模块版 vs 用户版差异」 | 差异**不影响**本工程既有用例的对外契约（`spif3` master → `flash4_0` 的配对关系两版一致）；已记录，**未修改既有用例**（铁律：先报告） |
 >
 > 资产目录内含 `spi_monitor_filter/main.c`（与 `src/main.c` 内容不同，疑似早期草稿）与 `sample.yaml`/`README.rst`
@@ -193,11 +211,12 @@
 - 固定命令表 30 槽容量（`SPIF_FIXED_CMD_TABLE_NUM`）由 `cold_reset_state` 的
   EN 全 0 + 槽 0 的 CMD 值覆盖，不额外造用例。
 
-## P4.7 生成说明（2026-09-17，只生成 + 编译通过，未烧录）
+## P4.7 生成说明（2026-09-17 生成；2026-10-29 上板 24/24）
 
 - 纳入外部参考资产 `spi_monitor_filter`（出处见上）后**新增 3 项**：`passthrough_mode_switch`、
-  `bus_pairing`、`master_read_with_addr`，共 **18 项**；编译通过
-  （`west build -p auto -d …/tests/case_default/build/target -b lsqsh_evb@1os/lsqsh/cpu1`，rc=0，无 warning）。
+  `bus_pairing`、`master_read_with_addr`；2026-10-29 又新增 6 项回环
+  `loopback_filter_*` 四组合 / `loopback_jedec` / `loopback_read_addr`，共 **24 项**；编译通过并上板
+  **24/24 PASS**（`reports/2026-10-29-1`，`cmake --build build_spif_1os` 无 warning）。
 - 三项的可断言性分级：`bus_pairing` / `passthrough_mode_switch` **零外部条件**；
   `master_read_with_addr` 走 `spif1 → spi3 → flash` 外部路径（与 `master_read_jedec_id` 同源）。
 - 参考资产中**不可断言**的部分（监视日志、`flash_size != 0` 地址镜像、`spif_add_cmd`、DMA 日志）
@@ -241,8 +260,14 @@ addr_privilege_valid_region | len == 16384 | handcalc:KB(16)=16384（原文给�
 flash_size_boundary | max == 0x10000000; min_ok == 0x10000 | handcalc:MB(256)=0x10000000；KB(64)=65536=0x10000
 master_read_jedec_id | !none | !none:原表自述"不预设厂商值，基准待实测"；观测项不设独立预期
 master_read_with_addr | !none | !none:同上（"不预设器件值"）
+loopback_filter_bad_cmd_bad_addr | cmd_err == 1; addr_err == 0; por_addr == 0; error_cmd == 0x03 | spec:命令先查，命令非法 + 地址非法时地址不再上报
+loopback_filter_bad_cmd_legal_addr | cmd_err == 1; addr_err == 0; por_addr == 0; error_cmd == 0x03 | spec:命令非法 + 地址合法只报 CMD_ERR
+loopback_filter_legal_both | cmd_err == 0; addr_err == 0; por_addr == 0 | spec:命令合法 + 地址合法无 ERROR
+loopback_filter_legal_cmd_bad_addr | cmd_err == 0; addr_err == 1; por_addr == 1; error_cmd == 0x03; error_addr == 0x4000 | spec:命令合法 + 地址非法只报 ADDR_ERR，POR_ADDR=1 表示读地址
+loopback_jedec | !none | !none:JEDEC 读回值来自外部 flash3_0，测试只判非全 0/全 FF，不预设厂商值
+loopback_read_addr | !none | !none:0x03 读回数据来自外部 flash3_0，仅判事务 ret=0
 filter_enable_bit | !none | !none:true/false 两种 API 各验一次的合取，无单一标量
-cmd_idx_accessors | !none | !none:CMD/DUMMY_CYCLE 按 idx 往返的合取；本次归档该项 FAIL 且无 INFO
+cmd_idx_accessors | !none | !none:CMD（槽5）与 DUMMY（槽6 FAST_READ）按 idx 往返的合取；2026-10-29 PASS
 cmd_table_add_remove | !none | !none:add/remove/重复 remove/固定表段四条路径合取
 pinctrl_state_switch | !none | !none:filter/master 两态 check 的合取，无单一标量
 passthrough_mode_switch | !none | !none:同上

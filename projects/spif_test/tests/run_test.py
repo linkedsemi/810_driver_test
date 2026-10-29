@@ -76,6 +76,9 @@ TEST_NAMES = [
     "addr_whitelist_fill", "bus_pairing", "cmd_idx_accessors",
     "cmd_table_add_remove", "cmd_table_full_boundary", "cold_reset_state",
     "device_ready", "filter_enable_bit", "flash_size_boundary",
+    "loopback_filter_bad_cmd_bad_addr", "loopback_filter_bad_cmd_legal_addr",
+    "loopback_filter_legal_both", "loopback_filter_legal_cmd_bad_addr",
+    "loopback_jedec", "loopback_read_addr",
     "master_read_jedec_id", "master_read_with_addr", "passthrough_mode_switch",
     "pinctrl_state_switch", "reg_lock_unlock", "sck_threshold_config",
 ]
@@ -149,7 +152,7 @@ def write_markdown_report(case, results, infos, reasons, notes, expected, date_d
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             env=env_line, execution=execution, mem_line=mem_line,
             result=f"{'PASS' if case_ok else 'FAIL'} ({passed}/{ran})"),
-        '- 接线: SPIF in/out 管脚 <-> spi4 CS0 上挂 NOR flash（master 模式用例）；其余零接线',
+        '- 接线: spif1(master) 经 spi3 CS0(GPIOI8) 读 flash3_0；spif3 filter 在 spi4 侧监视；spif3 master 读 spi4 CS0 flash；其余零接线',
         *([""] + ["> " + missing_evidence_note(missing)] if missing else []),
         "",
         "## 测试项结果",

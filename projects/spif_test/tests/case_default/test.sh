@@ -2,7 +2,7 @@
 # SPI filter (PFR/TMP) driver test (single-core cpu1 secure domain)
 #
 # What is tested:
-#   pfr_tpm spi_filter 全 API：cold_reset 终态(CFG/TARGET_ADDR/BCMD/INTR_MASK/固定命令表) / 命令表 add-remove 与 40 槽容量边界 / 固定表 idx 存取 / 地址白名单显式与掩码填充 / 地址权限守卫与位回读 / SCK 阈值与中断掩码 / 3B-4B 模式位 / flash_size 整除边界 / IP_LOCK 语义 / pinctrl filter-master 切换 / master 模式读 flash JEDEC ID。
+#   pfr_tpm spi_filter 全 API：cold_reset 终态(CFG/TARGET_ADDR/BCMD/INTR_MASK/固定命令表) / 命令表 add-remove 与 40 槽容量边界 / 固定表 idx 存取 / 地址白名单显式与掩码填充 / 地址权限守卫与位回读 / SCK 阈值与中断掩码 / 3B-4B 模式位 / flash_size 整除边界 / IP_LOCK 语义 / pinctrl filter-master 切换 / master 模式读 flash JEDEC ID / spif1(master)+spif3(filter) 回环读 flash3_0（JEDEC + 0x03 地址读）/ 命令×地址 2×2 过滤矩阵（合法/非法组合的 CMD_ERR/ADDR_ERR 锁存与日志）。
 #
 # CPU1 (target role, TGT token):
 #   - Single-core project, no peer core; test_main drives all ZTESTs itself.

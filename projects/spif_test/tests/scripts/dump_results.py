@@ -58,6 +58,9 @@ TEST_NAMES = [
     "addr_whitelist_fill", "bus_pairing", "cmd_idx_accessors",
     "cmd_table_add_remove", "cmd_table_full_boundary", "cold_reset_state",
     "device_ready", "filter_enable_bit", "flash_size_boundary",
+    "loopback_filter_bad_cmd_bad_addr", "loopback_filter_bad_cmd_legal_addr",
+    "loopback_filter_legal_both", "loopback_filter_legal_cmd_bad_addr",
+    "loopback_jedec", "loopback_read_addr",
     "master_read_jedec_id", "master_read_with_addr", "passthrough_mode_switch",
     "pinctrl_state_switch", "reg_lock_unlock", "sck_threshold_config",
 ]
