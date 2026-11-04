@@ -21,7 +21,6 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 | case_otbn_all | OTBN hash + ECC + RSA 全开 | hash×5 + cipher×1 + ecc×4 + rsa×4 + pointops×5 + thread×1 + robustness×N = 20+N |
 | case_sw_hw_mix | 软件 ECC/SM2 + 硬件 AES/SHA/SM4 | hash×4 + cipher×4 + ecc×4 + rsa×2 + robustness×N = 14+N |
 | case_all_on_max | 16 项全开（除 DELEGATION） | hash×5 + cipher×4 + ecc×4 + rsa×4 + pointops×5 + thread×1 + robustness×N = 23+N |
-| case_thread_mix | otbn_all + THREADING_ALT + 双线程并发 | hash×5 + cipher×4 + ecc×4 + rsa×4 + pointops×5 + thread×1 + robustness×N = 23+N |
 
 > 测试项数会因 `MBEDTLS_ECP_DP_SM2_ENABLED`、`CONFIG_MBEDTLS_LINKEDSEMI_OTBN`、
 > `CONFIG_MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT` 等条件编译变化；上表为各 case 典型项数。
@@ -97,8 +96,8 @@ mbedtls API + Kconfig 依赖；判定 = 标准向量逐字节比对 + 解密回�
 > ⇒ `rsa2048/3072/4096_modexp` 的 KAT 逐字节相等**不能证明 OTBN 被使用**
 > （`case_sw_baseline` 与 `case_otbn_rsa` 的 RSA 结果逐字节相同）。
 > 上述 4 个 KAT 项在**开了 `CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT` 的 case**
-> （`case_otbn_rsa` / `case_otbn_all` / `case_all_on_max` / `case_otbn_sha256_hw_sm3` /
-> `case_thread_mix`）下**预期**走 OTBN，但"是否真的走到"由新增的 `rsa2048_otbn_hit`
+> （`case_otbn_rsa` / `case_otbn_all` / `case_all_on_max` / `case_otbn_sha256_hw_sm3`）
+> 下**预期**走 OTBN，但"是否真的走到"由新增的 `rsa2048_otbn_hit`
 > 单独负责断言（`#if defined(MBEDTLS_RSA_OTBN_HOOK)` 守卫，纯软件 case 不编入）。
 
 ### OTBN PointOps（直接 API）

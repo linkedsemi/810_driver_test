@@ -54,6 +54,29 @@ void rlog_emitf(const char *fmt, ...);
 			printk(fmt, ##__VA_ARGS__);                            \
 		}                                                              \
 	} while (0)
+#elif defined(RLOG_LOCAL_ECHO_ALL)
+/* Echo every ztest line locally as well as relaying it, EXCEPT while the I3C
+ * target dispatcher is driving its 35 suites: those are timing-critical (the
+ * TX-FIFO refill must answer inside the controller's read window) and a
+ * synchronous printk there costs points.  Driver suites run from the mode
+ * worker with the flag clear, so their "Running TESTSUITE ..." / PASS /
+ * "TESTSUITE ... succeeded" lines do show up on this core's own UART - which is
+ * what `itest peer <group>` users want to see.
+ *
+ * Why a flag and not a thread-name test: ztest runs every test in its own
+ * thread (ztest.c creates `ztest_thread`), so `k_current_get()` inside
+ * PRINT_DATA is never the "i3c_target" thread and a name guard suppressed
+ * nothing -- measured 2026-10-28, all 35 target suites were echoed locally.
+ * The flag is set/cleared around the dispatcher's suite call instead.
+ * `rlog_local_echo_off` lives in common/rlog.c. */
+extern volatile int rlog_local_echo_off;
+#define PRINT_DATA(fmt, ...)                                                   \
+	do {                                                                   \
+		rlog_emitf(fmt, ##__VA_ARGS__);                                \
+		if (!rlog_local_echo_off) {                                    \
+			printk(fmt, ##__VA_ARGS__);                            \
+		}                                                              \
+	} while (0)
 #else
 #define PRINT_DATA(fmt, ...) rlog_emitf(fmt, ##__VA_ARGS__)
 #endif

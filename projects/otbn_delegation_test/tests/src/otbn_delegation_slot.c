@@ -13,7 +13,7 @@
  * sends only a slot id + digest; cpu1 does the signing.
  *
  * CPU1 (target, delegation SERVER): the slots are registered in test_main().
- * The shared items call otbn_deleg_ecdsa_sign_slot() directly with a local
+ * The shared items call otbn_deleg_mbedtls_ecdsa_sign_slot() directly with a local
  * request, which exercises the same handler a delegated request reaches.
  *
  * Both cores verify the resulting signature with the known public key. The
@@ -85,7 +85,7 @@ static int fixed_rng(void *p, unsigned char *out, size_t len)
 	const struct fixed_rng_ctx *rng = p;
 
 	if (len != rng->len) {
-		return -EINVAL;
+		return LS_OTBN_ERR_INVAL;
 	}
 	memcpy(out, rng->bytes, len);
 	return 0;
@@ -102,7 +102,7 @@ static int slot_sign(uint32_t slot, mbedtls_ecp_group_id gid,
 	size_t n_size = slot_curve_size(gid);
 
 	if (n_size == 0) {
-		return -EINVAL;
+		return LS_OTBN_ERR_INVAL;
 	}
 
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
@@ -142,21 +142,21 @@ static int slot_sign(uint32_t slot, mbedtls_ecp_group_id gid,
 	otbn_deleg_cache_flush(&slot_id, sizeof(slot_id));
 	otbn_deleg_cache_flush(digest_buf, sizeof(digest_buf));
 
-	req.op = OTBN_DELEG_OP_ECDSA_SIGN_SLOT;
+	req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT;
 	req.arg[0] = (uint32_t)gid;
 	req.arg[1] = (uint32_t)send_len;
 	req.data[0] = (uint8_t *)&slot_id;
 	req.data[1] = digest_buf;
 	req.data[2] = r_out;
 	req.data[3] = s_out;
-	return otbn_deleg_ecdsa_sign_slot(&req, &reply);
+	return otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply);
 #else
 	ARG_UNUSED(slot);
 	ARG_UNUSED(digest);
 	ARG_UNUSED(dlen);
 	ARG_UNUSED(r_out);
 	ARG_UNUSED(s_out);
-	return -EOPNOTSUPP;
+	return LS_OTBN_ERR_NOSUPP;
 #endif
 }
 
@@ -305,7 +305,7 @@ ZTEST(otbn_slot, s01_sign_verify)
 	for (i = 0; i < 20; i++) {
 		err = slot_sign(SLOT_P256A, MBEDTLS_ECP_DP_SECP256R1,
 				otbn_slot_hash, sizeof(otbn_slot_hash), r, s);
-		if (err != -ENOENT) {
+		if (err != LS_OTBN_ERR_NOENT) {
 			break;
 		}
 		k_msleep(50);
@@ -329,7 +329,7 @@ ZTEST(otbn_slot, s02_unregistered)
 
 	err = slot_sign(SLOT_EMPTY, MBEDTLS_ECP_DP_SECP256R1,
 			otbn_slot_hash, sizeof(otbn_slot_hash), r, s);
-	zassert_equal(err, -ENOENT, "unregistered slot returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_NOENT, "unregistered slot returned %d", err);
 	ZT_INFO("unregistered", "rc=%d", err);
 }
 
@@ -344,7 +344,7 @@ ZTEST(otbn_slot, s03_curve_mismatch)
 	 * curve. */
 	err = slot_sign(SLOT_P256A, MBEDTLS_ECP_DP_SECP384R1,
 			otbn_slot_hash, sizeof(otbn_slot_hash), r, s);
-	zassert_equal(err, -EINVAL, "curve mismatch returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_CURVE, "curve mismatch returned %d", err);
 	ZT_INFO("curve_mismatch", "rc=%d", err);
 }
 
@@ -354,18 +354,22 @@ ZTEST(otbn_slot, s04_register_validation)
 	static const uint8_t zero_key[32] = {0};
 	__attribute__((aligned(32))) uint8_t r[MAX_SIG_LEN] = {0};
 	__attribute__((aligned(32))) uint8_t s[MAX_SIG_LEN] = {0};
+	int status;
 	int err;
 
-	/* 0 and n are outside the valid scalar range [1, n-1]. */
-	err = ls_otbn_ecdsa_key_slot_register(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP256R1,
-					      zero_key);
-	zassert_equal(err, MBEDTLS_ERR_ECP_INVALID_KEY,
-		      "zero private key returned %d", err);
+	/* 0 and n are outside the valid scalar range [1, n-1]. The plain form
+	 * reports the crypto-layer marker; the _ex form also carries mbedtls'
+	 * exact value in status. */
+	err = ls_otbn_ecdsa_key_slot_register_ex(SLOT_SCRATCH,
+						 MBEDTLS_ECP_DP_SECP256R1,
+						 zero_key, &status);
+	zassert_equal(err, LS_OTBN_ERR_MBEDTLS, "zero private key returned %d", err);
+	zassert_equal(status, MBEDTLS_ERR_ECP_INVALID_KEY,
+		      "zero key detail %d", status);
 
 	err = ls_otbn_ecdsa_key_slot_register(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP256R1,
 					      p256_n_le);
-	zassert_equal(err, MBEDTLS_ERR_ECP_INVALID_KEY,
-		      "d=n returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_MBEDTLS, "d=n returned %d", err);
 
 	/* n-1 is the largest valid scalar and must be accepted. */
 	err = ls_otbn_ecdsa_key_slot_register(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP256R1,
@@ -377,18 +381,18 @@ ZTEST(otbn_slot, s04_register_validation)
 	/* Out-of-whitelist curve and out-of-range slot id. */
 	err = ls_otbn_ecdsa_key_slot_register(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP521R1,
 					      otbn_slot_key_le);
-	zassert_equal(err, -EOPNOTSUPP, "unsupported curve returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_NOSUPP, "unsupported curve returned %d", err);
 
 	err = ls_otbn_ecdsa_key_slot_register(SLOT_OOR_SERVER, MBEDTLS_ECP_DP_SECP256R1,
 					      otbn_slot_key_le);
-	zassert_equal(err, -EINVAL, "out-of-range slot returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_RANGE, "out-of-range slot returned %d", err);
 
 	err = ls_otbn_ecdsa_key_slot_register(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP256R1,
 					      NULL);
-	zassert_equal(err, -EINVAL, "NULL key returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL key returned %d", err);
 
 	err = ls_otbn_ecdsa_key_slot_unregister(SLOT_SCRATCH);
-	zassert_equal(err, -ENOENT, "unregister empty slot returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_NOENT, "unregister empty slot returned %d", err);
 
 	/* Register, sign, unregister, sign again: the slot disappears. */
 	err = ls_otbn_ecdsa_key_slot_register(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP256R1,
@@ -402,7 +406,7 @@ ZTEST(otbn_slot, s04_register_validation)
 	zassert_equal(err, 0, "unregister scratch returned %d", err);
 	err = slot_sign(SLOT_SCRATCH, MBEDTLS_ECP_DP_SECP256R1,
 			otbn_slot_hash, sizeof(otbn_slot_hash), r, s);
-	zassert_equal(err, -ENOENT, "sign after unregister returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_NOENT, "sign after unregister returned %d", err);
 
 	ZT_INFO("register_validation", "ok=1");
 #else
@@ -510,6 +514,7 @@ ZTEST(otbn_slot, s08_client_args)
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
 	mbedtls_ecp_group grp;
 	mbedtls_mpi r, s;
+	int status;
 	int err;
 
 	mbedtls_ecp_group_init(&grp);
@@ -522,18 +527,25 @@ ZTEST(otbn_slot, s08_client_args)
 	/* NULL arguments are rejected before any round trip. */
 	err = mbedtls_ls_otbn_ecdsa_sign_slot(NULL, &r, &s, SLOT_P256A,
 					      otbn_slot_hash, 32, NULL, NULL);
-	zassert_equal(err, -EINVAL, "NULL grp returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL grp returned %d", err);
 	err = mbedtls_ls_otbn_ecdsa_sign_slot(&grp, NULL, &s, SLOT_P256A,
 					      otbn_slot_hash, 32, NULL, NULL);
-	zassert_equal(err, -EINVAL, "NULL r returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL r returned %d", err);
 	err = mbedtls_ls_otbn_ecdsa_sign_slot(&grp, &r, NULL, SLOT_P256A,
 					      otbn_slot_hash, 32, NULL, NULL);
-	zassert_equal(err, -EINVAL, "NULL s returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL s returned %d", err);
 	err = mbedtls_ls_otbn_ecdsa_sign_slot(&grp, &r, &s, SLOT_P256A,
 					      NULL, 32, NULL, NULL);
-	zassert_equal(err, -EINVAL, "NULL digest returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL digest returned %d", err);
 
-	/* Out-of-whitelist curve fails locally with -EIO. */
+	/* The _ex form returns the same code and fills the backend detail. */
+	err = mbedtls_ls_otbn_ecdsa_sign_slot_ex(NULL, &r, &s, SLOT_P256A,
+						 otbn_slot_hash, 32, NULL, NULL,
+						 &status);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL grp (ex) returned %d", err);
+	zassert_equal(status, 0, "ex status %d", status);
+
+	/* Out-of-whitelist curve fails locally with LS_OTBN_ERR_NOSUPP. */
 	{
 		mbedtls_ecp_group p521;
 		mbedtls_ecp_group_init(&p521);
@@ -541,14 +553,15 @@ ZTEST(otbn_slot, s08_client_args)
 		zassert_equal(err, 0, "load P521 failed: %d", err);
 		err = mbedtls_ls_otbn_ecdsa_sign_slot(&p521, &r, &s, SLOT_P256A,
 						      otbn_slot_hash, 32, NULL, NULL);
-		zassert_equal(err, -EIO, "unsupported curve returned %d", err);
+		zassert_equal(err, LS_OTBN_ERR_NOSUPP, "unsupported curve returned %d", err);
 		mbedtls_ecp_group_free(&p521);
 	}
 
-	/* A valid slot id one past the table is rejected by the peer. */
+	/* A slot id past the table is rejected by the peer with LS_OTBN_ERR_RANGE; an id
+	 * inside the table that was never registered gives LS_OTBN_ERR_NOENT instead. */
 	err = mbedtls_ls_otbn_ecdsa_sign_slot(&grp, &r, &s, SLOT_OOR_CLIENT,
 					      otbn_slot_hash, 32, NULL, NULL);
-	zassert_equal(err, -ENOENT, "out-of-range slot returned %d", err);
+	zassert_equal(err, LS_OTBN_ERR_RANGE, "out-of-range slot returned %d", err);
 
 	mbedtls_ecp_group_free(&grp);
 	mbedtls_mpi_free(&r);
@@ -571,7 +584,7 @@ ZTEST(otbn_slot, s09_server_args)
 	int err;
 
 	memcpy(digest, otbn_slot_hash, sizeof(otbn_slot_hash));
-	req.op = OTBN_DELEG_OP_ECDSA_SIGN_SLOT;
+	req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT;
 	req.arg[0] = MBEDTLS_ECP_DP_SECP256R1;
 	req.arg[1] = sizeof(otbn_slot_hash);
 	req.data[0] = (uint8_t *)&slot_id;
@@ -581,42 +594,43 @@ ZTEST(otbn_slot, s09_server_args)
 	otbn_deleg_cache_flush(&slot_id, sizeof(slot_id));
 	otbn_deleg_cache_flush(digest, sizeof(digest));
 
-	/* Every shared buffer is mandatory. */
+	/* Every shared buffer is mandatory; a missing one is a malformed bus
+	 * request, not an application argument error (LS_OTBN_ERR_INVAL is the API's). */
 	req.data[0] = NULL;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_PROTO,
 		      "NULL data[0] accepted");
 	req.data[0] = (uint8_t *)&slot_id;
 	req.data[1] = NULL;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_PROTO,
 		      "NULL data[1] accepted");
 	req.data[1] = digest;
 	req.data[2] = NULL;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_PROTO,
 		      "NULL data[2] accepted");
 	req.data[2] = r;
 	req.data[3] = NULL;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_PROTO,
 		      "NULL data[3] accepted");
 	req.data[3] = s;
 
 	/* The client truncates, so a longer digest length here is a protocol
 	 * violation and must be rejected before any key access. */
 	req.arg[1] = 64;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_MSGSIZE,
 		      "oversized digest length accepted");
 	req.arg[1] = sizeof(otbn_slot_hash);
 
 	/* Curve must match the slot's registration. */
 	req.arg[0] = MBEDTLS_ECP_DP_SECP384R1;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_CURVE,
 		      "P384 request on a P256 slot accepted");
 	req.arg[0] = MBEDTLS_ECP_DP_SECP521R1;
-	zassert_equal(otbn_deleg_ecdsa_sign_slot(&req, &reply), -EINVAL,
+	zassert_equal(otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply), LS_OTBN_ERR_CURVE,
 		      "unsupported curve accepted");
 	req.arg[0] = MBEDTLS_ECP_DP_SECP256R1;
 
 	/* Sanity: the same request with valid scalars succeeds. */
-	err = otbn_deleg_ecdsa_sign_slot(&req, &reply);
+	err = otbn_deleg_mbedtls_ecdsa_sign_slot(&req, &reply);
 	zassert_equal(err, 0, "valid local request returned %d", err);
 
 	ZT_INFO("server_args", "ok=1");
@@ -1045,6 +1059,80 @@ ZTEST(otbn_slot, s17_p384_32b_server_rng)
 	mbedtls_ecp_group_free(&grp);
 
 	ZT_INFO("p384_32b_srv_rng", "iterations=20,fails=%d", fails);
+#else
+	ztest_test_skip();
+#endif
+}
+
+/*
+ * The _ex form must return the same driver code as the plain form and report
+ * the backend detail only when the failure came from the crypto layer. A
+ * driver cause leaves *status at 0; a NULL status pointer must be harmless.
+ */
+ZTEST(otbn_slot, s18_sign_slot_ex_status)
+{
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
+	mbedtls_ecp_group grp;
+	mbedtls_mpi r, s;
+	int status;
+	int err;
+
+	mbedtls_ecp_group_init(&grp);
+	mbedtls_mpi_init(&r);
+	mbedtls_mpi_init(&s);
+	err = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
+	zassert_equal(err, 0, "load P256 failed: %d", err);
+
+	/* NULL argument: driver code, no backend detail. */
+	status = 0x5A5A;
+	err = mbedtls_ls_otbn_ecdsa_sign_slot_ex(NULL, &r, &s, SLOT_P256A,
+						 otbn_slot_hash, sizeof(otbn_slot_hash),
+						 NULL, NULL, &status);
+	zassert_equal(err, LS_OTBN_ERR_INVAL, "NULL grp returned %d", err);
+	zassert_equal(status, 0, "NULL grp status %d", status);
+
+	/* Unregistered slot: NOENT, no backend detail. */
+	status = 0x5A5A;
+	err = mbedtls_ls_otbn_ecdsa_sign_slot_ex(&grp, &r, &s, SLOT_EMPTY,
+						 otbn_slot_hash, sizeof(otbn_slot_hash),
+						 NULL, NULL, &status);
+	zassert_equal(err, LS_OTBN_ERR_NOENT, "empty slot returned %d", err);
+	zassert_equal(status, 0, "empty slot status %d", status);
+
+	/* Curve mismatch: CURVE, no backend detail. */
+	{
+		mbedtls_ecp_group p384;
+
+		mbedtls_ecp_group_init(&p384);
+		err = mbedtls_ecp_group_load(&p384, MBEDTLS_ECP_DP_SECP384R1);
+		zassert_equal(err, 0, "load P384 failed: %d", err);
+		status = 0x5A5A;
+		err = mbedtls_ls_otbn_ecdsa_sign_slot_ex(&p384, &r, &s, SLOT_P256A,
+							 otbn_slot_hash,
+							 sizeof(otbn_slot_hash),
+							 NULL, NULL, &status);
+		zassert_equal(err, LS_OTBN_ERR_CURVE, "curve mismatch returned %d", err);
+		zassert_equal(status, 0, "curve mismatch status %d", status);
+		mbedtls_ecp_group_free(&p384);
+	}
+
+	/* Success: status may be omitted, and is 0 when supplied. */
+	err = mbedtls_ls_otbn_ecdsa_sign_slot_ex(&grp, &r, &s, SLOT_P256A,
+						 otbn_slot_hash, sizeof(otbn_slot_hash),
+						 NULL, NULL, NULL);
+	zassert_equal(err, 0, "success with NULL status returned %d", err);
+
+	status = 0x5A5A;
+	err = mbedtls_ls_otbn_ecdsa_sign_slot_ex(&grp, &r, &s, SLOT_P256A,
+						 otbn_slot_hash, sizeof(otbn_slot_hash),
+						 NULL, NULL, &status);
+	zassert_equal(err, 0, "success returned %d", err);
+	zassert_equal(status, 0, "success status %d", status);
+
+	mbedtls_mpi_free(&r);
+	mbedtls_mpi_free(&s);
+	mbedtls_ecp_group_free(&grp);
+	ZT_INFO("s18_sign_slot_ex_status", "ok=1");
 #else
 	ztest_test_skip();
 #endif

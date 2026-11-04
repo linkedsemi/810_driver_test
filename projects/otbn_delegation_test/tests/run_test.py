@@ -116,6 +116,7 @@ TEST_NAMES = [
     "t80_proxy_responds_within_timeout",
     "t88_sign_bad_d_ge_n",
     "t89_verify_bad_q_infinity",
+    "t91_err_domain",
 ]
 
 # Per-case item sets: a case whose test surface differs from the project default
@@ -167,6 +168,7 @@ TEST_NAMES_BY_CASE = {
         "t80_proxy_responds_within_timeout",
         "t88_sign_bad_d_ge_n",
         "t89_verify_bad_q_infinity",
+        "t91_err_domain",
     ],
     # case_alt_via_proxy = the default matrix (client calls the PLAIN
     # mbedtls_ecdsa_* names, which ARE the proxy in this config) + t90 (the
@@ -198,6 +200,7 @@ TEST_NAMES_BY_CASE = {
         "t88_sign_bad_d_ge_n",
         "t89_verify_bad_q_infinity",
         "t90_plain_api_mailbox_bound",
+        "t91_err_domain",
     ],
     # case_rsa_delegation = the RSA family of the delegation bus, in its own
     # source file (tests/src/otbn_delegation_rsa.c). r01/r02/r03 run on BOTH
@@ -207,6 +210,7 @@ TEST_NAMES_BY_CASE = {
         "r01_rsa_modexp_roundtrip_2048",
         "r02_rsa_modexp_roundtrip_4096",
         "r03_reject_unsupported_modulus",
+        "r04_rsa_size_boundary",
         "r90_rsa_mailbox_bound",
     ],
     # case_slot = private-key slot signing (own TU). s01/s02/s03/s05/s06/s07
@@ -231,6 +235,7 @@ TEST_NAMES_BY_CASE = {
         "s15_p384_fixed_rng",
         "s16_p384_server_rng",
         "s17_p384_32b_server_rng",
+        "s18_sign_slot_ex_status",
     ],
 }
 

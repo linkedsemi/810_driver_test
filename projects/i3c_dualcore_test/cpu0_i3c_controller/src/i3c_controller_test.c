@@ -279,7 +279,7 @@ static void i3c_controller_after(void *fixture)
 /* ========== Test implementations ========== */
 
 #if I3C_TEST_EN_DAA_DISCOVERY
-ZTEST(i3c_controller, daa_discovery)
+ZTEST(i3c,daa_discovery)
 {
 	(void)ctrl_test_begin(I3C_TEST_DAA_DISCOVERY);
 
@@ -295,7 +295,7 @@ ZTEST(i3c_controller, daa_discovery)
 #endif /* I3C_TEST_EN_DAA_DISCOVERY */
 
 #if I3C_TEST_EN_WRITE_8
-ZTEST(i3c_controller, write_8)
+ZTEST(i3c,write_8)
 {
 	uint8_t buf[8];
 	uint8_t cmd_buf[2 + sizeof(buf)];
@@ -320,7 +320,7 @@ ZTEST(i3c_controller, write_8)
 #endif /* I3C_TEST_EN_WRITE_8 */
 
 #if I3C_TEST_EN_WRITE_100
-ZTEST(i3c_controller, write_100)
+ZTEST(i3c,write_100)
 {
 	uint8_t buf[100];
 	uint8_t cmd_buf[2 + sizeof(buf)];
@@ -345,7 +345,7 @@ ZTEST(i3c_controller, write_100)
 #endif /* I3C_TEST_EN_WRITE_100 */
 
 #if I3C_TEST_EN_READ_32_DIRECT
-ZTEST(i3c_controller, read_32_direct)
+ZTEST(i3c,read_32_direct)
 {
 	uint8_t buf[32];
 
@@ -385,7 +385,7 @@ ZTEST(i3c_controller, read_32_direct)
 #endif /* I3C_TEST_EN_READ_32_DIRECT */
 
 #if I3C_TEST_EN_WRITE_READ_1
-ZTEST(i3c_controller, write_read_1)
+ZTEST(i3c,write_read_1)
 {
 	uint8_t rd[1];
 	uint8_t wr = CMD_DUMMY_BYTE;	/* 占位字节，读长度已由 SET_READ_LEN 设置 */
@@ -411,7 +411,7 @@ ZTEST(i3c_controller, write_read_1)
 #endif /* I3C_TEST_EN_WRITE_READ_1 */
 
 #if I3C_TEST_EN_WRITE_READ_15
-ZTEST(i3c_controller, write_read_15)
+ZTEST(i3c,write_read_15)
 {
 	uint8_t rd[15];
 	uint8_t wr = CMD_DUMMY_BYTE;	/* 占位字节，读长度已由 SET_READ_LEN 设置 */
@@ -437,7 +437,7 @@ ZTEST(i3c_controller, write_read_15)
 #endif /* I3C_TEST_EN_WRITE_READ_15 */
 
 #if I3C_TEST_EN_WRITE_READ_16
-ZTEST(i3c_controller, write_read_16)
+ZTEST(i3c,write_read_16)
 {
 	uint8_t rd[16];
 	uint8_t wr = CMD_DUMMY_BYTE;	/* 占位字节，读长度已由 SET_READ_LEN 设置 */
@@ -463,7 +463,7 @@ ZTEST(i3c_controller, write_read_16)
 #endif /* I3C_TEST_EN_WRITE_READ_16 */
 
 #if I3C_TEST_EN_WRITE_READ_17
-ZTEST(i3c_controller, write_read_17)
+ZTEST(i3c,write_read_17)
 {
 	uint8_t rd[17];
 	uint8_t wr = CMD_DUMMY_BYTE;	/* 占位字节，读长度已由 SET_READ_LEN 设置 */
@@ -489,7 +489,7 @@ ZTEST(i3c_controller, write_read_17)
 #endif /* I3C_TEST_EN_WRITE_READ_17 */
 
 #if I3C_TEST_EN_WRITE_READ_32
-ZTEST(i3c_controller, write_read_32)
+ZTEST(i3c,write_read_32)
 {
 	uint8_t rd[32];
 	uint8_t wr = CMD_DUMMY_BYTE;	/* 占位字节，读长度已由 SET_READ_LEN 设置 */
@@ -524,7 +524,7 @@ ZTEST(i3c_controller, write_read_32)
  * 从机 write_received_cb 收到索引后设置 tx_offset = idx，tx_len = 16；
  * restart 后 write_requested_cb 按 tx_offset 预填。
  */
-ZTEST(i3c_controller, write_indexed_read_16)
+ZTEST(i3c,write_indexed_read_16)
 {
 	uint8_t rd[16];
 	uint8_t idx;
@@ -581,7 +581,7 @@ static int g_wdr16_critical_step = -1;
 static int g_wdrlen17_critical_step = -1;
 static int g_wdrlen32_critical_step = -1;
 
-ZTEST(i3c_controller, write_delay_read_16)
+ZTEST(i3c,write_delay_read_16)
 {
 	static const int DELAY_STEP_NS = 50;    /* 档位单位（与协议头注释一致） */
 	static const int DELAY_MAX_STEP = 255;  /* 扫描上限 255 档 = 12750ns */
@@ -748,7 +748,7 @@ ZTEST(i3c_controller, write_delay_read_16)
  * 临界值跨 len 上报 INFO 作特征数据（不同跑次 ISR 调度时机不同，
  * 临界档天然有波动，不作为通过标准）。
  */
-ZTEST(i3c_controller, write_delay_read_len)
+ZTEST(i3c,write_delay_read_len)
 {
 	static const int DELAY_STEP_NS = 50;    /* 档位单位（与协议头注释一致） */
 	static const int DELAY_MAX_STEP = 255;  /* 扫描上限 255 档 = 12750ns */
@@ -865,7 +865,7 @@ ZTEST(i3c_controller, write_delay_read_len)
  * 没有 restart 前 ~3us（末字节 T-bit 之后）的装填死线。
  */
 #define WRITE_STOP_READ_TEST(id, name, len)                                       \
-	ZTEST(i3c_controller, name)                                               \
+	ZTEST(i3c,name)                                               \
 	{                                                                         \
 		uint8_t rd[len];                                                  \
 		uint8_t wr = CMD_DUMMY_BYTE;                                      \
@@ -919,7 +919,7 @@ WRITE_STOP_READ_TEST(I3C_TEST_WRITE_STOP_READ_32, write_stop_read_32, 32)
 #endif
 
 #if I3C_TEST_EN_IBI
-ZTEST(i3c_controller, ibi)
+ZTEST(i3c,ibi)
 {
 	if (!ctrl_test_begin(I3C_TEST_IBI)) {
 		ctrl_test_end();
@@ -955,7 +955,7 @@ ZTEST(i3c_controller, ibi)
 #endif /* I3C_TEST_EN_IBI */
 
 #if I3C_TEST_EN_HOT_JOIN
-ZTEST(i3c_controller, hot_join)
+ZTEST(i3c,hot_join)
 {
 	uint8_t rd[32];
 
@@ -1008,7 +1008,7 @@ ZTEST(i3c_controller, hot_join)
 #endif /* I3C_TEST_EN_HOT_JOIN */
 
 #if I3C_TEST_EN_CCC_BASIC
-ZTEST(i3c_controller, ccc_basic)
+ZTEST(i3c,ccc_basic)
 {
 	struct i3c_ccc_getpid pid;
 	struct i3c_ccc_getbcr bcr;
@@ -1064,7 +1064,7 @@ ZTEST(i3c_controller, ccc_basic)
  * 成功为准，ret 只记录不强判。
  */
 #define READ_UNDERRUN_TEST(id, name, short_len, read_len)                        \
-	ZTEST(i3c_controller, name)                                              \
+	ZTEST(i3c,name)                                              \
 	{                                                                        \
 		uint8_t rd[read_len];                                            \
 		uint8_t wr = CMD_DUMMY_BYTE;                                     \
@@ -1111,7 +1111,7 @@ READ_UNDERRUN_TEST(I3C_TEST_READ_UNDERRUN_16_32, read_underrun_16_32, 16, 32)
 #endif
 
 #if I3C_TEST_EN_NACK_BAD_ADDR
-ZTEST(i3c_controller, nack_bad_addr)
+ZTEST(i3c,nack_bad_addr)
 {
 	uint8_t rd[8];
 	uint8_t wr = CMD_DUMMY_BYTE;
@@ -1162,7 +1162,7 @@ ZTEST(i3c_controller, nack_bad_addr)
 #endif /* I3C_TEST_EN_NACK_BAD_ADDR */
 
 #if I3C_TEST_EN_BACK_TO_BACK_8X8
-ZTEST(i3c_controller, back_to_back_8x8)
+ZTEST(i3c,back_to_back_8x8)
 {
 	uint8_t rd[8];
 	uint8_t wr = CMD_DUMMY_BYTE;
@@ -1194,7 +1194,7 @@ ZTEST(i3c_controller, back_to_back_8x8)
 #endif /* I3C_TEST_EN_BACK_TO_BACK_8X8 */
 
 #if I3C_TEST_EN_BIG_256
-ZTEST(i3c_controller, big_256)
+ZTEST(i3c,big_256)
 {
 	uint8_t cmd_buf[2 + 256];
 	uint8_t rd[256];
@@ -1235,7 +1235,7 @@ ZTEST(i3c_controller, big_256)
 #endif /* I3C_TEST_EN_BIG_256 */
 
 #if I3C_TEST_EN_CCC_RAPID_8
-ZTEST(i3c_controller, ccc_rapid_8)
+ZTEST(i3c,ccc_rapid_8)
 {
 	if (!ctrl_test_begin(I3C_TEST_CCC_RAPID_8)) {
 		ctrl_test_end();
@@ -1263,7 +1263,7 @@ ZTEST(i3c_controller, ccc_rapid_8)
 #endif /* I3C_TEST_EN_CCC_RAPID_8 */
 
 #if I3C_TEST_EN_READ_MASTER_ABORT
-ZTEST(i3c_controller, read_master_abort)
+ZTEST(i3c,read_master_abort)
 {
 	uint8_t rd[32];
 
@@ -1306,7 +1306,7 @@ ZTEST(i3c_controller, read_master_abort)
 #endif /* I3C_TEST_EN_READ_MASTER_ABORT */
 
 #if I3C_TEST_EN_IBI_NEG_PATHS
-ZTEST(i3c_controller, ibi_neg_paths)
+ZTEST(i3c,ibi_neg_paths)
 {
 	if (!ctrl_test_begin(I3C_TEST_IBI_NEG_PATHS)) {
 		ctrl_test_end();
@@ -1334,7 +1334,7 @@ ZTEST(i3c_controller, ibi_neg_paths)
 #endif /* I3C_TEST_EN_IBI_NEG_PATHS */
 
 #if I3C_TEST_EN_API_NEG_PATHS
-ZTEST(i3c_controller, api_neg_paths)
+ZTEST(i3c,api_neg_paths)
 {
 	uint8_t dummy = 0xA5;
 	struct i3c_msg msg = {
@@ -1385,7 +1385,7 @@ ZTEST(i3c_controller, api_neg_paths)
 #endif /* I3C_TEST_EN_API_NEG_PATHS */
 
 #if I3C_TEST_EN_MULTI_MSG_4
-ZTEST(i3c_controller, multi_msg_4)
+ZTEST(i3c,multi_msg_4)
 {
 	uint8_t wr = CMD_DUMMY_BYTE;
 	uint8_t rd1[8], rd2[8];
@@ -1529,7 +1529,7 @@ static void ctrl_restore_daa_addr(uint8_t saved_addr, uint8_t prev_addr,
 }
 
 #if I3C_TEST_EN_SETAASA
-ZTEST(i3c_controller, setaasa)
+ZTEST(i3c,setaasa)
 {
 	struct i3c_ccc_getpid pid;
 
@@ -1590,7 +1590,7 @@ ZTEST(i3c_controller, setaasa)
 #endif /* I3C_TEST_EN_SETAASA */
 
 #if I3C_TEST_EN_SETDASA
-ZTEST(i3c_controller, setdasa)
+ZTEST(i3c,setdasa)
 {
 	if (!ctrl_test_begin(I3C_TEST_SETDASA)) {
 		ctrl_test_end();
@@ -1631,7 +1631,7 @@ ZTEST(i3c_controller, setdasa)
 #endif /* I3C_TEST_EN_SETDASA */
 
 #if I3C_TEST_EN_READ_UNDERRUN_STRESS
-ZTEST(i3c_controller, read_underrun_stress)
+ZTEST(i3c,read_underrun_stress)
 {
 	uint8_t rd[16];
 	uint8_t wr = CMD_DUMMY_BYTE;
@@ -1674,7 +1674,7 @@ ZTEST(i3c_controller, read_underrun_stress)
 #endif /* I3C_TEST_EN_READ_UNDERRUN_STRESS */
 
 #if I3C_TEST_EN_MULTI_MSG_SHORT_READ
-ZTEST(i3c_controller, multi_msg_short_read)
+ZTEST(i3c,multi_msg_short_read)
 {
 	if (!ctrl_test_begin(I3C_TEST_MULTI_MSG_SHORT_READ)) {
 		ctrl_test_end();
@@ -1769,7 +1769,7 @@ ZTEST(i3c_controller, multi_msg_short_read)
 #endif /* I3C_TEST_EN_MULTI_MSG_SHORT_READ */
 
 #if I3C_TEST_EN_SHORT_READ_THEN_NACK
-ZTEST(i3c_controller, short_read_then_nack)
+ZTEST(i3c,short_read_then_nack)
 {
 	uint8_t rd[16];
 	uint8_t wr = CMD_DUMMY_BYTE;
@@ -1823,7 +1823,7 @@ ZTEST(i3c_controller, short_read_then_nack)
 }
 #endif /* I3C_TEST_EN_SHORT_READ_THEN_NACK */
 
-ZTEST_SUITE(i3c_controller, NULL, i3c_controller_setup,
+ZTEST_SUITE(i3c, NULL, i3c_controller_setup,
 	    i3c_controller_before, i3c_controller_after, NULL);
 
 static void ctrl_print_summary(void)

@@ -53,6 +53,9 @@
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ecp.h"
 
+/* Error-domain contract: driver codes vs the mbedtls boundary (t91). */
+#include "ls_otbn_err_mbedtls.h"
+
 /*
  * Interface redirection -- selected by ROLE and by which ECDSA surface the
  * client's build routes to the proxy.
@@ -557,10 +560,12 @@ ZTEST(otbn_deleg, t10_reject_unsupported_curve)
 
 		rc = DELEG_SIGN(&grp, &r, &s, &d, test_hash, sizeof(test_hash),
 				test_rng, NULL);
-		zassert_equal(rc, -EIO, "non-whitelist curve sign rc=%d", rc);
+		zassert_equal(rc, MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE,
+			      "non-whitelist curve sign rc=%d", rc);
 
 		rc = DELEG_VERIFY(&grp, test_hash, sizeof(test_hash), &q, &r, &s);
-		zassert_equal(rc, -EIO, "non-whitelist curve verify rc=%d", rc);
+		zassert_equal(rc, MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE,
+			      "non-whitelist curve verify rc=%d", rc);
 
 		mbedtls_ecp_point_free(&q);
 		mbedtls_mpi_free(&s);
@@ -715,7 +720,7 @@ static K_THREAD_STACK_ARRAY_DEFINE(neg_stks, NEG_JOBS, 8192);
 static unsigned neg_seq;
 
 static void assert_neg_bounded(enum neg_op op, mbedtls_ecp_group_id gid,
-			       const char *what)
+			       const char *what, const char *test_name)
 {
 	unsigned i = neg_seq++;
 	struct neg_job *j;
@@ -734,7 +739,9 @@ static void assert_neg_bounded(enum neg_op op, mbedtls_ecp_group_id gid,
 
 	got = k_sem_take(&j->done, K_MSEC(5000));
 
-	ZT_INFO("neg", "what=%s,gid=%d,finished=%d,rc=%d",
+	/* Tag the line with the test name (ZT_INFO contract) so the report and the
+	 * independent-expectation checker get rc for this item. */
+	ZT_INFO(test_name, "what=%s,gid=%d,finished=%d,rc=%d",
 		what, (int)gid, got == 0, j->rc);
 
 	zassert_equal(got, 0,
@@ -746,27 +753,27 @@ static void assert_neg_bounded(enum neg_op op, mbedtls_ecp_group_id gid,
 
 ZTEST(otbn_deleg, t17_sign_bad_d_zero)
 {
-	assert_neg_bounded(NEG_SIGN_D_ZERO, MBEDTLS_ECP_DP_SECP256R1, "sign_d0");
+	assert_neg_bounded(NEG_SIGN_D_ZERO, MBEDTLS_ECP_DP_SECP256R1, "sign_d0", "t17_sign_bad_d_zero");
 }
 
 ZTEST(otbn_deleg, t88_sign_bad_d_ge_n)
 {
-	assert_neg_bounded(NEG_SIGN_D_N, MBEDTLS_ECP_DP_SECP256R1, "sign_d_n");
+	assert_neg_bounded(NEG_SIGN_D_N, MBEDTLS_ECP_DP_SECP256R1, "sign_d_n", "t88_sign_bad_d_ge_n");
 }
 
 ZTEST(otbn_deleg, t19_verify_bad_q_off_curve)
 {
-	assert_neg_bounded(NEG_VERIFY_Q_OFF, MBEDTLS_ECP_DP_SECP256R1, "verify_q_off");
+	assert_neg_bounded(NEG_VERIFY_Q_OFF, MBEDTLS_ECP_DP_SECP256R1, "verify_q_off", "t19_verify_bad_q_off_curve");
 }
 
 ZTEST(otbn_deleg, t89_verify_bad_q_infinity)
 {
-	assert_neg_bounded(NEG_VERIFY_Q_INF, MBEDTLS_ECP_DP_SECP256R1, "verify_q_inf");
+	assert_neg_bounded(NEG_VERIFY_Q_INF, MBEDTLS_ECP_DP_SECP256R1, "verify_q_inf", "t89_verify_bad_q_infinity");
 }
 
 ZTEST(otbn_deleg, t21_verify_wrong_keypair)
 {
-	assert_neg_bounded(NEG_VERIFY_WRONG_KEY, MBEDTLS_ECP_DP_SECP256R1, "verify_wrongkey");
+	assert_neg_bounded(NEG_VERIFY_WRONG_KEY, MBEDTLS_ECP_DP_SECP256R1, "verify_wrongkey", "t21_verify_wrong_keypair");
 }
 
 ZTEST(otbn_deleg, t16a_sign_blen_zero)
@@ -1031,6 +1038,79 @@ ZTEST(otbn_deleg, t90_plain_api_mailbox_bound)
 #endif
 }
 #endif /* OTBN_DELEG_VIA_PROXY */
+
+/*
+ * Error-domain contract (pure functions, runs on both roles):
+ *   - every driver code maps to exactly one mbedtls value;
+ *   - a raw MBEDTLS_ERR_* passes through untouched, never into the driver range;
+ *   - errno maps into the driver domain, and the mapping is idempotent.
+ * This pins the tables in ls_otbn_err.h / ls_otbn_err_mbedtls.h so a future
+ * edit cannot silently change what an API family returns.
+ */
+ZTEST(otbn_deleg, t91_err_domain)
+{
+	zassert_equal(ls_otbn_err_to_mbedtls(0), 0, "0 must stay 0");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_INVAL),
+		      MBEDTLS_ERR_ECP_BAD_INPUT_DATA, "INVAL");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_RANGE),
+		      MBEDTLS_ERR_ECP_BAD_INPUT_DATA, "RANGE");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_CURVE),
+		      MBEDTLS_ERR_ECP_BAD_INPUT_DATA, "CURVE");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_MSGSIZE),
+		      MBEDTLS_ERR_ECP_BAD_INPUT_DATA, "MSGSIZE");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSUPP),
+		      MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE, "NOSUPP");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_BUSY),
+		      MBEDTLS_ERR_LS_OTBN_BUSY, "BUSY");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_ACCESS),
+		      MBEDTLS_ERR_LS_OTBN_BUSY, "ACCESS");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSYS),
+		      MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED, "NOSYS");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_RNG),
+		      MBEDTLS_ERR_ECP_RANDOM_FAILED, "RNG");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOENT),
+		      MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED, "NOENT");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_PROTO),
+		      MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED, "PROTO");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_IO),
+		      MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED, "IO");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_TIMEOUT),
+		      MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED, "TIMEOUT");
+	zassert_equal(ls_otbn_err_to_mbedtls(LS_OTBN_ERR_MBEDTLS),
+		      MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED, "CRYPTO fallback");
+	zassert_equal(ls_otbn_err_to_mbedtls(MBEDTLS_ERR_ECP_VERIFY_FAILED),
+		      MBEDTLS_ERR_ECP_VERIFY_FAILED, "mbedtls passthrough");
+
+	zassert_equal(ls_otbn_err_from_mbedtls(0), 0, "from_mbedtls(0)");
+	zassert_equal(ls_otbn_err_from_mbedtls(MBEDTLS_ERR_ECP_INVALID_KEY),
+		      LS_OTBN_ERR_MBEDTLS, "from_mbedtls(INVALID_KEY)");
+	zassert_equal(ls_otbn_err_from_mbedtls(LS_OTBN_ERR_BUSY),
+		      LS_OTBN_ERR_BUSY, "from_mbedtls idempotent");
+
+	zassert_equal(ls_otbn_err_from_errno(-EINVAL), LS_OTBN_ERR_INVAL, "errno EINVAL");
+	zassert_equal(ls_otbn_err_from_errno(-ENOENT), LS_OTBN_ERR_NOENT, "errno ENOENT");
+	zassert_equal(ls_otbn_err_from_errno(-EBUSY), LS_OTBN_ERR_BUSY, "errno EBUSY");
+	zassert_equal(ls_otbn_err_from_errno(-EIO), LS_OTBN_ERR_IO, "errno EIO");
+	zassert_equal(ls_otbn_err_from_errno(-ETIMEDOUT), LS_OTBN_ERR_TIMEOUT,
+		      "errno ETIMEDOUT");
+	zassert_equal(ls_otbn_err_from_errno(-ENOSYS), LS_OTBN_ERR_NOSYS, "errno ENOSYS");
+	zassert_equal(ls_otbn_err_from_errno(-EBADMSG), LS_OTBN_ERR_CURVE, "errno EBADMSG");
+	zassert_equal(ls_otbn_err_from_errno(-EPROTO), LS_OTBN_ERR_PROTO, "errno EPROTO");
+	zassert_equal(ls_otbn_err_from_errno(-EACCES), LS_OTBN_ERR_ACCESS, "errno EACCES");
+	zassert_equal(ls_otbn_err_from_errno(-EMSGSIZE), LS_OTBN_ERR_MSGSIZE,
+		      "errno EMSGSIZE");
+	zassert_equal(ls_otbn_err_from_errno(-ERANGE), LS_OTBN_ERR_RANGE, "errno ERANGE");
+	zassert_equal(ls_otbn_err_from_errno(-ENOTSUP), LS_OTBN_ERR_NOSUPP, "errno ENOTSUP");
+	zassert_equal(ls_otbn_err_from_errno(LS_OTBN_ERR_BUSY), LS_OTBN_ERR_BUSY,
+		      "from_errno idempotent");
+
+	zassert_true(ls_otbn_err_is_custom(LS_OTBN_ERR_BASE), "BASE is custom");
+	zassert_true(ls_otbn_err_is_custom(LS_OTBN_ERR_MBEDTLS), "CRYPTO is custom");
+	zassert_false(ls_otbn_err_is_custom(-ENOSYS), "-38 is not custom");
+	zassert_false(ls_otbn_err_is_custom(0), "0 is not custom");
+
+	ZT_INFO("t91_err_domain", "ok=1");
+}
 
 /* 6 explicit params: setup/teardown are suite-level, before/after per-test --
  * all NULL here (no shared fixture). Do NOT move a teardown into the `after`

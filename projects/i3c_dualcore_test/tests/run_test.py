@@ -109,7 +109,7 @@ TGT_BANNERS = ("CPU1 SLAVE", "i3c_slave_test")
 #   write_delay_read_len, write_indexed_read_16, write_read_15, write_read_16,
 #   write_read_17, write_read_1, write_read_32, write_stop_read_15,
 #   write_stop_read_16, write_stop_read_17, write_stop_read_1, write_stop_read_32
-# 两核前缀名相同（CTRL `i3c_controller__` / TGT `suite__suite`），
+# 两核前缀名相同（CTRL `i3c__` / TGT `suite__suite`），
 # 32 项顺序一致；仍以地址序为准（§10.27 尾下划线坑）。
 TEST_NAMES = [
     "api_neg_paths", "back_to_back_8x8", "big_256", "ccc_basic",

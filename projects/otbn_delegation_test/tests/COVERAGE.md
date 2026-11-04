@@ -27,9 +27,9 @@ ECDSA 并把结果回填。被测/依赖源码：
 
 | case | 目的 | 期望 |
 |------|------|------|
-| `case_default` | 功能通路 + 接口用法变体 + 契约负例（含 2 个缺陷项） | **FAIL**（t17 等缺陷项 FAIL —— 见 §3） |
-| `case_dead_channel` | 客户端通道被 `mbox_set_enabled(false)` 禁用 ⇒ 代理调用无回应 | FAIL（t80 FAIL = 永久阻塞） |
-| `case_no_server` | 对端 `..._DELEGATION_SERVER=n`（无 responder）⇒ 代理调用无回应 | FAIL（t80 FAIL = 永久阻塞） |
+| `case_default` | 功能通路 + 接口用法变体 + 契约负例（d=0 / d≥n / 非曲线点 / 无穷远点 / 跨密钥对，共 5 项）+ 错误域映射（t91） | **PASS**（2026-11-02 复测 24/24，另新增 t91_err_domain 后共 25 项；负例均返回 `MBEDTLS_ERR_ECP_INVALID_KEY` 或 `VERIFY_FAILED`，见 §2 后「契约负例」注） |
+| `case_dead_channel` | 客户端通道被 `mbox_set_enabled(false)` 禁用 ⇒ 代理调用无回应 | PASS（2026-11-02 实测 2/2；t80 在 1s 超时内返回非零） |
+| `case_no_server` | 对端 `..._DELEGATION_SERVER=n`（无 responder）⇒ 代理调用无回应 | PASS（2026-11-02 实测 2/2；t80 在 1s 超时内返回非零） |
 | `case_throughput` | 吞吐率基准：`-DOTBN_DELEG_BENCH=1` 换成 `tests/src/otbn_delegation_bench.c`（**只跑 b01 一项**） | PASS（测量项：数据在 INFO bench 行） |
 | `case_throughput_iso_proxy` | **隔离**吞吐基准（**代理侧**）：同样换 bench 源码，但**只有 cpu2 跑基准（代理路径）**，cpu1 加 `-DOTBN_DELEG_BENCH_HOLD=1` **空转**（只由 boot 期的 delegation 线程应答 cpu2 的 mbox，自己不跑基准）⇒ 消除 `case_throughput` 的跨核争用。配合 `_iso_local` 求代理往返开销 | PASS（cpu2 出 9 组 `INFO bench:`；cpu1 出 `INFO b01_throughput: role=hold`） |
 | `case_throughput_iso_local` | **隔离**吞吐基准（**本地侧 = 直接 ALT 基线**）：**只有 cpu1 跑基准**，其 `DELEG_*` = `mbedtls_ecdsa_*` = 本地 OTBN（`ecdsa_alt.c`）；cpu2 加 `-DOTBN_DELEG_BENCH_HOLD=1` **空转**（通道在、但**不发任何请求**）⇒ cpu1 的 OTBN 只被本地基准独占 | PASS（cpu1 出 9 组 `INFO bench:`；cpu2 出 `INFO b01_throughput: role=hold`） |
@@ -108,26 +108,28 @@ ECDSA 并把结果回填。被测/依赖源码：
 | t16b_sign_blen_eq_n | sign blen=48(=n, P384) | 边界长度 | rc=0 | 标准契约 | ✅ PASS |
 | t16c_repeat_channel_init | 重复 `*_chanels_init()` 后再 genkey | 状态机 | rc=0 | API 契约 | ✅ PASS |
 | t16d_mbedtls_and_explicit_agree | 同镜像：`mbedtls_ecdsa_genkey`（转发桩）与 `mbedtls_ls_otbn_ecdsa_genkey`（显式）各跑一次 | 状态机 / 接口 | 两者 rc=0；各自 `check_pubkey`=0 | API 契约 | ⏳ 仅 case_explicit_api：客户端待上板（本轮仅编译）；服务端 SKIP |
-| **t17_sign_bad_d_zero** | sign 传 `d=0` | 异常参数 | **rc≠0（应拒绝）** | 标准契约 | ❌ **FAIL 双核：rc=0（被接受）= 产品缺陷** |
-| t19_verify_bad_q_off_curve | verify 传 Q=`Q.X+1`（非曲线点） | 异常参数 | rc≠0 | 标准契约 | ⚠️ 服务端 ✅ rc=-19968；**客户端 panic** |
-| t21_verify_wrong_keypair | 用另一密钥对的 Q 验签 | 语义通路 | rc≠0 | 标准契约 | ⚠️ **服务端 panic**；客户端未达 |
-| t80_proxy_responds_within_timeout | 独立线程发起代理调用 + 超时等待 | 无响应防护 | 3s 内返回（case_default）；否则 FAIL | 契约 | case_default ✅；dead/no_server ❌（阻塞坐实） |
-| t88_sign_bad_d_ge_n | sign 传 `d=n` | 异常参数 | rc≠0 | 标准契约 | ❌ **产品缺陷**（run1 服务端 rc=0；另有 panic） |
-| t89_verify_bad_q_infinity | verify 传 Q=无穷远点（Z=0） | 异常参数 | rc≠0 | 标准契约 | 见 §3 |
+| t17_sign_bad_d_zero | sign 传 `d=0` | 异常参数 | **rc≠0（应拒绝）** | 标准契约 | ✅ PASS 双核（2026-11-02 复测：串口 INFO 行（`what=sign_d0, rc=-19584`） = `MBEDTLS_ERR_ECP_INVALID_KEY`） |
+| t19_verify_bad_q_off_curve | verify 传 Q=`Q.X+1`（非曲线点） | 异常参数 | rc≠0 | 标准契约 | ✅ PASS 双核（2026-11-02 复测：串口 INFO 行（`what=verify_q_off, rc=-19968`） = `MBEDTLS_ERR_ECP_VERIFY_FAILED`，无 panic） |
+| t21_verify_wrong_keypair | 用另一密钥对的 Q 验签 | 语义通路 | rc≠0 | 标准契约 | ✅ PASS 双核（2026-11-02 复测：串口 INFO 行（`what=verify_wrongkey, rc=-19968`），无 panic） |
+| t80_proxy_responds_within_timeout | 独立线程发起代理调用 + 超时等待 | 无响应防护 | 3s 内返回（case_default）；否则 FAIL | 契约 | case_default ✅；dead/no_server ✅（2026-11-02：超时内返回非零，不再阻塞） |
+| t88_sign_bad_d_ge_n | sign 传 `d=n` | 异常参数 | rc≠0 | 标准契约 | ✅ PASS 双核（2026-11-02 复测：串口 INFO 行（`what=sign_d_n, rc=-19584`） = `MBEDTLS_ERR_ECP_INVALID_KEY`） |
+| t89_verify_bad_q_infinity | verify 传 Q=无穷远点（Z=0） | 异常参数 | rc≠0 | 标准契约 | ✅ PASS 双核（2026-11-02 复测：串口 INFO 行（`what=verify_q_inf, rc=-19968`），无 panic） |
+| t91_err_domain | 纯函数：`ls_otbn_err_to_mbedtls/from_mbedtls/from_errno/is_custom` 的完整映射 | 契约（错误域） | 驱动码逐个映射；mbedtls 码原样透传；errno→驱动码；BASE 边界 | 标准契约 | 双核 |
 | t90_plain_api_mailbox_bound | 屏蔽客户端 otbn_crypto 通道后，调**普通** `mbedtls_ecdsa_genkey`（case_alt_via_proxy 下它=转发桩） | 无响应防护 / 绑定证明 | 3s 内返回且 rc≠0（转发桩在 `DELEGATE_REPLY_TIMEOUT_MS` 后超时；软件会 rc=0 立即返回） ⇒ 证明普通名确绑到 mbox | 契约 | 仅 `case_alt_via_proxy`：客户端 ✅ / 服务端 SKIP |
 | r01_rsa_modexp_roundtrip_2048 | 代理桩 op 0x41/0x42 → server `mbedtls_ls_otbn_rsa_modexp`（本地 OTBN RSA） | 功能通路（数值往返） | `c=m^e mod n` rc=0；`m'=c^d mod n` rc=0；**`m'==m` 逐字节** | 标准契约（固定 2048 位向量） | 双核（client 代理 / server 本地） |
 | r02_rsa_modexp_roundtrip_4096 | 同上（4096 位） | 功能通路（数值往返） | 同上 | 标准契约（固定 4096 位向量） | 双核 |
-| r03_reject_unsupported_modulus | 桩白名单分支 / `mbedtls_ls_otbn_rsa_modexp` 尺寸门 | 异常参数 | 768/1792 位 rc≠0（客户端 `-EINVAL` / 服务端 `-ENOTSUP`）。**不能用 1024/1536**：2026-10-22 `mbedtls 1313114b3` 起服务端本地后端支持 1024/1536（Miller-Rabin 素数候选），两核白名单已分叉 —— 客户端仍只放行 2048/3072/4096 | 标准契约 | 双核 |
+| r03_reject_unsupported_modulus | 桩白名单分支 / `mbedtls_ls_otbn_rsa_modexp` 尺寸门 | 异常参数 | 768/1792 位 rc≠0（客户端 `MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE`，即 `ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSUPP)`）。两核共用同一白名单 2048/3072/4096；1024/1536 在**代理路径**同样被拒（`rsa_alt.c` 本地 API 额外接受 128/192 字节，但 delegation handler 不会放行） | 标准契约 | 双核 |
+| r04_rsa_size_boundary | 客户端 `mbedtls_ls_otbn_rsa_modexp_encrypt()` 传 768/1024/1536/1792/2047/2049/3071/3073/4095/4097 位 | 边界 / 异常参数 | 全部 rc≠0（1024/1536 被 delegation 白名单拒绝；非整字节尺寸不得截断成合法值） | 标准契约 | 仅 `case_rsa_delegation`：客户端 ✅ / 服务端 SKIP |
 | r90_rsa_mailbox_bound | 屏蔽客户端 otbn_crypto 通道后调**显式** `mbedtls_ls_otbn_rsa_modexp_encrypt` | 无响应防护 / 绑定证明 | 返回且 rc≠0，且耗时 ≈ 10s 总线超时（`OTBN_DELEG_TIMEOUT_RSA_MS`）⇒ 证明 RSA 调用确走 mbox（软件会 rc=0 立即返回） | 契约 | 仅 `case_rsa_delegation`：客户端 ✅ / 服务端 SKIP |
 | s01_sign_verify | 客户端 `mbedtls_ls_otbn_ecdsa_sign_slot(slot 0)` → mbox op 0x23 → server 槽位查表 → 本地 OTBN sign；服务端直接调 handler | 功能通路 | rc=0；r/s 用已知公钥 verify=0 | 标准契约（固定 P256 向量） | 双核 |
-| s02_unregistered | 用永久未注册的 slot 7 签名 | 异常参数 | rc=-ENOENT | 标准契约 | 双核 |
-| s03_curve_mismatch | slot 0 登记为 P256，请求 P384（32B digest，隔离曲线维度） | 异常参数 | rc=-EINVAL | 标准契约 | 双核 |
-| s04_register_validation | 服务端注册表：d=0 / d=n / d=n-1 / 非白名单曲线 / 越界 slot / NULL / 空槽注销 / 注册-签名-注销-再签名 | 异常参数 / 状态机 | d=0、d=n → `MBEDTLS_ERR_ECP_INVALID_KEY`；d=n-1 → rc=0；非白名单 → -EOPNOTSUPP；越界/NULL → -EINVAL；空槽注销 → -ENOENT；注销后签名 → -ENOENT | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
+| s02_unregistered | 用永久未注册的 slot 7 签名 | 异常参数 | rc=LS_OTBN_ERR_NOENT | 标准契约 | 双核 |
+| s03_curve_mismatch | slot 0 登记为 P256，请求 P384（32B digest，隔离曲线维度） | 异常参数 | rc=LS_OTBN_ERR_CURVE | 标准契约 | 双核 |
+| s04_register_validation | 服务端注册表：d=0 / d=n / d=n-1 / 非白名单曲线 / 越界 slot / NULL / 空槽注销 / 注册-签名-注销-再签名 | 异常参数 / 状态机 | d=0、d=n → LS_OTBN_ERR_MBEDTLS（`_ex` 的 `status` 附带 `MBEDTLS_ERR_ECP_INVALID_KEY`）；d=n-1 → rc=0；非白名单 → LS_OTBN_ERR_NOSUPP；越界 → LS_OTBN_ERR_RANGE；NULL → LS_OTBN_ERR_INVAL；空槽注销 → LS_OTBN_ERR_NOENT；注销后签名 → LS_OTBN_ERR_NOENT | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
 | s05_curves | slot 1 (P384, SHA-384) / slot 2 (SM2, SHA-256) 签名并各自验签 | 功能通路（曲线维度） | 两个 rc=0；分别用 P384/SM2 公钥 verify=0 | 标准契约（固定向量） | 双核 |
 | s06_multi_slot | slot 0 (key A) 与 slot 3 (key B) 同时存在，各自签名；A 的签名用 B 的公钥验签 | 功能通路（槽位索引）/ 语义 | 两个 rc=0；各自 verify=0；交叉 verify=`MBEDTLS_ERR_ECP_VERIFY_FAILED` | 标准契约（固定 P256 向量） | 双核 |
 | s07_hash_lengths | 同一 slot 0：31B（<n）/ 64B（>n，截断）/ 0B | 边界长度 | 31B、64B verify=0（64B 按前 32B 验）；0B rc=0 且 r/s∈(0,n) | 标准契约 | 双核 |
-| s08_client_args | 客户端 API：NULL grp/r/s/digest、P521 非白名单、越界 slot | 异常参数 | -EINVAL / -EIO / -ENOENT | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
-| s09_server_args | 服务端 handler：NULL data[0..3]、arg[1]>n、曲线不匹配/非白名单、合法对照 | 异常参数 | 前 7 项 -EINVAL；合法请求 rc=0 | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
+| s08_client_args | 客户端 API：NULL grp/r/s/digest、P521 非白名单、越界 slot；`_ex` 的 NULL grp | 异常参数 | LS_OTBN_ERR_INVAL / LS_OTBN_ERR_NOSUPP / LS_OTBN_ERR_RANGE；`_ex` 返回同码且 status=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s09_server_args | 服务端 handler：NULL data[0..3]、arg[1]>n、曲线不匹配/非白名单、合法对照 | 异常参数 | 4 项 NULL → LS_OTBN_ERR_PROTO；超长 digest → LS_OTBN_ERR_MSGSIZE；2 项曲线不匹配 → LS_OTBN_ERR_CURVE；合法请求 rc=0 | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
 | s10_soak | 客户端连续 100 次 slot 0 签名 | 统计性质 / 稳定性 | 100 次 rc=0；末次 verify=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
 | s11_concurrent | 客户端 2 线程各 10 次 slot 0 签名（总线单请求锁） | 并发 | 两线程 rc 均=0，无死锁 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
 | s12_server_race | 服务端线程 50 轮注册/注销 slot 4，同时主线程 20 次 slot 0 签名 | 并发 / 状态机 | 注册/注销与签名 rc 均=0，无 oops | 标准契约 | 仅 `case_slot`：服务端 ✅ / 客户端 SKIP |
@@ -136,12 +138,18 @@ ECDSA 并把结果回填。被测/依赖源码：
 | s15_p384_fixed_rng | P384 48B + 固定 client nonce；OTBN slot 签名 vs 客户端软件 ECDSA 同 key/hash/nonce | 签名正确性（独立参考） | OTBN r/s 与软件 r/s 逐 MPI 相等；Q verify=0 | 标准契约（固定向量） | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
 | s16_p384_server_rng | P384 48B + server RNG，客户端单独签 20 次、逐次软件 verify（server 端无本地签名并发） | 随机数来源 / 并发隔离 | 20/20 rc=0 且 verify=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
 | s17_p384_32b_server_rng | 同 s16，但 digest 改为 32B（e=256 bit）；唯一变量是 e 位长 | e 位长隔离 | 20/20 rc=0 且 verify=0 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
+| s18_sign_slot_ex_status | 客户端 `_ex`：NULL grp / 空槽 / 曲线不符 / 成功（含 NULL status 指针） | 契约（错误域） | 返回码与 plain 一致；司机原因 `*status=0`；成功 0/0；NULL status 不崩 | 标准契约 | 仅 `case_slot`：客户端 ✅ / 服务端 SKIP |
 
-> **契约负例暴露的产品缺陷族（只报不改）**：vendor OTBN ECDSA ALT **不做输入校验** ——
-> 无效私钥 `d`（=0 / ≥n）**被接受并返回成功**；无效公钥（非曲线点 / 无穷远点）、
-> 跨密钥对验签会**触发内核 panic**（`ZEPHYR FATAL ERROR 4` / `mcause 11 ECALL`）。
+> **契约负例（2026-11-02 复测：双核均按契约拒绝，只报不改）**：无效私钥 `d`（=0 / ≥n）
+> 返回 `rc=-19584`（`MBEDTLS_ERR_ECP_INVALID_KEY`）；无效公钥（非曲线点 / 无穷远点）、
+> 跨密钥对验签返回 `rc=-19968`（`MBEDTLS_ERR_ECP_VERIFY_FAILED`）。双核均 PASS，
+> 无 `FATAL` / panic / 断言失败。证据：`reports/2026-11-02-1/otbn_delegation_test_case_default/`
+> 的 `serial_CTRL.log` / `serial_TGT.log`（5 条 `INFO <item>:` 行 + t17/t19/t21/t88/t89 均 `PASS -`；键名当前带套件前缀，见 INBOX 2026-11-02 G-ZTINFO-KEY-MISMATCH）。
+> **历史背景（2026-11-02 之前，已被本轮回测推翻，仅存档）**：早期 vendor OTBN ECDSA ALT
+> **不做输入校验** —— 无效私钥 `d`（=0 / ≥n）**被接受并返回成功**；无效公钥（非曲线点 /
+> 无穷远点）、跨密钥对验签会**触发内核 panic**（`ZEPHYR FATAL ERROR 4` / `mcause 11 ECALL`）。
 > panic 会**中断该核的 ztest 套件**，故其上其后的项（t21/t80/t88/t89）在多数轮次
-> **未执行**——这是产品缺陷的次生后果，非用例缺陷。
+> **未执行**——这是当时产品缺陷的次生后果，非用例缺陷。
 >
 > 维度对照 §6.5.1：功能通路（3 接口 × 3 曲线）、边界长度（blen ⟨n / ⟩n / =0 / =n）、
 > 异常参数（越界 r/s、无效 d、无效 Q、白名单外曲线）、并发、状态机（重复 init）、
@@ -174,26 +182,28 @@ t16a_sign_blen_zero | !none | contract:合取（rc=0 且 r,s∈(0,n)）
 t16b_sign_blen_eq_n | !none | contract:断言 rc=0
 t16c_repeat_channel_init | !none | contract:断言 rc=0
 t16d_mbedtls_and_explicit_agree | !none | contract:合取（转发桩 rc=0 + 显式 rc=0 + 各自 check_pubkey=0）
-t17_sign_bad_d_zero | !none | contract:断言 rc≠0（实测 rc=0 = 缺陷）
-t19_verify_bad_q_off_curve | !none | contract:断言 rc≠0
-t21_verify_wrong_keypair | !none | contract:断言 rc≠0
+t17_sign_bad_d_zero | rc != 0 | contract:断言 rc≠0（2026-11-02 复测 rc=-19584 = MBEDTLS_ERR_ECP_INVALID_KEY）
+t19_verify_bad_q_off_curve | rc != 0 | contract:断言 rc≠0
+t21_verify_wrong_keypair | rc != 0 | contract:断言 rc≠0
 t80_proxy_responds_within_timeout | !none | contract:断言"超时内返回"
-t88_sign_bad_d_ge_n | !none | contract:断言 rc≠0（实测 rc=0 = 缺陷）
-t89_verify_bad_q_infinity | !none | contract:断言 rc≠0
+t88_sign_bad_d_ge_n | rc != 0 | contract:断言 rc≠0（2026-11-02 复测 rc=-19584 = MBEDTLS_ERR_ECP_INVALID_KEY）
+t89_verify_bad_q_infinity | rc != 0 | contract:断言 rc≠0
+t91_err_domain | ok == 1 | contract:错误域映射表逐项断言
 t90_plain_api_mailbox_bound | !none | contract:合取（3s 内返回 + rc≠0；软件会 rc=0 立即返回）
 r01_rsa_modexp_roundtrip_2048 | !none | contract:合取（enc rc=0 + dec rc=0 + m'==m 逐字节）
 r02_rsa_modexp_roundtrip_4096 | !none | contract:同 r01
 r03_reject_unsupported_modulus | !none | contract:断言 rc≠0（768 与 1792 位各一；两核白名单交集之外的尺寸）
+r04_rsa_size_boundary | rejected == 10 | contract:10 个非法尺寸全部被拒
 r90_rsa_mailbox_bound | !none | contract:合取（超时内返回 + rc≠0 + 耗时 ≥ 8s；软件会 rc=0 立即返回）
 s01_sign_verify | !none | contract:合取（rc=0 + 已知公钥 verify=0）
-s02_unregistered | !none | contract:断言 rc=-ENOENT
-s03_curve_mismatch | !none | contract:断言 rc=-EINVAL
-s04_register_validation | !none | contract:合取（d=0/n 拒绝、n-1 接受、越界/NULL、注销后 -ENOENT）
+s02_unregistered | !none | contract:断言 rc=LS_OTBN_ERR_NOENT
+s03_curve_mismatch | !none | contract:断言 rc=LS_OTBN_ERR_CURVE
+s04_register_validation | !none | contract:合取（d=0/n → LS_OTBN_ERR_MBEDTLS 且 _ex.status=MBEDTLS_ERR_ECP_INVALID_KEY、n-1 接受、越界 LS_OTBN_ERR_RANGE / NULL LS_OTBN_ERR_INVAL、注销后 LS_OTBN_ERR_NOENT）
 s05_curves | !none | contract:合取（P384/SM2 rc=0 + 各自公钥 verify=0）
 s06_multi_slot | !none | contract:合取（两槽各自 verify=0 + 交叉 verify 失败）
 s07_hash_lengths | !none | contract:合取（<n / >n verify=0 + 0 长度 r/s 范围）
-s08_client_args | !none | contract:断言 -EINVAL / -EIO / -ENOENT
-s09_server_args | !none | contract:合取（7 条 -EINVAL + 合法请求 rc=0）
+s08_client_args | !none | contract:断言 LS_OTBN_ERR_INVAL / LS_OTBN_ERR_NOSUPP / LS_OTBN_ERR_RANGE；_ex 同码且 status=0
+s09_server_args | !none | contract:合取（NULL 4 条 LS_OTBN_ERR_PROTO、超长 LS_OTBN_ERR_MSGSIZE、曲线 2 条 LS_OTBN_ERR_CURVE、合法请求 rc=0）
 s10_soak | !none | contract:合取（100 次 rc=0 + 末次 verify=0）
 s11_concurrent | !none | contract:断言两线程各 10 次 rc=0
 s12_server_race | !none | contract:断言注册/注销 50 轮 + 20 次签名为 0/0
@@ -202,4 +212,5 @@ s14_slot_rng | !none | contract:合取（两次 sign r/s 相等 + verify=0）
 s15_p384_fixed_rng | !none | contract:合取（OTBN r/s == 软件 r/s + verify=0）
 s16_p384_server_rng | !none | contract:断言 20 次 server-RNG 签名均 verify=0
 s17_p384_32b_server_rng | !none | contract:断言 20 次 32B-digest server-RNG 签名均 verify=0
+s18_sign_slot_ex_status | ok == 1 | contract:slot _ex 返回码与 status 语义
 ```

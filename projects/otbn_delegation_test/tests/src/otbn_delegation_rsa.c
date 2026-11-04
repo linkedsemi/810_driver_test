@@ -175,6 +175,35 @@ static void rsa_probe_thread(void *p1, void *p2, void *p3)
 }
 #endif /* CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT */
 
+/*
+ * Client-side size gate: only whole-byte 2048/3072/4096-bit moduli are
+ * forwarded. 1024/1536 are rejected too (the delegation whitelist is narrower
+ * than the local byte-level backend, which also takes 128/192-byte moduli);
+ * partial-byte sizes must be refused instead of truncating into an accepted
+ * one (2049 bits would otherwise become 256 bytes).
+ */
+ZTEST(otbn_deleg, r04_rsa_size_boundary)
+{
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
+	static __attribute__((aligned(32))) uint8_t out[RSA_MAX_BYTES];
+	static const uint32_t rejected[] = {
+		768, 1024, 1536, 1792, 2047, 2049, 3071, 3073, 4095, 4097,
+	};
+	int rc;
+
+	for (size_t i = 0; i < ARRAY_SIZE(rejected); i++) {
+		rc = mbedtls_ls_otbn_rsa_modexp_encrypt(rsa2048_m, rsa2048_e,
+							rsa2048_n, rejected[i], out);
+		zassert_true(rc != 0, "size %u bits accepted rc=%d",
+			     rejected[i], rc);
+	}
+
+	ZT_INFO("r04_rsa_size_boundary", "rejected=%u", (unsigned)ARRAY_SIZE(rejected));
+#else
+	ztest_test_skip();
+#endif
+}
+
 ZTEST(otbn_deleg, r90_rsa_mailbox_bound)
 {
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)

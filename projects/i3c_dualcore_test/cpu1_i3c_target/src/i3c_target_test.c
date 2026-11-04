@@ -7,6 +7,7 @@
 #include "i3c_target_test.h"
 #include "i3c_dualcore_test_protocol.h"
 #include "test_results.h"
+#include "rlog.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +23,12 @@
 #include "ls_soc_gpio.h"
 
 LOG_MODULE_DECLARE(i3c_slave_test, LOG_LEVEL_INF);
+
+#if defined(RLOG_LOCAL_ECHO_ALL)
+/* Defined in common/rlog.c; read by the PRINT_DATA override to keep the local
+ * echo quiet while the timing-critical target suites run. */
+extern volatile int rlog_local_echo_off;
+#endif
 
 /*
  * I3C target command parser state.
@@ -233,7 +240,10 @@ static inline void wait_matched(uint32_t timeout_ns, volatile uint32_t *matched_
 	wait_sst_timeout = base->SSTATUS;	/* 超时时刻快照（诊断：MATCHED 一直 0 时看其他标志） */
 }
 
-K_MSGQ_DEFINE(tgt_event_queue, sizeof(struct tgt_event), 4, 1);
+/* Depth 16, not 4: every put below is K_NO_WAIT and its return is ignored,
+ * so a slow dispatcher silently dropped the PRINT_SUMMARY event (observed
+ * on the LOG_MODE_MINIMAL build: 88 I: lines, 0 SUMMARY rows). */
+K_MSGQ_DEFINE(tgt_event_queue, sizeof(struct tgt_event), 16, 1);
 
 #define DISPATCHER_STACK_SIZE 2048
 static K_THREAD_STACK_DEFINE(dispatcher_stack, DISPATCHER_STACK_SIZE);
@@ -493,6 +503,17 @@ static int slave_write_requested_cb(struct i3c_target_config *config)
 {
 	ARG_UNUSED(config);
 	rx_idx = 0;
+
+	/* NOTE (2026-10-29): adding `parse_state = TGT_PARSE_IDLE;` here was tried
+	 * and reverted.  The theory was that an aborted transfer leaves the parser
+	 * parked mid-command (it is only reset in slave_stop_cb), so the next
+	 * CMD_TEST_START would be swallowed as data.  105 back-to-back runs never
+	 * reproduced that symptom (zero `CMD_TEST_START failed: -5`), and the
+	 * cascade that DID reproduce has a different cause: the hardware IBI slot
+	 * (IBIDR) gets occupied by an unconsumed 4-byte IBI, so the 2-byte ready
+	 * IBI never arrives -- target-side parse_state was IDLE throughout.  Do
+	 * not re-add this without a reliable repro for the -5 symptom; it changes
+	 * a delivered binary and would need a full re-acceptance. */
 
 	/* 写匹配（MATCHED/STREQWR）时刻预填读数据：master 写段有 N 字节数据 +
 	 * t bit + restart，从写匹配到 restart 的时间远大于读请求后的 3us 窗口，
@@ -966,8 +987,23 @@ static void dispatcher_entry(void *p1, void *p2, void *p3)
 			 * 逐项 ztest 输出 = 判定数据源，与 'E' 到达一一对应，
 			 * 保证每次校验的数据新鲜度/时序。 */
 			if (evt.test_id < I3C_TEST_COUNT) {
+				/* One console, two cores: name the core that is about to
+				 * run this suite so its ztest lines are not mistaken for
+				 * cpu1's.  Relayed to cpu1's console, not printed here. */
+				rlog_emitf("[cpu2] %s", i3c_test_names[evt.test_id]);
+#if defined(RLOG_LOCAL_ECHO_ALL)
+				/* Keep this core's UART out of the way while the
+				 * timing-critical target suites run: a synchronous
+				 * printk per ztest line perturbs the TX-FIFO refill
+				 * that has to answer inside the controller's read
+				 * window.  Tokens still relay to cpu1 over rlog. */
+				rlog_local_echo_off = 1;
+#endif
 				z_ztest_run_test_suite(i3c_test_names[evt.test_id],
 						       false, 1, 1, NULL);
+#if defined(RLOG_LOCAL_ECHO_ALL)
+				rlog_local_echo_off = 0;
+#endif
 			}
 			break;
 		default:
@@ -1152,7 +1188,7 @@ static void validate_write_delay_read_16(void)
 	 * - spin_done_actstate：spin 完成时刻总线阶段（0=idle 1=write 2=read）
 	 * - match2delay：delay 字节收完 → MATCHED 置位（"新 match"）的物理
 	 *   间隔；0 = spin 期间未匹配（该笔 master 间隙 > spin，欠载档） */
-	printk("TGT_DBG: spin=%ucyc(%uns) actstate=0x%x match2delay=%dus\n",
+	printk("TGT_DBG: spin=%ucyc(%lluns) actstate=0x%x match2delay=%dus\n",
 	       spin_ns_last,
 	       spin_ns_last * 1000000000ULL /
 		       (uint64_t)CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,

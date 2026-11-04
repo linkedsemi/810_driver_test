@@ -75,6 +75,12 @@
 - 经验：`west build -p auto` 不检测 case 目录 conf 文件变化（§10.9），
   改 controller.conf 后需删 build/controller 全量重建。
 - 窗口值上报 INFO: critical_delay_ns（报告"实际"列取用）。
+- ⚠️ **读数值口径（2026-10-27）**：`critical_delay_ns` 是"**最后一个读满 16B 的档** × 50 ns"
+  （循环里每次读满就覆盖 `g_wdr16_critical_step`），**不是**窗口下沿；只有欠载集中在临界档之后的
+  连续尾段时二者等价。欠载散布整段时该值会贴近扫描上限、与 `first_short_step` 相距几百档
+  （合并集实测：256 档中欠载 183/186、首短 1/2、末读满 253/255）⇒ **先数欠载档分布再归因**，
+  跨轮 1~2 档差属噪声。判据与 7 个独立集基线的对照见 `debug-knowledge` zephyr 域
+  `scan-critical-value-is-max-fold-not-boundary.md`。
 
 ## WDR_LEN：写段内容决定读长度（FIFO 深度临界 17/32/64，2026-08-27）
 

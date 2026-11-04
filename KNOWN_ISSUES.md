@@ -785,6 +785,11 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   ⇒ **源码/注释比镜像新**，读源码解释本轮现象会把镜像里没有的改动当成行为。报告同记
   「产物 mtime + md5」与「被测源 mtime」；关键特性用 `grep -a "<字符串>" <elf>` 核镜像；
   结论只对记录的 md5 负责。详见 `qsh-test-run` §1 / `runner-qsh-routing.md` §3.1。
+- **同源重建 md5 变 = 共享树漂移，不是被测源变/回归**（2026-11-03，G-SHARED-TREE-DRIFT-MD5）：
+  `-p always` 只清 build 目录、共享源树照旧参与构建。两次全量重建（integrated `src_manifest` 180 文件
+  逐字节相同、bin 大小相同 339968 / 262400 B）md5 不同，因 `zephyr/` 在 `crypto_clocks` 分支上被并发改
+  （HEAD `9218aad5988` + 9 个未提交修改、62 文件 mtime 晚于上轮构建）。判据/纪律见 `qsh-test-run` §1、
+  `qsh-test-compare` §5 第 21 条；证据 `integrated/runs/2026-11-03-prot-baseline/`。
 
 **32. i3c WDR 时序项间歇性 critical 异常**
 约 1 case/轮，复跑即恢复。基线容忍 ≤1 case；驱动侧 `scl-overhead-ns` 工作流跟进。
@@ -2963,6 +2968,57 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   `integrated/runs/2026-10-29-i3c-errwarn-flush/`（`analysis.json`、`provenance.txt`、
   `r{03,04,10,14,20,21,24}_cpu2.log`）。
 
+- **⚠️ 2026-11-03 更正：本条的「URUN/FLUSHTB 抹续填」根因模型已被实测推翻，上面的「修法方向」无效。**
+  - **v4 判别实验**：在 target ISR 里给每个 ERRWARN 入口做寄存器快照（ISR 内只存不打印），
+    138 个事件实测：**`STREQRD` 恒为 0**（含失败读）；失败事件 = `SERRWARN=0x100 (SPAR)`、
+    `state=RD`、`STOP=0`、`STNOTSTOP=1`、`TXCOUNT=16`；通过的读事件为 `TERM(0x8)` / `URUNNACK(0x4)`。
+    ⇒ 原「URUN」假设与「按 STREQRD 判读中」的判据都不成立。
+  - **跳过 flush 仍失败**：v4 在**失败事件本身**命中「不 flush / 不 teardown」分支
+    （4 个 `rd=1/fl=0` 事件，全部对应失败读），读仍从第 17 字节起 0xff ⇒ **FLUSHTB 不是根因**。
+  - **强行续填有害**：v5 用 `state==RD` 旁路 `STREQRD` 强制续填 ⇒ `multi_msg_4` 数据错位、
+    随后 target 挂死（r04 起 0/35）。已回退，不采用。
+  - **物理层单变量**：integrated controller `i3c5` 引脚 `drive-strength` 1→2、双核重建，
+    同介质 20 轮仍有 `write_stop_read_32` + `big_256` 各 1 次同族失败（2/20）⇒ 驱动强度不足不是充分解释
+    （该轮另有 cpu1 重建件/命令集变化两处混杂，未做受控 A/B）。
+  - **失败形貌**：与 target ISR 的 FLUSHTB/续填判据无关；固定为「prefill 16 B 送完后，
+    第 17 字节起 0xff / 短读」，对应 12.5 MHz SDR 读在 16 B FIFO 边界处的 **SPAR（SDR 数据奇偶错）**，
+    硬件随之中止该笔读。6.25 MHz 用例稳定通过。
+  - **✅ 最终定位（2026-11-03 晚）**：根因是 **commit `683abf494e2` 的「25 MHz 版」时钟改动**，
+    不是驱动读/续填逻辑。该 commit 同时做了：
+    ① `lsqsh.dtsi`：`I3C_CLOCK` 50 → 25；
+    ② `soc.c`：`SYSC_APP_AWO_CLK_SEL_I3C` 0x2（dpll 50 MHz）→ 0x1（hsi 25 MHz）；
+    ③ `i3c_linkedsemi.c`：`TIMINGR1.SDA_HD` 由无条件 1 改为条件式（25 MHz 下算出 0）。
+    **恢复 50 MHz 完整版（三处一起改回）后，同介质 30 轮 36/36 全 PASS，全局零 `FAIL -`**
+    （基线为 7/30）。只改 DTS 属性不改 soc.c 无效；`SDA_HD=0` 是读方向 T-bit 采样余量不足的直接相关项。
+  - **附带观察（不需要保留）**：在 25 MHz 版上把 `CFGR.TXTHRES` 1→0 可把失败率从 ~19% 压到 ~3%
+    （1/30），属部分缓解，说明该失败对 FIFO 触发时序敏感；50 MHz 版不需要此改动。
+  - 证据：`reports/2026-11-03-i3c-errwarn-fix-v3/`（`integrated_rounds/`、`integrated_ewprobe/`、
+    `integrated_v4/`、`integrated_v5/`、`integrated_ds2/`、`integrated_txthres0/`、
+    `integrated_txthres1_ab/`、**`integrated_clk50_full/`**）。
+  - **✅ 2026-11-04 终局（用户裁定，已固化 50 MHz）**
+    - **最终配置**：`lsqsh.dtsi` `I3C_CLOCK = DT_FREQ_M(50)`、`soc.c`
+      `SYSC_APP_AWO_CLK_SEL_I3C = 0x2`（DPLL 50 MHz，驱动内部计数时钟 = 2× = 100 MHz）、
+      驱动 `SDA_HD` 条件式（`config->clock_frequency >= 100000000` 即 DT ≥ 50 MHz 时置 1，否则 0）。
+      25 MHz HSI 版（commit `683abf494e2`）**废弃**，不再使用。
+    - **SDA_HD 规则（用户给定，不再排查）**：该字段单位是 **0.5 个内部计数时钟**；
+      ≥50 MHz 必须置 1，<50 MHz 必须置 0。25 MHz 下置 1 会直接破坏波形（DAA 全挂）。
+    - **25 MHz 版协议违例（示波器）**：SCLL/SCLH 会从 40 ns 突跳到 20 ns，属协议违例 ⇒ 该时钟源不可用。
+    - **失败机制更正**：**不是 target read timeout**。控制器 RX FIFO 满且软件不取时，是**控制器自己拉低 SCL**
+      （控制器侧 stall，从机不驱动 SCL）；用户示波器实测 50 MHz 下该 stall 上限约 **101 µs**，之后控制器
+      自行终止该笔读。GDB 冻结态佐证：RX ISR 冻结约 50 s 后读 I3C5@0x40094000 得
+      `SDATACTRL=0x80000030`（RXCOUNT=0、RXEMPTY=1）、`SERRWARN=0` ⇒ 不是永久保持、也没有 target 侧 SPAR。
+      印证此前结论：控制器侧注入（关 RX 中断/ms 级延时/引脚级拉低）造不出 target read timeout。
+    - **25 MHz 失败根因归到边界时序**：失败形貌固定在 16 字节 FIFO 边界（第 17 字节起 0xff/短读），
+      示波器上伴随约 70 µs 的 SCL 低停（正常 25/58 µs）；此前 <5 µs 的 ISR 注入即可扰动失败率 ⇒
+      该边界余量在 25 MHz 下不足。50 MHz 下余量足够，读不再出现该失败。
+    - **实测基线**：50 MHz 完整版 30 轮 36/36（2026-11-03，见上条证据
+      `integrated_clk50_full/`）；2026-11-04 恢复 50 MHz 后 fresh boot sanity 1 轮 36/36
+      （`reports/2026-11-04-i3c-restore-50m/STATE.md` + `sanity.log`）；
+      同日 RX-full 场景对照见 `reports/2026-11-04-i3c-rxfull-stall/`。
+    - **已撤除的临时探针**：驱动内 `probe_hold_en/at/hits` + RX ISR `while(1)`、`probe_stall/arm/at/hits`、
+      `probe_rxoff`、target ISR 的 PA05 SPAR/开机脉冲、controller 测试的对应 shell 命令 —— 全部已从源码移除；
+      最终 binary 中 `grep -a probe_hold` 应为空。
+
 ---
 
 ## crypto 驱动契约（2026-10-29 登记）
@@ -3018,3 +3074,52 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   **影响面**：`CAP_RAW_KEY` 是**加法位**，`hash_begin_session` 不检查 key 位，树内无其它消费者对这两颗
   hash 的 caps 做断言。⚠️ **`mbedtls_test` 本轮未重跑** —— 该消费者的回归未覆盖，下次跑 mbedtls 时按本条
   判据（扫 `ZEPHYR FATAL ERROR 4` + `mcause 11`、不看 PASS 行）复核，不要据本轮结果宣称其无影响。
+
+---
+
+## 用例结构 / 负路径写法（2026-10-29 登记）
+
+**159. 负路径 helper 把"篡改"写在正对照之前：负路径永远测不到，只以"正对照失败"收场**（2026-10-29 实测；**同日已修复 + 上板复测**，见本条末段）
+- **形貌**：`projects/crypto_api_test/cpu1_crypto_api_test/src/sm4_ext_test.c::ext_auth_fail(mode, tamper_tag, tamper_aad)`
+  一个 helper 兼做两件事 —— 「正对照（原始 tag 解密必须成功）」与「负路径（篡改后必须失败）」。
+  修复前：`ext_tag2[0] ^= 0x01` 在正对照解密**之前**执行、正对照用的正是被篡改的 `ext_tag2`；
+  而真正的负路径调用 `ret_bad = ext_aead_op(…, ext_tag, …)` 传的仍是**原始 tag** ⇒
+  `sm4_gcm_tag_tamper` / `sm4_ccm_tag_tamper` **恒停在** `:262 (ret_ok not equal to 0)`；
+  即使前一条放行，`zassert_not_equal(ret_bad, 0)` 也会因 `ret_bad == 0` 再挂一次。
+- **判别捷径**：同 helper 的 `tamper_aad` 分支把篡改放在正对照**之后** ⇒ 两项 PASS
+  （`bad_ret` ccm=-1 / gcm=-14）。**同一 helper 两个分支一正一反 ⇒ 写法问题，不是驱动**。
+- **判据**：负路径项的报错点落在"正对照"断言（`… positive control failed` /
+  `zassert_equal(ret_ok, 0, …)`）而不是"必须失败"断言 ⇒ 先看篡改语句在正对照之前还是之后，
+  再看负调用实参是否吃到篡改值。
+- **修法（已落地）**：顺序 = 正对照 → 篡改（`memcpy` 出副本后 `^=`）→ 负调用取
+  `tamper_tag ? ext_tag2 : ext_tag`；正对照失败给独立判词。
+- 落点 `qsh-test-gen` §1.6 第 36 条 · 检查项 `qsh-test-validate` §1.10ae · 判读 `qsh-test-compare` §2。
+- **✅ 2026-10-29 已修复 + 复测**：现源码 `sm4_ext_test.c:258` 正对照在 `:262-267` 篡改之前、
+  `:271` 传 `tamper_tag ? ext_tag2 : ext_tag`；`reports/2026-10-29-1/crypto_api_test_case_default/`
+  两项均 PASS（`mode=gcm/ccm, tamper=tag, control_ret=0, bad_ret=-14/-1`）。本条保留为**回归护栏**：
+  把篡改挪回正对照之前，两项会重新以"正对照失败"收场（不会变成假 PASS，但会掩盖负路径覆盖为 0）。
+
+## OTBN 代理错误码域（2026-10-30 登记）
+
+**160. OTBN 代理层"统一错误码域"改造漏改 `err = -Exxx; goto out` 分支 ⇒ 双核都收到 errno，用例断言 `LS_OTBN_ERR_*` 全 FAIL**（2026-10-30 实测；**同日已修复 + 双核复测**，保留为**易复发检查项**）
+- **形貌**：`otbn_delegation_test case_slot` 4 项 FAIL（两核均 `PROJECT EXECUTION FAILED`），
+  断言 `(err not equal to LS_OTBN_ERR_NOENT / CURVE / MSGSIZE)`；实际值 `-2`(`-ENOENT`)、`-77`(`-EBADMSG`)、
+  `-122`(`-EMSGSIZE`) 全在 errno 域（`> -0x10000`）而非自定义域。其中 s09 的请求串无 `%d`，实际值未打印
+  （按源码分支推得），判读方法见 `debug-knowledge` common 域 `negative-return-code-domain.md`。
+- **根因**：代理 handler 里 `return LS_OTBN_ERR_*` 的分支已统一，但**走统一出口的分支仍用
+  `err = -Exxx; goto out`** —— 每个 handler 4 处、两个 handler 共 8 处漏改。传播链：
+  `server_handle()` 把 handler 返回值交给 `server_reply()`，后者**原样**写入 `reply.status`；
+  客户端读回后直接 `return rpy->status` ⇒ 经 mbox 的 CTRL 与直调的 TGT **都**拿到 errno。
+- **判据 / 检查项（易复发）**：统一错误码域改动的完成判据不是"显式 `return` 都改了"，而是：
+  ① 扫全文件所有错误来源（`return -E…` 与 `err = -E…` 两类，含 `err |=` / 宏展开）；
+  ② 沿请求-响应链核两端（服务端上行前、客户端返回前）的转换点；
+  ③ 转换函数须**幂等**（自定义码原样通过），否则重复转换会把库码再映射错。
+  检查项落在 `qsh-driver-review` §1.6。
+- **✅ 2026-10-30 19:23 已修复**：`zephyr/soc/linkedsemi/lsqsh/otbn/mbedtls/mbedtls_otbn_ecdsa_slot_mbox.c`
+  8 处转换（`ENOENT→NOENT`、`EPROTO→PROTO`、`EBADMSG→CURVE`、`EMSGSIZE→MSGSIZE`）；
+  `ls_otbn_err_from_errno()` 幂等（自定义码原样返回）。修复前证据 `reports/2026-10-30-4/`
+  （case_slot 4/17）；修复后双核复跑 `reports/2026-10-30-5/`：OVERALL PASS、0 FAIL
+  （CTRL 14 PASS/3 SKIP、TGT 9 PASS/8 SKIP；按双核同名折叠 6 PASS/11 SKIP —— SKIP 是各角色
+  不跑自己那一侧的设计项，不是缺证据）。双核须同批重建同烧（与 #122 同一跨核耦合）。
+- **落点**：`qsh-driver-review` §1.6 · `qsh-test-compare` §2 · `debug-knowledge` common 域
+  `negative-return-code-domain.md`。
