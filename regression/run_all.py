@@ -598,7 +598,8 @@ def main():
     ap.add_argument("--cases-file", default=None,
                     help="改用另一份同格式清单（默认 regression/cases.yaml，只列工程）；"
                          "顶层条目也认 case 目录，故旧的完整 case 路径子集清单仍可用；"
-                         "走的仍是完整 run_all 路径")
+                         "走的仍是完整 run_all 路径；本批归档固定 reports/<date>-<idx>，"
+                         "单模块测试请直接跑 projects/<p>/tests/run_test.py（进 reports/module/）")
     args = ap.parse_args()
 
     cases = read_cases(args.cases_file)
@@ -610,6 +611,11 @@ def main():
         for c in cases:
             proj = c.parents[1].name
             print(f"  {proj:<22} {c.name:<26} -> {_resolve_script(proj) or '??'}")
+        sys.path.insert(0, str(ROOT / "common"))
+        from report_dir import plan_session_dir          # noqa: E402
+        planned = plan_session_dir(
+            REPORTS_ROOT, args.date or datetime.date.today().isoformat(), kind="full")
+        print(f"[run_all] DRY-RUN 计划会话目录（全量）: {planned}")
         return 0
 
     # ★ try/finally：任何退出路径都释放 CKLink（§15 互斥）
@@ -636,7 +642,11 @@ def _run_all(args, cases):
     sys.path.insert(0, str(ROOT / "common"))
     from report_dir import allocate_session_dir, read_summary, update_summary
     import acquire as _acquire   # E-2：每 case 前复用同一份 DS 存活检查（不另写一套）
-    session = allocate_session_dir(REPORTS_ROOT, args.date or datetime.date.today().isoformat())
+    # 批量回归固定落到 reports/<date>-<idx>（kind="full"）；单模块 run_test.py
+    # 自行分配的会话走 reports/module/（见 common/report_dir.py）。
+    session = allocate_session_dir(
+        REPORTS_ROOT, args.date or datetime.date.today().isoformat(),
+        kind="full", projects=sorted({c.parents[1].name for c in cases}))
     print(f"[run_all] session: {session}", flush=True)
 
     if not args.no_precheck:

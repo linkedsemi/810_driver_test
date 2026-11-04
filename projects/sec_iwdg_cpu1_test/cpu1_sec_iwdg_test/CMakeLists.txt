@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-# wdt_test CMakeLists.txt
+# sec_iwdg_cpu1_test CMakeLists.txt
 
 cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(cpu1_wdt_test)
+project(cpu1_sec_iwdg_test)
 
 # 破坏性测试用不同源文件（test.sh 通过 -DWDT_DESTRUCTIVE_RESET 传递）
 if(WDT_DESTRUCTIVE_RESET)

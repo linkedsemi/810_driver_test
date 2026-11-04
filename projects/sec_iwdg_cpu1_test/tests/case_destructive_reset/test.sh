@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cpu1_iwdg destructive reset test - 触发 sec_iwdg 硬件复位
+# sec_iwdg destructive reset test（cpu1）- 触发 sec_iwdg 硬件复位
 #
 # 流程：
 #   1. 构建普通 2os 固件（RAM 地址 0x100c0000）
@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-TARGET_SRC="${I3C_TEST_ROOT}/cpu1_wdt_test"
+TARGET_SRC="${I3C_TEST_ROOT}/cpu1_sec_iwdg_test"
 TARGET_OVERLAY="$(realpath "${TARGET_SRC}/app.overlay")"
 TARGET_CONF="$(realpath "${TARGET_SRC}/prj.conf")"
 TEST_BUILD_DIR="${I3C_TEST_ROOT}/tests/${TEST_NAME}/build"

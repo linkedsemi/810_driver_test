@@ -20,6 +20,10 @@ void test_main(void)
 	wdt_pmu_reset_main();
 #else
 	LOG_INF("[CPU1 WDT] WDT test started");
+	LOG_INF("[CPU1 WDT] non-destructive suite: install/query only, "
+		"the watchdog is never allowed to fire -> no reset here. "
+		"Real reset: `itest hwreset sec_iwdg` (standalone: "
+		"case_destructive_reset / case_pmu_iwdg_full_reset)");
 	zt_init("TGT");
 	zt_run_all();
 #endif

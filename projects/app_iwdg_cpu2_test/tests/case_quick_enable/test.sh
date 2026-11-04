@@ -16,7 +16,7 @@
 # Hardware IO connections: 无外部接线（片内外设）。
 #
 # 注：本 case 通过 controller.overlay 给 app_iwdg 加 quick-enable 属性；
-#     该项是本案新开独立工程后新增的覆盖能力（wdt_test 受"只增不改"约束
+#     该项是本案新开独立工程后新增的覆盖能力（sec_iwdg_cpu1_test 受"只增不改"约束
 #     无法引入该 DT 配置）。
 #
 # Build artifacts:   tests/case_quick_enable/build/{target,controller}/

@@ -143,6 +143,7 @@
 - **入口地址禁止从异型样板抄用**：设错 `$pc` → 固件根本没跑 → 串口 0 行，与"固件/配置问题"同症状。
   - Python 脚本（dbg_run / run_test / dump_results）单核一律 `os.environ.get("TARGET_ROM_START", "0x10000000")`（`dump_results.py` 用 `int(..., 0)`，默认值即 1os 入口，无需覆盖）；双核显式给出 `0x100c0000`。
   - shell 侧由 `scripts/test_common.sh` 分流：单核路径 `SINGLE_BOARD`/`SINGLE_ROM_START`（默认 1os + `0x10000000`），双核路径 `TARGET_BOARD`/`TARGET_ROM_START`（默认 2os + `0x100c0000`）。单核 test.sh 用 `build_single_test`/`load_and_run_single`，双核用 `build_test`/`load_and_run`——用错分型会强制错板级（KNOWN_ISSUES #43）。
+- **集成套件例外（cpu1 走 XIP）**：`integrated/` 下 `itest_all` / `itest_crypto` 的 cpu1 固定用 `lsqsh_evb@2os_cpu1_xip/lsqsh/cpu1`（入口 `0x8010100`）；用上表的 `@2os` RAM 变体时 DT 生成阶段即报 `undefined node label 'sram_ro'`。原因、判据与移植侧清单见 `qsh-test-run` §2（G-ITEST-CPU1-BOARD-VARIANT）与 `integrated/PORTING.md` §3。
 
 ### 6.2 Agent 与结果规范
 
@@ -482,31 +483,43 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 - 定位闭环的问题写 `<BUG>_<SUMMARY>.md` 总结（现象/根因/证据/修复/验证/通用教训）存档供后续避坑；调试中的状态记 `<NAME>_STATUS.md` 并维护状态表。
 - 新建工程先读样板 `projects/i3c_dualcore_test/tests/` 下已有问题总结，确认不会重犯。
 - **沉淀准则**：只沉淀"会反复遇到"的坑（环境/工具链/方法学，如连接残留、I-cache、ISR 禁 LOG）进 `KNOWN_ISSUES.md` 或对应 skill；**一次性问题**（修复后不再遇到的具体 bug）只写 .md 存档，不加入 `KNOWN_ISSUES.md`/skill。判断标准：换机器/测试/驱动会不会再踩？不会再踩就不沉淀。
+- **模块内容归属（2026-11-04）**：模块自身的事实与记录（硬件地址/分区、寄存器怪癖、引脚/接线、
+  已知缺陷、测试预期、实测数值）写入该工程 `projects/<p>/tests/COVERAGE.md`；全局文档
+  （`KNOWN_ISSUES.md` / `OPEN_ITEMS.md` / skill）只保留**跨工程规则与索引**，不重复模块细节。
 
 ### 6.4 测试报告归档规范（所有 run_*_tests.py 必须实现）
 
 一次回归 = 一次归档，脚本自动生成，不依赖人工收集。
 
-#### 6.4.1 目录与文件（会话目录 `reports/<YYYY-MM-DD>-<idx>`）
+#### 6.4.1 目录与文件（`reports/<date>-<idx>` = 全量；`reports/module/<date>-<idx>` = 单模块）
 
 ```text
 810_driver_test/reports/
-└── <YYYY-MM-DD>-<idx>/              # 会话目录：idx = 当天第几次会话（1 起累加）
-    ├── summary.md                   # 最外层，行粒度 = case（§6.4.4）
-    ├── precheck_report.md           # 环境预检报告（批量跑 precheck 时写入，§6.4.6）
-    ├── logs/                        # 批量时每 case 一个日志（run_all.py 写入）
-    ├── <project>_<case>/            # 每 case 一个子文件夹
-    │   ├── <driver>_test_report.md
-    │   ├── <driver>_test_report.json
-    │   ├── serial_CTRL.log          # 原始串口归档（§6.4.7，双核才有）
-    │   ├── serial_TGT.log           # 原始串口归档（§6.4.7）
-    │   └── replay_meta.json         # 离线重放元信息（§6.4.7）
-    └── ...
+├── <YYYY-MM-DD>-<idx>/              # 全量回归会话（regression/run_all.py）
+│   ├── session_meta.json            # 会话元信息：kind=full / git_sha / projects[]
+│   ├── summary.md                   # 最外层，行粒度 = case（§6.4.4）
+│   ├── precheck_report.md           # 环境预检报告（批量跑 precheck 时写入，§6.4.6）
+│   ├── logs/                        # 批量时每 case 一个日志（run_all.py 写入）
+│   └── <project>_<case>/            # 每 case 一个子文件夹
+│       ├── <driver>_test_report.md
+│       ├── <driver>_test_report.json
+│       ├── serial_CTRL.log          # 原始串口归档（§6.4.7，双核才有）
+│       ├── serial_TGT.log           # 原始串口归档（§6.4.7）
+│       └── replay_meta.json         # 离线重放元信息（§6.4.7）
+└── module/
+    └── <YYYY-MM-DD>-<idx>/          # 单模块会话（run_test.py 单独运行）
+        ├── session_meta.json        # kind=module / project / projects[]
+        ├── summary.md
+        └── <project>_<case>/ ...
 ```
 
-- **会话目录分配/写入一律走公共模块 `common/report_dir.py`**（`allocate_session_dir()` / `case_dir_for()` / `read_summary()` / `update_summary()`），**禁止 run 脚本自算归档路径**；一次批量会话（`regression/run_all.py`）内全部 case 共用同一个会话目录；单独跑某个 case（`run_*_tests.py` 不带 `--session-dir`）时自动分配新会话目录。
+- **会话目录分配/写入一律走公共模块 `common/report_dir.py`**（`allocate_session_dir()` / `case_dir_for()` / `read_summary()` / `update_summary()`），**禁止 run 脚本自算归档路径**。
+- `allocate_session_dir(root, date, kind=...)`：`kind="module"`（默认）→ `<root>/module/<date>-<idx>`；`kind="full"` → `<root>/<date>-<idx>`。两种序号**各自独立扫描**（同日可同时存在 `2026-11-04-1` 与 `module/2026-11-04-1`）。
+- 批量回归（`run_all.py`）显式传 `kind="full"` 并只分配一次、全部 case 共用；单工程 `run_test.py` 不带 `--session-dir` 时按默认 `module` 自动分配。
+- 分配时写 `session_meta.json`（`kind` / `project(s)` / `git_sha` / `created`）；`case_dir_for()` 幂等登记 project。**历史无 meta 的目录保持原样可读**。
 - 旧格式目录（`reports/<date>/`，无 idx）不再产生，历史归档保持原样可读。
 - 单次 `dbg_run.py`（调试）不归档，只归档一键回归。
+- `reports/module/` 已在 `.gitignore`（单模块报告不入库）；全量报告路径维持现状。
 
 #### 6.4.2 报告内容模板（Markdown）
 
@@ -571,6 +584,7 @@ OVERALL: PASS
 每工程脚本写完自己的报告后 `update_summary()` 更新会话目录的 `summary.md`：
 - 文件不存在 → 创建并写表头；已存在 → **按 key 替换该行**（不追加重复行）。
 - **key = `<project>_<case>`**（一行一个 case，i3c 7 case 各自一行）。
+- **标题按会话类型渲染**（`_summary_title()`）：module → `# 810_driver_test 汇总（单模块 <session>）`；full（有 `session_meta.json`）→ `# 810_driver_test 汇总（全量 <session>）`；历史无 meta 目录保持 `# 810_driver_test 汇总（<session>）`。
 - 行格式：`\| [<project>_<case>](<报告相对路径>) \| <PASS\|FAIL> \| <passed>/<total> \|`
 - case 级判定沿用 §6.2.1 标准（单核全项 PASS + SUCCESSFUL；双核同名项双 PASS + 两核 SUCCESSFUL；i3c_dualcore 例外 = CTRL SUCCESSFUL 且 TGT execution != "FAILED"，见 §6.2.1 双核例外）。
 
@@ -674,26 +688,21 @@ python regression/precheck/run_precheck.py [--session-dir <dir>] [--timeout 40]
 
 ```bash
 cd 810_driver_test
-python regression/replay.py --session reports/2026-09-21-1 --list          # 列出可重放 case
-python regression/replay.py --session reports/2026-09-21-1 --case trng_test_case_default
-python regression/replay.py --session reports/2026-09-21-1 \
-    --project trng_test --project i3c_dualcore_test --limit 2             # 按工程抽样批量重放
-python regression/replay.py --session reports/2026-09-21-1 --render-from-json   # 用 .json 反推 .md（校验）
+python regression/replay.py --session reports/<会话> --list          # 全量会话：列出可重放 case
+python regression/replay.py --session reports/module/<会话> --list   # 单模块会话
+python regression/replay.py --session reports/<会话> --case trng_test_case_default
+python regression/replay.py --session reports/<会话> \
+    --project trng_test --project i3c_dualcore_test --limit 2        # 按工程抽样批量重放
+python regression/replay.py --session reports/<会话> --render-from-json   # 用 .json 反推 .md（校验）
 ```
 
-> **★ 语料可用性声明（`reports/` 留存范围 —— 唯一真源，2026-09-24）**
-> - **现存**：**仅 `<date>-1` 四份** —— `reports/2026-09-21-1` / `-22-1` / `-23-1` / `-24-1`
->   （均含 `serial_*.log` + `replay_meta.json`，各 49~51 个可重放 case）。**本节示例命令统一用
->   `2026-09-21-1`**（已入库、留存最稳；`regression/replay.py --session reports/2026-09-21-1 --list`
->   实测 rc=0）。
-> - **已不可得**：① `reports/2026-09-17-*` / `-18-*` / `-19-*` / `-20-*`（含 `2026-09-20-11/-12/-13/-18`）
->   —— 工作区无、且 `git log --all --diff-filter=A` **返回空**（**从未提交，无法从 git 恢复**）；
->   ② **同日其它序号**（如 `2026-09-21-2` / `-7` / `-8`、`2026-09-22-2`）**亦不保留** —— 会话目录
->   按需分配、且可能被后续重写（本文档前部"语料快照提示"即记了"另一路 agent 重写 `reports/`"的实例）。
->   **原示例 `--session reports/2026-09-20-1` 即属①**：直接复制会失败，故本版改用 `2026-09-21-1`。
-> - **纪律**：引用旧会话（`2026-09-17~09-20`）时**只作留痕**，**不得据此向外指路**（不得新写
->   "详见 `reports/…`"）；确需引用时把**结论本身内联**，或改指现存会话。
->   **不要重建、也不要推测缺失报告的内容。**
+> **★ 证据与语料口径（2026-11-04）**
+> - `reports/`（含 `reports/module/`）是**可删除的临时归档**，**不得作为问题记录的证据**；
+>   本仓已多次清理，留存范围不作硬承诺。
+> - 命令示例统一用 `reports/<会话>` 占位；需要区分类型时写 `reports/<会话>`（全量）或
+>   `reports/module/<会话>`（单模块）。
+> - 问题记录只内联结论 + `810_driver_test@<12 位 sha>`；规则详见 §6.4.7.1。
+> - 已清理的报告**不要重建、也不要推测其内容**。
 
 - **复用同一套判定/渲染函数**：重放不另写一套判定。它把归档的原始行接回**该工程自己的
   `run_test.py`**，让它的 `main()` 原样跑完 判定 → 渲染 → 归档；**只把"硬件采集层"
@@ -726,6 +735,19 @@ python regression/replay.py --session reports/2026-09-21-1 --render-from-json   
 - 已知边界补充：`mbox_test` 的判定入参是 `(时刻, 字节块)` 形式，归档时用**判定同款的
   `_split_lines()`** 还原成逐行文本，保证归档内容与判定实际消费的行一致；
   该工程报告的核×类别矩阵模板（§6.4.2 例外项）不在重放"统一"范围内。
+
+#### 6.4.7.1 问题记录的证据口径（★ 2026-11-04）
+
+- **`reports/` 是临时归档，可被随时删除（含 `reports/module/`），不得作为问题记录的证据。**
+- 适用范围：`KNOWN_ISSUES.md` / `OPEN_ITEMS.md` / `projects/*/tests/COVERAGE.md` /
+  `.claude/gotchas/INBOX.md`。
+- **写法**：只写**现象 / 根因 / 判据 / 处置**（结论内联）；需要标识版本时写
+  `810_driver_test@<12 位 sha>`（工作区有未提交修改时加 `+dirty`），**不写报告路径**。
+- **命令示例**：统一用 `reports/<会话>` 占位符（单模块写 `reports/module/<会话>`），
+  不写具体日期会话名。
+- **自查**：新增/修改问题条目前执行
+  `grep -nE "reports/[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+" <文件>`，应无命中（命令示例除外）。
+- 已清理的报告**不得重建、不得推测其内容**；确需复核时按结论重跑，而不是找回旧报告。
 
 #### 6.4.8 分层原子化：L1/L2 边界与处理层契约（★ 2026-09-20 A1）
 
@@ -1148,6 +1170,10 @@ A1 的离线重放靠**猴补丁工程模块上的 L1 名字**（`mod.run_case` 
 ```
 
 每个测试项一行；`预期来源` 注明协议文档/NIST 向量/统计公式/API 契约。
+
+- **本文件也是该模块的“内容记录”落点**：关键地址/分区、寄存器怪癖、引脚/接线、已知缺陷、
+  实测数值等**模块自身**的事实写在这里；`KNOWN_ISSUES.md` / `OPEN_ITEMS.md` / skill 只保留
+  跨工程规则与索引（SPEC_REFERENCE §6.3）。
 
 #### 6.5.4 INFO 约定行（实测数值上报，ZT_INFO 宏）
 

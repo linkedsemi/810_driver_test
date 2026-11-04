@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # app_iwdg_cpu2_test - case_reset 执行脚本（破坏性：真实复位 cpu2）
 #
-# ⚠ 未实机校准：按 SPEC_REFERENCE §6.7（XIP 固化与启动测试）+ wdt_test
+# ⚠ 未实机校准：按 SPEC_REFERENCE §6.7（XIP 固化与启动测试）+ sec_iwdg_cpu1_test
 #   case_destructive_reset 的 noinit 状态机流程编写，**首次实机运行前**
 #   须核对以下实机相关项（P6）：
 #     1. CPU1 侧是否需改用 @2os_xip 变体构建（§6.7.4：XIP 标准组合 =

@@ -96,7 +96,7 @@ DEFAULT_OUT_ROOT = ROOT / "tmp" / "replay"
 # 按"硬件采集层"的形状分家族（决定接线方式），与判定家族一一对应。
 SINGLE_CAP = {                    # 单核 SerialCapture + run_case -> tgt_lines[(ts,line)]
     "adc_temper_test", "dma_test", "emmc_test", "flash_test", "iopmp_test",
-    "pwm_test", "qspi_flash_test", "wdt_test", "eth_test",
+    "pwm_test", "qspi_flash_test", "sec_iwdg_cpu1_test", "eth_test",
 }
 PORTS_DICT = {                    # 单核 capture_case -> (ports, ok, err)
     "trng_test", "i2cf_test", "io_probe_test", "spi_test", "spid_test",

@@ -84,7 +84,7 @@ static void wdt_boundary_teardown(void *data)
 /* ---- install_timeout: 窗口参数 ---- */
 
 /* window.min != 0：驱动不支持窗口模式，一律 -EINVAL */
-ZTEST(wdt_boundary, test_window_min_nonzero_rejected)
+ZTEST(sec_iwdg_boundary,test_window_min_nonzero_rejected)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -97,7 +97,7 @@ ZTEST(wdt_boundary, test_window_min_nonzero_rejected)
 }
 
 /* window.min == window.max != 0：仍属窗口模式，-EINVAL */
-ZTEST(wdt_boundary, test_window_min_equals_max_rejected)
+ZTEST(sec_iwdg_boundary,test_window_min_equals_max_rejected)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -110,7 +110,7 @@ ZTEST(wdt_boundary, test_window_min_equals_max_rejected)
 }
 
 /* window.max == 0：上界为 0 无意义，-EINVAL */
-ZTEST(wdt_boundary, test_window_max_zero_rejected)
+ZTEST(sec_iwdg_boundary,test_window_max_zero_rejected)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -125,7 +125,7 @@ ZTEST(wdt_boundary, test_window_max_zero_rejected)
 /* ---- install_timeout: flags × 实例匹配（HAL_IWDG_IS_MATCH） ---- */
 
 /* sec_iwdg 属 HART 复位域，只接受 WDT_FLAG_RESET_CPU_CORE */
-ZTEST(wdt_boundary, test_sec_iwdg_rejects_reset_soc_flag)
+ZTEST(sec_iwdg_boundary,test_sec_iwdg_rejects_reset_soc_flag)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_SOC,
@@ -138,7 +138,7 @@ ZTEST(wdt_boundary, test_sec_iwdg_rejects_reset_soc_flag)
 }
 
 /* pmu_iwdg 属 SOC 复位域，只接受 WDT_FLAG_RESET_SOC */
-ZTEST(wdt_boundary, test_pmu_iwdg_rejects_reset_cpu_core_flag)
+ZTEST(sec_iwdg_boundary,test_pmu_iwdg_rejects_reset_cpu_core_flag)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -151,7 +151,7 @@ ZTEST(wdt_boundary, test_pmu_iwdg_rejects_reset_cpu_core_flag)
 }
 
 /* flags = 0（WDT_FLAG_RESET_NONE）与未知位 0xFF 均不匹配任何实例 -> -EINVAL */
-ZTEST(wdt_boundary, test_install_rejects_unmatched_flags)
+ZTEST(sec_iwdg_boundary,test_install_rejects_unmatched_flags)
 {
 	struct wdt_timeout_cfg cfg_none = {
 		.flags = WDT_FLAG_RESET_NONE,
@@ -174,7 +174,7 @@ ZTEST(wdt_boundary, test_install_rejects_unmatched_flags)
 }
 
 /* 各实例在自身支持的 flags 下 install 成功（返回非负 channel） */
-ZTEST(wdt_boundary, test_install_accepted_on_supported_flags)
+ZTEST(sec_iwdg_boundary,test_install_accepted_on_supported_flags)
 {
 	struct wdt_timeout_cfg cfg_sec = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -199,7 +199,7 @@ ZTEST(wdt_boundary, test_install_accepted_on_supported_flags)
 /* ---- install_timeout: callback 注册 / 清除分支 ---- */
 
 /* callback != NULL：驱动走 irq_config_func + data->callback 赋值分支 */
-ZTEST(wdt_boundary, test_install_with_callback_accepted)
+ZTEST(sec_iwdg_boundary,test_install_with_callback_accepted)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -222,7 +222,7 @@ ZTEST(wdt_boundary, test_install_with_callback_accepted)
 }
 
 /* callback == NULL：驱动走 data->callback 置空分支 */
-ZTEST(wdt_boundary, test_install_without_callback_accepted)
+ZTEST(sec_iwdg_boundary,test_install_without_callback_accepted)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -238,7 +238,7 @@ ZTEST(wdt_boundary, test_install_without_callback_accepted)
 /* ---- setup 错误分支 ---- */
 
 /* IWDT_LOAD == 0（未安装超时）-> -ENOTSUP */
-ZTEST(wdt_boundary, test_setup_without_timeout_enotsup)
+ZTEST(sec_iwdg_boundary,test_setup_without_timeout_enotsup)
 {
 	/* 复现「未安装超时」前置态：CTRL=0 且 LOAD=0。
 	 * 直接写寄存器使本项与套件内其它用例的执行顺序解耦。 */
@@ -252,7 +252,7 @@ ZTEST(wdt_boundary, test_setup_without_timeout_enotsup)
 }
 
 /* WDT_OPT_PAUSE_IN_SLEEP 不支持 -> -ENOTSUP（且不使能看门狗） */
-ZTEST(wdt_boundary, test_setup_pause_in_sleep_enotsup)
+ZTEST(sec_iwdg_boundary,test_setup_pause_in_sleep_enotsup)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -268,7 +268,7 @@ ZTEST(wdt_boundary, test_setup_pause_in_sleep_enotsup)
 }
 
 /* IWDT_CTRL != 0（已 setup）-> -EBUSY */
-ZTEST(wdt_boundary, test_setup_twice_ebusy)
+ZTEST(sec_iwdg_boundary,test_setup_twice_ebusy)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -291,7 +291,7 @@ ZTEST(wdt_boundary, test_setup_twice_ebusy)
 /* ---- setup / feed / disable 正常通路 ---- */
 
 /* WDT_OPT_PAUSE_HALTED_BY_DBG 被接受；feed/disable 返回 0 */
-ZTEST(wdt_boundary, test_setup_pause_halted_by_dbg_feed_disable)
+ZTEST(sec_iwdg_boundary,test_setup_pause_halted_by_dbg_feed_disable)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -313,7 +313,7 @@ ZTEST(wdt_boundary, test_setup_pause_halted_by_dbg_feed_disable)
 }
 
 /* pmu_iwdg 功能通路：install(RESET_SOC) -> setup -> feed -> disable */
-ZTEST(wdt_boundary, test_pmu_iwdg_lifecycle)
+ZTEST(sec_iwdg_boundary,test_pmu_iwdg_lifecycle)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_SOC,
@@ -336,7 +336,7 @@ ZTEST(wdt_boundary, test_pmu_iwdg_lifecycle)
 /* ---- timeout_ms -> IWDT_LOAD 换算（边界） ---- */
 
 /* 最小有效超时 1 ms */
-ZTEST(wdt_boundary, test_load_ticks_min_timeout)
+ZTEST(sec_iwdg_boundary,test_load_ticks_min_timeout)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -353,7 +353,7 @@ ZTEST(wdt_boundary, test_load_ticks_min_timeout)
 }
 
 /* 常用值 1000 ms */
-ZTEST(wdt_boundary, test_load_ticks_1000ms)
+ZTEST(sec_iwdg_boundary,test_load_ticks_1000ms)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -374,7 +374,7 @@ ZTEST(wdt_boundary, test_load_ticks_1000ms)
  * 未超过 UINT32_MAX，故 IWDT_LOAD = 4294967263。
  * 2026-09-18 驱动改为 64 位乘法后改判（原值 4294934 是按 32 位回绕语义手算的）。
  */
-ZTEST(wdt_boundary, test_load_ticks_just_below_saturation)
+ZTEST(sec_iwdg_boundary,test_load_ticks_just_below_saturation)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -396,7 +396,7 @@ ZTEST(wdt_boundary, test_load_ticks_just_below_saturation)
  * 触发饱和，故 IWDT_LOAD = 0xFFFFFFFF（本意 = 钳到硬件寄存器最大值）。
  * 2026-09-18 驱动改为 64 位乘法后改判（原值 0 是按 32 位回绕语义手算的）。
  */
-ZTEST(wdt_boundary, test_load_ticks_saturation_boundary)
+ZTEST(sec_iwdg_boundary,test_load_ticks_saturation_boundary)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -418,7 +418,7 @@ ZTEST(wdt_boundary, test_load_ticks_saturation_boundary)
  * 触发饱和，故 IWDT_LOAD = 0xFFFFFFFF（与 131072000 ms 同值）。
  * 2026-09-18 驱动改为 64 位乘法后改判（原值 4294934 是按 32 位回绕语义手算的）。
  */
-ZTEST(wdt_boundary, test_load_ticks_uint32_max_timeout)
+ZTEST(sec_iwdg_boundary,test_load_ticks_uint32_max_timeout)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -435,4 +435,6 @@ ZTEST(wdt_boundary, test_load_ticks_uint32_max_timeout)
 		      load, TICKS_UINT32_MAX_MS);
 }
 
-ZTEST_SUITE(wdt_boundary, NULL, wdt_boundary_setup, NULL, NULL, wdt_boundary_teardown);
+/* teardown 放在 after 槽（第 5 个参数）：每条 case 之后都关狗，避免断言
+ * 失败时把已装好的 sec/pmu 看门狗留给后续套件（本套件现在可进 run all）。 */
+ZTEST_SUITE(sec_iwdg_boundary, NULL, wdt_boundary_setup, NULL, wdt_boundary_teardown, NULL);

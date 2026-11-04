@@ -10,18 +10,20 @@
  *
  * 判据来源 = **本驱动的实际契约**（2026-10-29 实机复核），按 API 层级区分：
  *
- *   - session 级不支持（algo / mode / keylen / flags）→ `-ENOTSUP`
- *       本驱动 `crypto_linkedsemi_{sm4,sha256,sha512}.c` 在这四条路径上
- *       一律 `return -ENOTSUP` 并打 `LOG_ERR("Unsupported …")`（sm4 5 处、
- *       sha256 2 处、sha512 2 处）。语义上也更贴切：这些参数的**枚举值本身
- *       合法**，只是驱动不支持，不属"参数非法"。
+ *   - session 级不支持（algo / mode / flags）→ `-ENOTSUP`
+ *       本驱动 `crypto_linkedsemi_{sm4,sha256,sha512}.c` 在这些路径上
+ *       一律 `return -ENOTSUP` 并打 `LOG_ERR("Unsupported …")`。语义上也
+ *       更贴切：这些参数的**枚举值本身合法**，只是驱动不支持，不属"参数非法"。
  *       ⚠️ 与本树多数厂商驱动（`return -EINVAL` 184 处 vs `-ENOTSUP` 23 处）
  *       **刻意不一致**：驱动侧统一成 -EINVAL 会波及 mbedtls 等其它工程，
  *       本仓测试按驱动真实契约断言。若将来驱动统一口径，本组期望值需同步改
  *       （见 KNOWN_ISSUES #157）。
+ *   - keylen 错误 → `-ENOTSUP`（session 级参数不受支持，与 O-55 方案②一致）
+ *   - 参数越界（CCM 的 NULL / out_buf_max 不足 / tag_len）→ `-EINVAL`
  *
- *   - 参数越界（CCM 的 NULL / 长度 / tag_len）→ `-EINVAL`（同一驱动的 pkt 级
- *       路径确实返回 -EINVAL，实测佐证，见 ERR_CCM 组）。
+ * ⚠️ 2026-11-03 驱动临时改过 keylen→-EINVAL、out_buf_max→-EMSGSIZE；
+ *    用户裁定**测试保持上述原始判断**，由**驱动侧后续改回对齐**。因此
+ *    `sm4_bad_keylen` / `sm4_ccm_params` 当前为**预期 FAIL**，驱动对齐后转 PASS。
  *
  * ⚠️ 历史沿革：本组用例原先按生态多数惯例把 session 级也断言为 `-EINVAL`，
  *    导致对当前驱动 7 项恒 FAIL。2026-10-29 核实"驱动 session/pkt 两套错误码
@@ -122,7 +124,9 @@ ZTEST(sm4_err, sm4_bad_algo)
 	zassert_equal(ret, -ENOTSUP, "begin_session(AES) ret=%d, expected -ENOTSUP", ret);
 }
 
-/* ---- 错误 key 长度 → -ENOTSUP ---- */
+/* ---- 错误 key 长度 → -ENOTSUP ----
+ * 保持 O-55 方案② 的原始判断（session 级"不支持"用 -ENOTSUP）。
+ * 驱动 2026-11-03 曾改为 -EINVAL；用户裁定测试不改、由驱动侧后续对齐。 */
 ZTEST(sm4_err, sm4_bad_keylen)
 {
 	int ret = err_sm4_begin(CRYPTO_CIPHER_ALGO_SM4, 24, ERR_VALID_FLAGS,
@@ -157,7 +161,7 @@ ZTEST(sm4_err, sm4_bad_mode)
 	zassert_equal(ret, -ENOTSUP, "begin_session(mode=0) ret=%d, expected -ENOTSUP", ret);
 }
 
-/* ---- CCM 参数越界 → -EINVAL（先做正对照） ---- */
+/* ---- CCM 参数越界 → -EINVAL；输出缓冲不足 → -EMSGSIZE（先做正对照） ---- */
 static int err_ccm_call(struct cipher_ctx *ctx, uint8_t *nonce,
 			uint8_t *in, int in_len, uint8_t *out, int out_max,
 			uint8_t *ad, uint32_t ad_len, uint8_t *tag)
@@ -257,7 +261,9 @@ ZTEST(sm4_err, sm4_ccm_params)
 	zassert_equal(ret_null_out, -EINVAL, "ccm out_buf=NULL ret=%d", ret_null_out);
 	zassert_equal(ret_null_in, -EINVAL, "ccm in_buf=NULL ret=%d", ret_null_in);
 	zassert_equal(ret_null_ad, -EINVAL, "ccm ad=NULL ret=%d", ret_null_ad);
-	zassert_equal(ret_small_out, -EINVAL, "ccm out_buf_max<in_len ret=%d", ret_small_out);
+	/* 保持原始判断 -EINVAL；驱动 2026-11-03 曾改 -EMSGSIZE，由驱动侧后续对齐 */
+	zassert_equal(ret_small_out, -EINVAL,
+		      "ccm out_buf_max<in_len ret=%d, expected -EINVAL", ret_small_out);
 	zassert_equal(ret_tag_short, -EINVAL, "ccm tag_len=3 ret=%d", ret_tag_short);
 	zassert_equal(ret_tag_odd, -EINVAL, "ccm tag_len=5 (odd) ret=%d", ret_tag_odd);
 	zassert_equal(ret_tag_big, -EINVAL, "ccm tag_len=18 ret=%d", ret_tag_big);

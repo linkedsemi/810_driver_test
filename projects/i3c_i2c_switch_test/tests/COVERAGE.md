@@ -1,5 +1,7 @@
 # i3c_i2c_switch_test 测试覆盖矩阵
 
+> 证据口径：不引用 `reports/`；结论内联，版本戳 `810_driver_test@<12 位 sha>`（见 `SPEC_REFERENCE` §6.4.7.1）。
+
 **被测对象**：I3C5/I3C6 硬件模块在 I3C 与 I2C 两种模式间的切换，模式由**引脚复用
 （pinctrl）**区分（外部接线复用 i3c_dualcore_test 的 I3C5↔I3C6 两根线）。
 驱动路径参照 `zephyr/drivers/i3c/i3c_linkedsemi.c`（I3C 控制器）+ `i3c_target_linkedsemi.c`（I3C 目标）、
@@ -66,7 +68,7 @@
 ### B-1. `broadcast_nack_recovery` 的「窗口内广播 RSTACT whole 应被 NACK」断言 **在本硬件上不可达**
 
 - **裁定日期**：2026-09-24（上板判别实验，证据见
-  `reports/2026-09-24-1/i3c-b1b2-experiment.md`）。
+  `i3c-b1b2-experiment.md`（原归档未入库））。
 - **实测事实（时间扫描 + target 自报窗口标记，两个独立轮次一致）**：
   NACK 窗口实测为 `[t≈5ms, t≈15ms]`（target 自报 `win=enter/exit`）；**落在窗口内的
   16B 回读无任何数据被时钟出来**（缓冲区保持 `0xDE` 哨兵），形貌与"读无器件地址
@@ -90,7 +92,7 @@
   双核 11/11**（历史归档中该行 `来源=missing` 即此形貌）。
 - **现处置**：结账前先 `i3c_do_daa()` 恢复 `0x32`（与 `test_main` 收尾处**本来就要做的
   同一套动作**，只是提前到 `'E'` 之前；幂等、不新增被测行为、判据一字未改）。
-- 实测：`reports/2026-09-24-1/i3c_i2c_switch_test_case_switch_core/` **双核 11/11 PASS**。
+- 实测：`i3c_i2c_switch_test_case_switch_core/`（原归档未入库） **双核 11/11 PASS**。
 
 ---
 
@@ -140,7 +142,7 @@
 `recover_not_attached`。
 
 **证据来源标注（2026-09-28 上板实测后更新）**：① 的"应失败"与 ② 的"应恢复"原为 ③级软件位映射
-推断（从驱动守卫与 DT 属性读出），**已在 `reports/2026-09-28-1/` 上板实测坐实**：`case_no_bus_init`
+推断（从驱动守卫与 DT 属性读出），**已在上板实测中坐实**：`case_no_bus_init`
 双核 11/11 PASS，CTRL INFO 实测 `num_i3c=1,nbi_neg_dyn=0,nbi_neg_xfer=-22,nbi_probe32_ret=-5,
 nbi_probe32_act=0,nbi_init_ret=0,nbi_after_dyn=50`。判读规则与三次问答见该会话目录的
 `i3c-no-bus-init-ab.md`（含"探针混淆"standing 判读规则）。**本次 n=1**，长期结论未成立。

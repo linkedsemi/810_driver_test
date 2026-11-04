@@ -17,4 +17,9 @@ target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../otbn_test/cpu1_otbn_test/src)
 
+# Standalone build: both cores start together, so the 500-frame round trip has
+# already happened when peer_alive runs.  The integrated sets never define this
+# (their cpu1 sends frames only when the user asks for the perf_mbox suite).
+target_compile_definitions(app PRIVATE ITEST_PEER_STANDALONE=1)
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../common/common_sources.cmake)

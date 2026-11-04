@@ -5,11 +5,11 @@
   "cores": {
     "TGT": {
       "port": null,
-      "lines": 144
+      "lines": 235
     }
   },
   "timeout": 180,
   "script": "D:\\zephyr4_0\\810_driver_test\\projects\\crypto_api_test\\tests\\run_test.py",
   "script_md5": "f6de2fc84a69e457fd6bc3b198cbdf34",
-  "timestamp": "2026-10-29T19:41:06"
+  "timestamp": "2026-10-29T20:43:15"
 }

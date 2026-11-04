@@ -19,6 +19,9 @@ build*/
 cscope.*
 .dir
 reports/STATUS.md
+# 单模块测试报告（reports/module/<date>-<idx>）：临时、可删，不入库；
+# 全量回归报告仍在 reports/<date>-<idx>（见 common/report_dir.py）。
+/reports/module/
 runner_state.json
 /*.patch
 plans/
@@ -110,7 +113,10 @@ YAMLLint.txt
 # 各测试工程的调试临时目录（一次性探针/抓包/日志，不提交）
 projects/*/tests/tmp*/
 projects/*/tmp/
-tmp/
+# 仓库级临时工作区：内容不入库，仅保留规则说明（tmp/ 整体忽略时例外不生效，
+# 必须写成 tmp/* + !tmp/README.md）
+tmp/*
+!tmp/README.md
 __pycache__/
 
 # 整合测试固件工作区（含 build/ 与 artifacts/，不入库）

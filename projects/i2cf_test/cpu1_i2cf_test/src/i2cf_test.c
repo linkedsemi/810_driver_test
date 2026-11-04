@@ -236,7 +236,8 @@ ZTEST(i2cf, fill_dump_roundtrip)
 	/* 16 个通道逐个独立通道组（每 4 通道共用一个地址寄存器）roundtrip，
 	 * 确保 (idx>>2) 分组偏移与 SMBF_ADDRESS_INDEX 选择都正确
 	 * （i2c_filter.c:168-179 / :208-217） */
-	for (uint8_t idx = 0; idx < I2CF_CHANNEL_NUM; idx++) {
+	/* 通道 0 为保留槽（fill_bitmap 会拒绝），从 1 开始 */
+	for (uint8_t idx = 1; idx < I2CF_CHANNEL_NUM; idx++) {
 		const uint8_t addr = 0x10 + idx;   /* 互不相同，避开重址拒绝 */
 		uint8_t dump_addr = 0;
 
@@ -252,9 +253,11 @@ ZTEST(i2cf, fill_dump_roundtrip)
 				  "idx=%u bitmap mismatch", idx);
 	}
 
-	/* fill_bitmap 自动置位通道 enable（i2c_filter.c:181-183） */
-	zassert_equal(sys_read32(base + SMBF_ADDRESS_ENABLE), BIT_MASK(I2CF_CHANNEL_NUM),
-		      "SMBF_ADDRESS_ENABLE must be all-set after filling 16 channels");
+	/* fill_bitmap 自动置位通道 enable（i2c_filter.c:181-183）；
+	 * 通道 0 为保留槽，不参与填充 ⇒ 期望位图 = 1..15 全置位 */
+	zassert_equal(sys_read32(base + SMBF_ADDRESS_ENABLE),
+		      BIT_MASK(I2CF_CHANNEL_NUM) & ~BIT(0),
+		      "SMBF_ADDRESS_ENABLE must be all-set except reserved channel 0");
 }
 
 ZTEST(i2cf, addr_7bit_field)
@@ -270,14 +273,14 @@ ZTEST(i2cf, addr_7bit_field)
 	i2cf_reset_all(dev);
 
 	fill_pattern(bitmap, 0x11);
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 0, 0x7f, bitmap), "fill 0x7f");
-	zassert_ok(linkedsemi_i2c_filter_dump_bitmap(dev, 0, &dump_addr, dump), "dump 0x7f");
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x7f, bitmap), "fill 0x7f");
+	zassert_ok(linkedsemi_i2c_filter_dump_bitmap(dev, 1, &dump_addr, dump), "dump 0x7f");
 	zassert_equal(dump_addr, 0x7f, "7-bit max must round-trip");
 
 	fill_pattern(bitmap, 0x22);
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x80, bitmap), "fill 0x80");
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 2, 0x80, bitmap), "fill 0x80");
 	dump_addr = 0xff;
-	zassert_ok(linkedsemi_i2c_filter_dump_bitmap(dev, 1, &dump_addr, dump), "dump 0x80");
+	zassert_ok(linkedsemi_i2c_filter_dump_bitmap(dev, 2, &dump_addr, dump), "dump 0x80");
 	zassert_equal(dump_addr, 0x00, "bit7 must be truncated by the 7-bit field");
 
 	ZT_INFO("addr_7bit_field", "max_ok=%#x,ovf_readback=%#x", 0x7f, dump_addr);
@@ -298,8 +301,8 @@ ZTEST(i2cf, invalid_args)
 	zassert_equal(linkedsemi_i2c_filter_dump_bitmap(dev, I2CF_CHANNEL_NUM, &addr, bitmap),
 		      -EINVAL, "dump idx 16 must be -EINVAL");
 
-	/* NULL bitmap（i2c_filter.c:145-148 / :201-204） */
-	zassert_equal(linkedsemi_i2c_filter_fill_bitmap(dev, 0, 0x50, NULL),
+	/* NULL bitmap（i2c_filter.c:145-148 / :201-204）；用通道 1 以避开保留槽 0 */
+	zassert_equal(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x50, NULL),
 		      -EINVAL, "fill NULL bitmap must be -EINVAL");
 	zassert_equal(linkedsemi_i2c_filter_dump_bitmap(dev, 0, &addr, NULL),
 		      -EINVAL, "dump NULL bitmap must be -EINVAL");
@@ -313,20 +316,20 @@ ZTEST(i2cf, duplicate_addr_rejected)
 	i2cf_reset_all(dev);
 	fill_pattern(bitmap, 0x44);
 
-	/* fill 会顺带 enable 该通道（i2c_filter.c:181-183） */
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 0, 0x50, bitmap), "fill ch0");
+	/* fill 会顺带 enable 该通道（i2c_filter.c:181-183）；通道 0 为保留槽，从 1 开始 */
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x50, bitmap), "fill ch1");
 
 	/* 另一路已使能通道用同址 → 拒绝（i2c_filter.c:157-164） */
-	zassert_equal(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x50, bitmap), -EINVAL,
+	zassert_equal(linkedsemi_i2c_filter_fill_bitmap(dev, 2, 0x50, bitmap), -EINVAL,
 		      "duplicate addr on enabled channel must be -EINVAL");
 
-	/* 判据是对方的 **enable 位**：关掉 ch0 后同址放行 */
-	zassert_ok(linkedsemi_i2c_filter_enable_channel(dev, 0, false), "disable ch0");
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x50, bitmap),
+	/* 判据是对方的 **enable 位**：关掉 ch1 后同址放行 */
+	zassert_ok(linkedsemi_i2c_filter_enable_channel(dev, 1, false), "disable ch1");
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 2, 0x50, bitmap),
 		   "same addr must be allowed once the other channel is disabled");
 
 	/* 同址填回自己（it_idx == idx）始终放行 */
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, 0x50, bitmap),
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 2, 0x50, bitmap),
 		   "re-filling own channel must be allowed");
 }
 
@@ -339,8 +342,8 @@ ZTEST(i2cf, en_clears_table)
 
 	i2cf_reset_all(dev);
 
-	/* 16 通道全填非零 pattern */
-	for (uint8_t idx = 0; idx < I2CF_CHANNEL_NUM; idx++) {
+	/* 1..15 通道全填非零 pattern（通道 0 为保留槽） */
+	for (uint8_t idx = 1; idx < I2CF_CHANNEL_NUM; idx++) {
 		fill_pattern(bitmap, idx + 1);
 		zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, idx, 0x20 + idx, bitmap),
 			   "fill idx=%u", idx);
@@ -603,7 +606,8 @@ ZTEST(i2cf, concurrent_fill)
 	static K_THREAD_STACK_DEFINE(stk_a, 2048);
 	static K_THREAD_STACK_DEFINE(stk_b, 2048);
 	struct k_thread ta, tb;
-	struct conc_arg aa = { .dev = dev, .first = 0, .count = 8, .err = -1 };
+	/* 通道 0 为保留槽：线程 A 用 1..7，线程 B 用 8..15 */
+	struct conc_arg aa = { .dev = dev, .first = 1, .count = 7, .err = -1 };
 	struct conc_arg ab = { .dev = dev, .first = 8, .count = 8, .err = -1 };
 
 	i2cf_reset_all(dev);
@@ -616,7 +620,7 @@ ZTEST(i2cf, concurrent_fill)
 	k_thread_join(&ta, K_FOREVER);
 	k_thread_join(&tb, K_FOREVER);
 
-	zassert_equal(aa.err, 0, "thread A (idx 0..7) rc=%d", aa.err);
+	zassert_equal(aa.err, 0, "thread A (idx 1..7) rc=%d", aa.err);
 	zassert_equal(ab.err, 0, "thread B (idx 8..15) rc=%d", ab.err);
 
 	ZT_INFO("concurrent_fill", "threads=2,rounds=4,channels=16");
@@ -927,10 +931,10 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 
 	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "switch to filter");
 
-	/* 白名单：通道 0 = authorized（另一候选），全部命令码放行
-	 * ⇒ slave 地址成为"未授权地址" */
+	/* 白名单：通道 1 = authorized（另一候选），全部命令码放行
+	 * ⇒ slave 地址成为"未授权地址"（通道 0 为保留槽，不参与） */
 	bitmap_all_on(bm);
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 0, authorized, bm),
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, authorized, bm),
 		   "fill whitelist for %#x", authorized);
 	i2cf_filter_on(dev);
 
@@ -942,7 +946,7 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	/* 自证：阻断确由白名单造成 —— **单变量对照**（2026-09-23 改）。
 	 *
 	 * 与上一笔"被拦"的读相比，**只有白名单内容变了**：**新增**一个授权通道
-	 * （通道 1 = `slave`）；通道 0（= `authorized`）与其余**全不动**；
+	 * （通道 2 = `slave`）；通道 1（= `authorized`）与其余**全不动**；
 	 * 发起方（上游 master `up`）/ 通路（`switch_to_filter()` 后经滤波器）/
 	 * 目标地址 / 目标长度 / 滤波器开关状态（filter on）**全部不变**。
 	 * 两笔结果不同（拦 / 放）⇒ "拦"与"放"确由白名单决定。
@@ -972,8 +976,8 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	 *   ③ 下游从设备不在位 / 跳线缺失 ⇒ 无 ACK ⇒ `-EIO`；
 	 *   ④ 连续两笔（热身 + 正式）都 `-EIO` ⇒ 上面"只丢一笔"的假设不成立 ⇒ FAIL。 */
 	i2cf_filter_off(dev);   /* 先退拦截态再改表，与 filter_passthrough_whitelist 同序 */
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, slave, bm),
-		   "authorize %#x in whitelist (channel 1)", slave);
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 2, slave, bm),
+		   "authorize %#x in whitelist (channel 2)", slave);
 	i2cf_filter_on(dev);
 	k_msleep(5);
 
@@ -986,7 +990,7 @@ ZTEST(i2cf, filter_blocks_nonwhitelist)
 	ret_authorized = i2c_burst_read(up, slave, 0x00, buf, sizeof(buf));
 	zassert_ok(ret_authorized,
 		   "authorized %#x must be reachable on the SAME path "
-		   "(whitelist only gained ch1=%#x; ch0=%#x unchanged), got %d",
+		   "(whitelist only gained ch2=%#x; ch1=%#x unchanged), got %d",
 		   slave, slave, authorized, ret_authorized);
 
 	ZT_INFO("filter_blocks_nonwhitelist",
@@ -1051,7 +1055,7 @@ ZTEST(i2cf, filter_passthrough_whitelist)
 
 	/* 3) 切回滤波器 + 授权 EEPROM 地址（全命令码） */
 	zassert_ok(linkedsemi_i2c_filter_switch_to_filter(dev), "switch to filter");
-	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 0, slave, bm),
+	zassert_ok(linkedsemi_i2c_filter_fill_bitmap(dev, 1, slave, bm),
 		   "authorize %#x in whitelist", slave);
 	i2cf_filter_on(dev);
 

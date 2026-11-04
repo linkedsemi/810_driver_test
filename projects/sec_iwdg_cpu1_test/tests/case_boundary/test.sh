@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# cpu1_iwdg boundary / error-path test
+# sec_iwdg boundary / error-path test（cpu1，对照 app_iwdg_cpu2_test）
 #
 # What is tested:
-#   LinkedSemi cpu1_iwdg driver（zephyr/drivers/watchdog/wdt_iwdg_ls.c）的非破坏性
+#   LinkedSemi sec_iwdg driver（zephyr/drivers/watchdog/wdt_iwdg_ls.c）的非破坏性
 #   边界与错误分支，实例 = sec_iwdg（HART 复位域）+ pmu_iwdg（SOC 复位域）：
 #     - install_timeout: window.min != 0 拒 / window.max == 0 拒
 #     - install_timeout: HAL_IWDG_IS_MATCH 按实例匹配 flags（RESET_CPU_CORE / RESET_SOC）
@@ -61,12 +61,12 @@ done
 if [ "${AUTO_GDB}" != "y" ]; then SKIP_LOAD="y"; fi
 if [ "${AGENT_RUN}" = "y" ]; then SKIP_LAUNCH_PRINT="y"; RUN_TIMEOUT="0"; fi
 
-TARGET_SRC="${I3C_TEST_ROOT}/cpu1_wdt_test"
+TARGET_SRC="${I3C_TEST_ROOT}/cpu1_sec_iwdg_test"
 TARGET_OVERLAY="$(realpath "${TARGET_SRC}/app.overlay")"
 TEST_BUILD_DIR="${I3C_TEST_ROOT}/tests/${TEST_NAME}/build/target"
 TARGET_ELF="${TEST_BUILD_DIR}/zephyr/zephyr.elf"
 
-# -DWDT_BOUNDARY_TEST 在 cpu1_wdt_test/CMakeLists.txt 里选择 wdt_boundary_test.c。
+# -DWDT_BOUNDARY_TEST 在 cpu1_sec_iwdg_test/CMakeLists.txt 里选择 wdt_boundary_test.c。
 # board 走 SINGLE_BOARD（1os/lsqsh/cpu1），不硬编码板级（SPEC_REFERENCE §6.1.10）。
 build_boundary() {
     echo "[${TEST_NAME}] Build $(basename "${TARGET_SRC}") -> ${TEST_BUILD_DIR}"

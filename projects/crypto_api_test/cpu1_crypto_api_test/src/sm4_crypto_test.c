@@ -10,20 +10,17 @@
  * 覆盖模式：ECB / CBC / CTR / CCM / GCM，每项 = 标准向量加密 +
  * 解密回环（AEAD 项额外校验 tag）。
  *
- * 向量来源（与 linkedsemi_zephyr_project/samples/crypto/sm4 同一组，已独立复核）：
+ * 向量来源（全部离线复核，与被测驱动无关）：
  *   ECB / CBC / CTR : OpenSSL 3.2（openssl enc -sm4-{ecb,cbc,ctr} -nopad）
  *   GCM             : pyca/cryptography（algorithms.SM4 + modes.GCM）
  *   CCM             : RFC 3610 参考实现（以 OpenSSL SM4-ECB 为块函数）
- *   复核用有效 key : 00112233445566778899AABBCCDDEEFF
+ *   复核用 key      : FFEEDDCCBBAA99887766554433221100（**as-is，标准字节序**）
  *
- * ⚠️ key 字节序（实测结论，非本用例断言项）：
- *   本文件沿用样例的 key 数组 FF EE DD CC ... 33 22 11 00。驱动在
- *   `sm4_linkedsemi_key_expansion()` 里先 sys_memcpy_swap() 再写 KEY 寄存器
- *   （crypto_linkedsemi_sm4.c:80），因此**实际生效的 key 是调用方缓冲的
- *   字节逆序**；用 00112233...EEFF 才能与 OpenSSL 对上。
- *   mbedtls 的 sm4_alt 走 HAL_SM4_KeyExpansion()，是标准字节序 —— 同一条
- *   硬件、两套栈的 key 约定不一致，已作为观察项登记在 tests/COVERAGE.md，
- *   本文件不对"标准 key 序"下断言（那会是一条必然 FAIL 的项）。
+ * ★ key 字节序（2026-11-03 驱动更新后）：
+ *   驱动的 `sm4_linkedsemi_key_expansion()` 已去掉 sys_memcpy_swap，改为与
+ *   HAL 一致的 memcpy（等价 `u8tou32`）⇒ key 按调用方字节序原样使用，
+ *   与 mbedtls `sm4_alt` / HAL 路径一致。向量因此从"反序 key"版本换成
+ *   "as-is key"版本（见 tests/expected/sm4_crypto_vectors.h 头注释）。
  *
  * 注：`ctx->ops.cipher_mode` 由通用封装 `cipher_begin_session()` 统一写入
  *   （`zephyr/include/zephyr/crypto/crypto.h:168`），随后 `cipher_*_op()` 里

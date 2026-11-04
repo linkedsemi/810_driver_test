@@ -10,7 +10,7 @@
  *
  * 本 case 通过 controller.overlay 给 app_iwdg 加 `quick-enable` 与
  * `quick-timeout-ms`——这是本案新开独立工程后**新增**的覆盖能力
- * （wdt_test 受"只增不改"约束无法引入该 DT 配置）。
+ * （sec_iwdg_cpu1_test 受"只增不改"约束无法引入该 DT 配置）。
  *
  * 顺序无关性说明：启动态只能在内核 init 之后、任何 install_timeout 之前
  * 观测（install_timeout 会写 CTRL=0）。为避免依赖 ztest 链接序

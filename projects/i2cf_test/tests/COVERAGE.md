@@ -1,5 +1,7 @@
 # I2C filter 测试覆盖矩阵
 
+> 证据口径：不引用 `reports/`；结论内联，版本戳 `810_driver_test@<12 位 sha>`（见 `SPEC_REFERENCE` §6.4.7.1）。
+
 - 驱动: `modules/lib/pfr_tpm/drivers/pfr/i2c/i2c_filter.c`（PFR/TMP I2C 白名单滤波器）
 - 接口: `modules/lib/pfr_tpm/drivers/pfr/i2c/i2c_filter.h`
 - 实例: `i2cf1..i2cf4` @ `0x40090000 / 0x40090800 / 0x40091000 / 0x40091800`（overlay 全 `okay`）
@@ -149,12 +151,12 @@ DT 事实**不冲突**；同时它们也**无法由仓库证实或证伪**。
 | filter_passthrough_whitelist | 放行方向：授权从设备地址 + 全命令码后，上游 master 的 `i2c_burst_read` | 功能通路 | 上游经滤波器读回 == 预先经旁路写入的 pattern（逐字节 `zassert_mem_equal`）；偏移 `0x00..0x07` 备份/恢复。**需下游从设备；扫不到则 SKIP** | 外部器件 + 透传通路。破坏性受控 | ⏳ |
 | master_eeprom_rw | `i2cf_i2c_dev()`（`:256-261`）+ `switch_to_master()`（`:263-276`）→ Zephyr `i2c_burst_read/write` → `switch_to_filter()` | 功能通路 | 从设备写入 pattern 后回读逐字节相等；偏移 `0x00..0x0f` 备份/恢复。**需下游从设备（旁路通路）；扫不到则 SKIP** | 外部器件（读写契约） | ⏳ |
 | slave_addr_scan | 旁路通路（`switch_to_master()` `:263-276` → `i2c4` 直驱 O 侧）+ 逐地址 `i2c_read` 探测 | 功能通路 | ⚠ **观测项，无判别力**（2026-09-18 F1 波如实标注）：唯一真判据 = 旁路 master 就绪；应答清单经 `ZT_INFO` 上报供人工判读。结果完全由**外部接线/器件是否在位**决定，平台内无对照量；**零应答又是用户裁定的合法结果** ⇒ 不存在"驱动正确必过 / 典型失效必不过"的判据。原两条断言（"范围 `0x08..0x77` 内" + "无重复"）**恒真**（`found[]` 由循环变量 `addr` 赋入且每地址只探一次），本轮已删除 | `外部:` 下游总线。**不因无器件失败**。⚠ 改名需同步 `tests/run_test.py:70` 与 `tests/scripts/dump_results.py:61` 的 `TEST_NAMES`（那两个文件本轮**不在写域**，另一 agent 在重写）⇒ 故**保留原名**，仅此处与源码注释标注无判别力 | ⏳ |
-| enum_matrix | 白名单判定路径：`SMBF_ADDRESS_ENABLE` 位 + ISR `ADDRESS_BEYOND_WHITELIST` 分支（`i2c_filter.c:93-95`）+ `switch_to_master/filter`（`:263-290`）。9 格 = 白名单内/外 × 有/无器件 × 滤波开/关，每格跑读、写两方向 | 功能通路 + 异常参数 | 9 格 × 读/写 各自 ret / ISR 增量合计 / `SMBF_NONWHITELIST` 锁存：C1(内/有)0,0,0 · **C2(内/无)-5,0,无** · C3(外/有)-5,3,锁 0x3300 · C4(外/无)-5,3,锁 0x2a00 · C5/C6/C7(off)-5,0,无 · C8(旁路/有)0,0,0+真数据 · C9(旁路/无)-5,0,无。核心：**上报只由白名单内外决定**（C2↔C4 对照），与读写方向/器件应答无关 | `reports/2026-10-15-3/RESULT_enum_matrix.md` 实测（22 轮零方差）；地址 `0x33`=片内 target（有器件）、`0x2A`=实测无器件（`slave_addr_scan` 应答清单 `33 50`） | ✅ 2026-10-15 上板 19/19 PASS |
-| scan_burst_drain | 白名单空 + filter on 下逐址扫描（`SMBF_ADDRESS_ENABLE` 全 0 ⇒ 每址越界）+ ISR 计数（`i2c_filter.c:93-95`）。三种事务类型：1 字节写 / 0 长度 quick command / 读 | 功能通路 + 中断时序 | 每类型 `isr == probed`（112 址各一次上报）；`elapsed_ms < 3000`（实测 ≈16 ms）。★ 真正的 `i2cdetect`/Zephyr `i2c scan` 用 **0 长度 quick command**（`i2c_shell.c` `msgs[0].len=0U`）；旧注释误称 1 字节写，已更正。⚠️ BEGIN→END 到达差（日志驱逐跨度）随后端变化 ⇒ 只作 `ZT_INFO` 观测、不写断言 | 驱动源码 ISR 分支 + 本工程实测（`reports/2026-10-14-3/case_quick_scan/metrics.json`：三类型均 ≈16 ms、isr==probed） | ✅ 2026-10-15 上板 19/19 PASS |
+| enum_matrix | 白名单判定路径：`SMBF_ADDRESS_ENABLE` 位 + ISR `ADDRESS_BEYOND_WHITELIST` 分支（`i2c_filter.c:93-95`）+ `switch_to_master/filter`（`:263-290`）。9 格 = 白名单内/外 × 有/无器件 × 滤波开/关，每格跑读、写两方向 | 功能通路 + 异常参数 | 9 格 × 读/写 各自 ret / ISR 增量合计 / `SMBF_NONWHITELIST` 锁存：C1(内/有)0,0,0 · **C2(内/无)-5,0,无** · C3(外/有)-5,3,锁 0x3300 · C4(外/无)-5,3,锁 0x2a00 · C5/C6/C7(off)-5,0,无 · C8(旁路/有)0,0,0+真数据 · C9(旁路/无)-5,0,无。核心：**上报只由白名单内外决定**（C2↔C4 对照），与读写方向/器件应答无关 | `RESULT_enum_matrix.md`（原归档未入库） 实测（22 轮零方差）；地址 `0x33`=片内 target（有器件）、`0x2A`=实测无器件（`slave_addr_scan` 应答清单 `33 50`） | ✅ 2026-10-15 上板 19/19 PASS |
+| scan_burst_drain | 白名单空 + filter on 下逐址扫描（`SMBF_ADDRESS_ENABLE` 全 0 ⇒ 每址越界）+ ISR 计数（`i2c_filter.c:93-95`）。三种事务类型：1 字节写 / 0 长度 quick command / 读 | 功能通路 + 中断时序 | 每类型 `isr == probed`（112 址各一次上报）；`elapsed_ms < 3000`（实测 ≈16 ms）。★ 真正的 `i2cdetect`/Zephyr `i2c scan` 用 **0 长度 quick command**（`i2c_shell.c` `msgs[0].len=0U`）；旧注释误称 1 字节写，已更正。⚠️ BEGIN→END 到达差（日志驱逐跨度）随后端变化 ⇒ 只作 `ZT_INFO` 观测、不写断言 | 驱动源码 ISR 分支 + 本工程实测（`case_quick_scan/metrics.json`（原归档未入库）：三类型均 ≈16 ms、isr==probed） | ✅ 2026-10-15 上板 19/19 PASS |
 
 > 状态标记：`⏳` = **仅编译通过，待 P6 首次实测**；`✅` = 已上板实测通过。
 >
-> 注：`enum_matrix` / `scan_burst_drain` 两项 2026-10-15 首次上板实测通过（`reports/2026-10-15-6/`）。
+> 注：`enum_matrix` / `scan_burst_drain` 两项 2026-10-15 首次上板实测通过（原报告未入库）。
 >
 > **P6 运维提示**：`isr_addr_beyond_whitelist` / `filter_blocks_nonwhitelist` 会**实触发**
 > `linkedsemi_i2c_filter_isr()`，驱动自身在 ISR 内打 `DEV_ERR`（`:94`/`:97`）。

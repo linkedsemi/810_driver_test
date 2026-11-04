@@ -29,7 +29,7 @@ from pathlib import Path
 import serial
 import serial.tools.list_ports as list_ports
 
-# tests/scripts/dbg_run.py -> parents[1] = wdt_test/tests
+# tests/scripts/dbg_run.py -> parents[1] = sec_iwdg_cpu1_test/tests
 TESTS_DIR = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(TESTS_DIR.parents[2] / "common"))

@@ -30,6 +30,9 @@ void test_main(void)
 #else
 	LOG_INF("[CPU2 APP_IWDG] app_iwdg case %d entry",
 		(int)CONFIG_APP_IWDG_TEST_CASE_ID);
+	LOG_INF("[CPU2 APP_IWDG] non-destructive suite: install/query only, "
+		"the watchdog is never allowed to fire -> no reset here. "
+		"Real reset: CASE_ID 3 (standalone) or `itest hwreset app_iwdg`");
 	zt_init("CTRL");
 
 	/* 单出口（SPEC_REFERENCE §6.9.3）：本核是主核（唯一串口出口），收下从核

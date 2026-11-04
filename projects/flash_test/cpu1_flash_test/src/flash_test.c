@@ -1,9 +1,10 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * Flash test cases (rwfs2 partition via flash_area API)
+ * Flash test cases (test_scratch partition via flash_area API)
  *
- * 安全约束：只擦写 rwfs2 分区（label = "rwfs2"），
+ * 安全约束：只擦写 test_scratch 分区（0x80000..0x100000，512 KB），
+ * 位于 cpu1 镜像（止于 0x51000）与 cpu2 镜像（起于 0x100000）之间的空档，
  * 绝不碰 sbl/sec/app 固件区。
  *
  * 注意：soc-nv-flash compatible 无对应驱动，改用 flash_area API。
@@ -25,10 +26,11 @@ static uint8_t read_buf[256];
 static void *flash_test_setup(void)
 {
 	/* 通过 partition label 获取 flash_area（勿硬编码 index，分区表会变）。
-	 * rwfs_partition 是 qspi flash 上的可写分区（ID=5，0xf00000 起）。 */
-	int ret = flash_area_open(FIXED_PARTITION_ID(rwfs_partition), &fa);
-	zassert_equal(ret, 0, "flash_area_open(rwfs, id=%d) failed: %d",
-		      FIXED_PARTITION_ID(rwfs_partition), ret);
+	 * test_scratch 是 4 MiB boot flash 上唯一的可写空档：
+	 * 0x80000..0x100000（512 KB），两端都不碰 cpu1/cpu2 镜像。 */
+	int ret = flash_area_open(FIXED_PARTITION_ID(test_scratch_partition), &fa);
+	zassert_equal(ret, 0, "flash_area_open(test_scratch, id=%d) failed: %d",
+		      FIXED_PARTITION_ID(test_scratch_partition), ret);
 	zassert_not_null(fa, "flash_area_open returned NULL");
 
 	/* 擦除第一 page 作为测试起点 */

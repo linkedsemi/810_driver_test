@@ -34,6 +34,10 @@ __noinit static uint32_t phase0_passed;  /* 第一阶段是否执行完 */
 #define WDT_NODE DT_NODELABEL(sec_iwdg)
 #define WDT_TIMEOUT_MS 2000
 
+static bool wdt_is_watchdog_reset(uint32_t reason);
+static const char *wdt_reset_reason_name(uint32_t reason);
+static void wdt_phase1_verdict(uint32_t reason);
+
 void wdt_destructive_main(void)
 {
 	printk("\n*** WDT destructive reset test ***\n");
@@ -50,6 +54,7 @@ void wdt_destructive_main(void)
 		phase0_passed = 0;
 	}
 
+phase0_restart:
 	if (test_phase == 0) {
 		/* Phase 0: 设置超时，不喂狗，等复位 */
 		printk("PHASE 0: install timeout, will NOT feed, expecting reset in %d ms\n",
@@ -95,24 +100,70 @@ void wdt_destructive_main(void)
 		printk("PROJECT EXECUTION: FAILED\n");
 		k_sleep(K_FOREVER);
 	} else {
-		/* Phase 1: 复位后检查 reset_reason（test_phase==1：Phase 0 已装狗等复位） */
-		printk("PHASE 1: after reset, checking reset_reason\n");
-
+		/* test_phase == 1：上一轮 Phase 0 已装狗等复位。
+		 *
+		 * 但 noinit 段跨"重烧 + 复位"存活（GDB/烧录器不写 NOLOAD 段），
+		 * 所以 phase==1 也可能是**上一次会话**留下的。只有"复位来源确实是看门狗"
+		 * 才证明本轮真的走完了 Phase 0；其它来源（重烧、上电、调试器复位）
+		 * 说明本轮没跑过测试 —— 清状态重来，绝不打裁决。
+		 *
+		 * 实测 2026-10-28：没有这个检查时，重烧后首次调用会拿烧录复位原因
+		 * 去比对，打出假的 `FAIL: reset_reason == 3`，随后 k_sleep(K_FOREVER)
+		 * 把 shell 线程永久挂死（后续 `itest reset` 采集 120 s 零字节）。 */
 		uint32_t reason = reset_reason_get();
-		/* sec_iwdg 用 WDT_FLAG_RESET_CPU_CORE → 触发 HART 复位
-		 * （SEC_IWDT_HART_RESET=6），不是 FULL reset（SYS_IWDT=4）。 */
-		bool ok = (reason == SEC_IWDT_HART_RESET);
 
-		if (ok) {
-			printk("PASS: reset_reason == SEC_IWDT_HART_RESET (expected)\n");
-			test_phase = 2;
-			printk("PROJECT EXECUTION: SUCCESSFUL\n");
+		if (!wdt_is_watchdog_reset(reason)) {
+			printk("STALE: phase==1 but reset_reason=%u (%s) is not a "
+			       "watchdog reset; no test ran this boot, restarting "
+			       "from PHASE 0\n", reason, wdt_reset_reason_name(reason));
+			test_phase = 0;
+			phase0_passed = 0;
+			goto phase0_restart;
 		} else {
-			printk("FAIL: reset_reason == %u, expected SEC_IWDT_HART_RESET (%d)\n",
-			       reason, SEC_IWDT_HART_RESET);
-			test_phase = 2;
-			printk("PROJECT EXECUTION: FAILED\n");
+			/* Phase 1: 复位后检查 reset_reason */
+			printk("PHASE 1: after reset, checking reset_reason\n");
+			wdt_phase1_verdict(reason);
 		}
-		k_sleep(K_FOREVER);
 	}
+}
+
+/* 复位来源是否为看门狗（本文件用到的三种）。 */
+static bool wdt_is_watchdog_reset(uint32_t reason)
+{
+	return reason == SEC_IWDT_HART_RESET ||
+	       reason == SEC_WWDT_HART_RESET ||
+	       reason == SYS_IWDT_FULL_RESET;
+}
+
+static const char *wdt_reset_reason_name(uint32_t reason)
+{
+	switch (reason) {
+	case NO_RESET_REASON:     return "NO_RESET_REASON";
+	case PWR_FULL_RESET:      return "PWR_FULL_RESET";
+	case SOFT_FULL_RESET:     return "SOFT_FULL_RESET";
+	case CPU_FULL_RESET:      return "CPU_FULL_RESET";
+	case SYS_IWDT_FULL_RESET: return "SYS_IWDT_FULL_RESET";
+	case EXT_FULL_RESET:      return "EXT_FULL_RESET";
+	case SEC_IWDT_HART_RESET: return "SEC_IWDT_HART_RESET";
+	case SEC_WWDT_HART_RESET: return "SEC_WWDT_HART_RESET";
+	case SOFT_HART_RESET:     return "SOFT_HART_RESET";
+	default:                  return "UNKNOWN";
+	}
+}
+
+static void wdt_phase1_verdict(uint32_t reason)
+{
+	/* sec_iwdg 用 WDT_FLAG_RESET_CPU_CORE → 触发 HART 复位
+	 * （SEC_IWDT_HART_RESET=6），不是 FULL reset（SYS_IWDT=4）。 */
+	bool ok = (reason == SEC_IWDT_HART_RESET);
+
+	if (ok) {
+		printk("PASS: reset_reason == SEC_IWDT_HART_RESET (expected)\n");
+	} else {
+		printk("FAIL: reset_reason == %u, expected SEC_IWDT_HART_RESET (%d)\n",
+		       reason, SEC_IWDT_HART_RESET);
+	}
+	test_phase = 2;
+	printk("PROJECT EXECUTION: %s\n", ok ? "SUCCESSFUL" : "FAILED");
+	k_sleep(K_FOREVER);
 }

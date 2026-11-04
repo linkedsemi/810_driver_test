@@ -77,10 +77,10 @@ static uint32_t count_ones(const uint8_t *buf, size_t len)
 
 /* ========== ZTEST ========== */
 
-ZTEST_SUITE(trng, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(trng1, NULL, NULL, NULL, NULL, NULL);
 
 /* 1. 阻塞模式 16B：返回值 0（驱动基本通路）+ 输出必须真被写入 */
-ZTEST(trng, basic_16)
+ZTEST(trng1,basic_16)
 {
 	uint8_t buf[16];
 
@@ -95,7 +95,7 @@ ZTEST(trng, basic_16)
 }
 
 /* 2. 256B 非全 0（TRNG 未就绪/坏掉时常吐全 0） */
-ZTEST(trng, not_all_zero)
+ZTEST(trng1,not_all_zero)
 {
 	/* buf_256 被更早执行的 isr_nonblock 用过；先清成哨兵，避免在"别人写的
 	 * 旧数据"上判 PASS（审计 A 组 P1-3）。 */
@@ -110,7 +110,7 @@ ZTEST(trng, not_all_zero)
 }
 
 /* 3. 256B 非全 0xFF */
-ZTEST(trng, not_all_ff)
+ZTEST(trng1,not_all_ff)
 {
 	memset(buf_256, 0xA5, sizeof(buf_256));   /* 同上：先清哨兵 */
 
@@ -124,7 +124,7 @@ ZTEST(trng, not_all_ff)
 
 /* 4. ISR busywait 模式：128B，返回值为请求长度且非全 0。
  *    该路径走 send_cmd_busywait 轮询（样板 otbn 的 rsa_keygen_get_rng 同款用法）。 */
-ZTEST(trng, isr_busywait)
+ZTEST(trng1,isr_busywait)
 {
 	int ret = entropy_get_entropy_isr(trng_dev, buf_256, 128,
 					  ENTROPY_BUSYWAIT);
@@ -135,7 +135,7 @@ ZTEST(trng, isr_busywait)
 
 /* 5. 1024B 大请求：超过驱动内部 pool（128B），验证 IRQ 链式填充 +
  *    长请求循环取 pipe；同长度分 4 段无完全重复。 */
-ZTEST(trng, large_1024)
+ZTEST(trng1,large_1024)
 {
 	int ret = entropy_get_entropy(trng_dev, buf_1024, sizeof(buf_1024));
 	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
@@ -146,7 +146,7 @@ ZTEST(trng, large_1024)
 }
 
 /* 6. 无效参数：NULL buf / len==0 必须 -EINVAL（驱动入口校验） */
-ZTEST(trng, invalid_args)
+ZTEST(trng1,invalid_args)
 {
 	int ret = entropy_get_entropy(trng_dev, NULL, 16);
 	zassert_equal(ret, -EINVAL, "NULL buf ret %d != -EINVAL", ret);
@@ -156,7 +156,7 @@ ZTEST(trng, invalid_args)
 }
 
 /* 7. 8KB 单比特统计：1 占比 46%~54%（宽松门限，见 count_ones 注释）。 */
-ZTEST(trng, monobit_8k)
+ZTEST(trng1,monobit_8k)
 {
 	int ret = entropy_get_entropy(trng_dev, buf_mono, sizeof(buf_mono));
 	zassert_equal(ret, 0, "entropy_get_entropy ret %d", ret);
@@ -173,7 +173,7 @@ ZTEST(trng, monobit_8k)
 }
 
 /* 8. 32 次 x 64B，两两不重复（熵源重复输出=坏；真实 TRNG 碰撞概率可忽略） */
-ZTEST(trng, distinct_32)
+ZTEST(trng1,distinct_32)
 {
 	bool all_distinct = true;
 	int ret = 0;
@@ -201,7 +201,7 @@ ZTEST(trng, distinct_32)
  *    （见 ENTROPY_API_UINT16_LENGTH_OVERFLOW.md），故分 8 次 x 8KB；
  *    单次 8192B = 2^19 bits 恰触发 trng_issue_next 的 ADVANCE_STATE 隐藏分支。
  *    计时用 k_cycle_get_32（§4.3，不打 LOG 拉 IO）。 */
-ZTEST(trng, throughput_64k)
+ZTEST(trng1,throughput_64k)
 {
 	uint32_t t0 = k_cycle_get_32();
 	int ret = 0;
@@ -259,7 +259,7 @@ static inline double dabs(double x)
  *    χ² = 4·m·Σ(πi − 0.5)²，m=512 为块长(bit)。χ² 近似服从 χ²(M)，
  *    均值 = M = 128、标准差 = sqrt(2M) ≈ 16 ⇒ 取 ±6σ 门限 [32, 224]。
  *    门限只拦"分块后局部严重偏置"（如高位恒 1 / 周期性图案），真实 TRNG 不误报。 */
-ZTEST(trng, block_freq_8k)
+ZTEST(trng1,block_freq_8k)
 {
 	int ret = entropy_get_entropy(trng_dev, buf_stat, sizeof(buf_stat));
 
@@ -296,7 +296,7 @@ ZTEST(trng, block_freq_8k)
 /* 11. 游程测试（NIST SP800-22 §2.3）：n=65536 bit。
  *    π = 1 占比；先判 |π−0.5| < 2/sqrt(n)（τ）；V = 1 + 相邻不同的次数；
  *    z = |V − 2nπ(1−π)| / (2·sqrt(2n)·π(1−π)) 近似标准正态 ⇒ 取 ±6σ 门限。 */
-ZTEST(trng, runs_8k)
+ZTEST(trng1,runs_8k)
 {
 	int ret = entropy_get_entropy(trng_dev, buf_stat, sizeof(buf_stat));
 
@@ -334,7 +334,7 @@ ZTEST(trng, runs_8k)
 /* 12. 自相关（前 8 个 lag）：比特映射 s=±1 后 R(d)=(1/n)Σ s_i·s_{i+d}。
  *    i.i.d. 下 E[R(d)]=0、sd=1/sqrt(n)=1/256 ⇒ 取 ±6σ = 0.0234 门限。
  *    只拦"周期性/强相关"坏源（real TRNG 不可能越界）。 */
-ZTEST(trng, autocorr_8k)
+ZTEST(trng1,autocorr_8k)
 {
 	int ret = entropy_get_entropy(trng_dev, buf_stat, sizeof(buf_stat));
 
@@ -374,7 +374,7 @@ ZTEST(trng, autocorr_8k)
  *    触发 trng_issue_next 的 ADVANCE_STATE + skip_next 复位分支；1 MiB 会让
  *    该隐藏分支反复走 16 次（64KB × 16 = 1 MiB），验证长序列下状态机不丢数据。
  *    1 MiB 超过 SRAM，用 8KB 滚动缓冲分 128 片，累计统计 + 逐片非退化检查。 */
-ZTEST(trng, long_seq_1m)
+ZTEST(trng1,long_seq_1m)
 {
 	uint64_t ones = 0;
 	uint64_t total_bits = 0;
@@ -444,7 +444,7 @@ static void trng_conc_worker(void *p1, void *p2, void *p3)
 	conc_ret[idx] = 0;
 }
 
-ZTEST(trng, concurrent_get)
+ZTEST(trng1,concurrent_get)
 {
 	conc_ret[0] = -1;
 	conc_ret[1] = -1;
@@ -482,7 +482,7 @@ ZTEST(trng, concurrent_get)
  *     与实现不符（实测 first got=0，见 TRIAGE_MISC_2026-09-18.md §4.2）。
  *   修法：首调只断言返回值 ∈ [0, len]（它同时会在返回前重新使能 DONE 中断）；
  *     此后池才回填，k_msleep(20) 后第二次调用才断言 == len。 */
-ZTEST(trng, isr_nonblock)
+ZTEST(trng1,isr_nonblock)
 {
 	int ret = entropy_get_entropy_isr(trng_dev, NULL, 16, 0);
 

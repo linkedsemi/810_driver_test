@@ -166,7 +166,8 @@ static void em_setup(const struct device *dev, const struct em_cfg *c)
 		for (int i = 0; i < LINKEDSEMI_I2C_F_REMAP_SIZE_U32; i++) {
 			bm[i] = 0xffffffffu;   /* 全命令码放行（避免掺入 command 违规） */
 		}
-		(void)linkedsemi_i2c_filter_fill_bitmap(dev, 0, c->wl_addr, bm);
+		/* 通道 0 为保留槽（fill_bitmap 拒绝），白名单项放通道 1 */
+		(void)linkedsemi_i2c_filter_fill_bitmap(dev, 1, c->wl_addr, bm);
 	}
 	if (c->mode == EM_FILTER_ON) {
 		(void)linkedsemi_i2c_filter_en(dev, true, true, false, false);

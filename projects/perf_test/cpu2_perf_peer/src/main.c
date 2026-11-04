@@ -20,13 +20,22 @@
 #include <stdio.h>
 #include <string.h>
 
+#if !defined(ITEST_PEER_NO_CRYPTO)
 #include "mbedtls/sha256.h"
 #include "mbedtls/sha512.h"
 #include "mbedtls/sm3_alt.h"
 #include "mbedtls_otbn_rsa_mbox.h"
 #include "rsa_test_key.h"
+#endif
 
 #include "perf_proxy.h"
+#include "perf_peer_tele.h"
+
+#if defined(ITEST_ALL_PEER_ZTEST)
+/* Provided by integrated/sets/itest_all/cpu2/src/peer_ztest.c: runs the OTBN
+ * ztest suites that the integrated image links into this binary. */
+extern int itest_all_peer_ztest_run(void);
+#endif
 
 #define PERF_MBOX_MAGIC  0x50455246u /* "PERF" */
 #define PERF_READY_MAGIC 0x52454144u /* "READY" */
@@ -44,6 +53,10 @@ _Static_assert(sizeof(struct perf_msg) == 64,
 	       "perf_msg must match the 64-byte mbox channel width");
 
 /* ------------------------------------------------------------- mbox echo */
+
+#if !defined(ITEST_PEER_NO_ECHO)
+/* The integrated driver image keeps its own minimal echo (src/echo_peer.c) and
+ * compiles this one out. */
 
 static const struct mbox_dt_spec mbox_rx = MBOX_DT_SPEC_GET(DT_NODELABEL(perf_ch5), mbox);
 static const struct mbox_dt_spec mbox_tx = MBOX_DT_SPEC_GET(DT_NODELABEL(perf_ch6), mbox);
@@ -98,6 +111,7 @@ static void echo_thread(void *a, void *b, void *c)
 
 static K_THREAD_STACK_DEFINE(echo_stack, 2048);
 static struct k_thread echo_td;
+#endif /* !ITEST_PEER_NO_ECHO */
 
 /* ------------------------------------------------------- telemetry sender */
 
@@ -121,7 +135,9 @@ static int tele_send(const char *text)
 	return -EIO;
 }
 
-static void tele_line(const char *fmt, ...)
+/* Not static: the integrated image (integrated/sets/itest_all/cpu2) relays its
+ * own result lines through the same sender. See include/perf_peer_tele.h. */
+void tele_line(const char *fmt, ...)
 {
 	char buf[TELE_FRAME_SIZE];
 	va_list ap;
@@ -134,6 +150,9 @@ static void tele_line(const char *fmt, ...)
 
 /* --------------------------------------------------------- proxy client */
 
+#if !defined(ITEST_PEER_NO_PROXY)
+/* No flash-proxy channels (perf_ch7/ch8) in the integrated driver image: they
+ * do not fit the 4 KB mbox carve-out next to rlog. */
 static const struct mbox_dt_spec proxy_tx = MBOX_DT_SPEC_GET(DT_NODELABEL(perf_ch7), mbox);
 static const struct mbox_dt_spec proxy_rx = MBOX_DT_SPEC_GET(DT_NODELABEL(perf_ch8), mbox);
 
@@ -292,6 +311,8 @@ static void proxy_init_once(void)
 	}
 }
 
+#endif /* !ITEST_PEER_NO_PROXY */
+
 /* -------------------------------------------------------------- test flow */
 
 static void tele_perf(const char *module, const char *op,
@@ -303,9 +324,9 @@ static void tele_perf(const char *module, const char *op,
 		us = 1;
 	}
 	mb_s = (double)bytes / (double)us;
-	tele_line("PERF %s | %s | bytes=%u | us=%llu | MB/s=%.4f | KB/s=%.2f",
-		  module, op, (unsigned)bytes, (unsigned long long)us,
-		  mb_s, mb_s * 1000.0);
+	tele_line("PERF %s | %s | bytes=%u | MB/s=%.4f | KB/s=%.2f | us=%llu",
+		  module, op, (unsigned)bytes, mb_s, mb_s * 1000.0,
+		  (unsigned long long)us);
 }
 
 static void tele_ops(const char *module, const char *op,
@@ -314,11 +335,13 @@ static void tele_ops(const char *module, const char *op,
 	if (us == 0) {
 		us = 1;
 	}
-	tele_line("PERF %s | %s | ops=%u | us=%llu | ops/s=%.2f",
-		  module, op, (unsigned)ops, (unsigned long long)us,
-		  (double)ops * 1000000.0 / (double)us);
+	tele_line("PERF %s | %s | ops=%u | ops/s=%.2f | us=%llu",
+		  module, op, (unsigned)ops,
+		  (double)ops * 1000000.0 / (double)us,
+		  (unsigned long long)us);
 }
 
+#if !defined(ITEST_PEER_NO_PROXY)
 static bool run_proxy_erase(void)
 {
 	uint64_t t0, t1;
@@ -389,6 +412,13 @@ static bool run_proxy_write(void)
 	return memcmp(proxy_buf, proxy_verify, PERF_PROXY_SIZE) == 0;
 }
 
+#endif /* !ITEST_PEER_NO_PROXY */
+
+#if defined(ITEST_PEER_STANDALONE)
+/* Only meaningful standalone: there both cores start together, so cpu1 has
+ * already pushed the 500 frames by the time this runs.  In an integrated image
+ * cpu1 sends frames only when the user runs the perf_mbox suite, so this would
+ * just burn its 30 s timeout and report a false FAIL. */
 static bool run_peer_alive(void)
 {
 	int64_t deadline = k_uptime_get() + 30000;
@@ -402,6 +432,7 @@ static bool run_peer_alive(void)
 	}
 	return echo_count == PERF_FRAMES;
 }
+#endif /* ITEST_PEER_STANDALONE */
 
 /* parse_ztest's native token form requires the duration suffix. */
 static void report(const char *name, bool ok, int64_t elapsed_ms, bool *all_ok)
@@ -414,6 +445,11 @@ static void report(const char *name, bool ok, int64_t elapsed_ms, bool *all_ok)
 }
 
 /* ------------------------------------------------- OTBN crypto (cpu2) */
+
+#if !defined(ITEST_PEER_NO_CRYPTO)
+/* The integrated driver image (integrated/sets/itest_all/cpu2) leaves the
+ * crypto out: it has no OTBN configuration, and crypto lives in the dedicated
+ * itest_crypto set. */
 
 #define CRYPTO_BUF_SIZE (KB(32) + 32)
 static uint8_t crypto_buf[CRYPTO_BUF_SIZE] __aligned(32);
@@ -567,7 +603,42 @@ static bool run_rsa_modexp_otbn(void)
 	tele_ops("crypto", "rsa2048_modexp", 1, k_cyc_to_us_floor64(t1 - t0));
 	return true;
 }
+#endif /* !ITEST_PEER_NO_CRYPTO */
 
+#if defined(ITEST_PEER_NO_MAIN)
+/*
+ * On-demand entry for the integrated driver image (itest_all/cpu2).
+ *
+ * The image must not run crypto at boot, so this replaces test_main(): cpu1
+ * asks for the OTBN throughput sequence with `itest peer otbn`, and the rates
+ * are relayed over perf_ch9 exactly like the standalone project.
+ */
+int perf_peer_otbn_run(void)
+{
+	bool all_ok = true;
+	int64_t t0;
+
+	tele_line("ITEST_PEER_RUN otbn_perf");
+
+	t0 = k_uptime_get();
+	report("sha256_otbn", run_sha256_otbn(false), k_uptime_get() - t0, &all_ok);
+	t0 = k_uptime_get();
+	report("sha256_otbn_unaligned", run_sha256_otbn(true), k_uptime_get() - t0, &all_ok);
+	t0 = k_uptime_get();
+	report("sha512_otbn", run_sha512_otbn(false), k_uptime_get() - t0, &all_ok);
+	t0 = k_uptime_get();
+	report("sha512_otbn_unaligned", run_sha512_otbn(true), k_uptime_get() - t0, &all_ok);
+	t0 = k_uptime_get();
+	report("sm3_otbn", run_sm3_otbn(false), k_uptime_get() - t0, &all_ok);
+	t0 = k_uptime_get();
+	report("sm3_otbn_unaligned", run_sm3_otbn(true), k_uptime_get() - t0, &all_ok);
+	t0 = k_uptime_get();
+	report("rsa2048_modexp", run_rsa_modexp_otbn(), k_uptime_get() - t0, &all_ok);
+
+	tele_line("ITEST_PEER_DONE otbn_perf %s", all_ok ? "PASS" : "FAIL");
+	return all_ok ? 0 : 1;
+}
+#else
 void test_main(void)
 {
 	bool all_ok = true;
@@ -602,6 +673,7 @@ void test_main(void)
 
 	int64_t t0;
 
+#if !defined(ITEST_PEER_NO_CRYPTO)
 	t0 = k_uptime_get();
 	report("sha256_otbn", run_sha256_otbn(false), k_uptime_get() - t0, &all_ok);
 	t0 = k_uptime_get();
@@ -616,6 +688,7 @@ void test_main(void)
 	report("sm3_otbn_unaligned", run_sm3_otbn(true), k_uptime_get() - t0, &all_ok);
 	t0 = k_uptime_get();
 	report("rsa2048_modexp", run_rsa_modexp_otbn(), k_uptime_get() - t0, &all_ok);
+#endif /* !ITEST_PEER_NO_CRYPTO */
 
 	t0 = k_uptime_get();
 	report("proxy_erase", run_proxy_erase(), k_uptime_get() - t0, &all_ok);
@@ -623,10 +696,31 @@ void test_main(void)
 	report("proxy_read", run_proxy_read(), k_uptime_get() - t0, &all_ok);
 	t0 = k_uptime_get();
 	report("proxy_write", run_proxy_write(), k_uptime_get() - t0, &all_ok);
+#if defined(ITEST_PEER_STANDALONE)
 	t0 = k_uptime_get();
 	report("peer_alive", run_peer_alive(), k_uptime_get() - t0, &all_ok);
+#endif
 
+#if !defined(ITEST_ALL_PEER_ZTEST)
 	tele_line("PROJECT EXECUTION %s", all_ok ? "SUCCESSFUL" : "FAILED");
+#else
+	/* The OTBN ztest run has not happened yet, so this is not a verdict:
+	 * announcing SUCCESSFUL here would leave a pass token in the log even
+	 * when the suites then fail.  Only the line after the ztest run counts. */
+	tele_line("ITEST_PEER_PHASE perf_done %s", all_ok ? "PASS" : "FAIL");
+#endif
+
+#if defined(ITEST_ALL_PEER_ZTEST)
+	/* Integrated image: also run the OTBN suites (otbn_test, otbn_selftest,
+	 * keygen, mbedtls-on-OTBN).  They live here because the OTBN ALT and the
+	 * hardware ALT cannot share one ELF.  Their verdict is folded into this
+	 * core's overall result; per-suite lines follow on the same relay. */
+	if (itest_all_peer_ztest_run() != 0) {
+		all_ok = false;
+	}
+	tele_line("PROJECT EXECUTION %s", all_ok ? "SUCCESSFUL" : "FAILED");
+#endif
 
 	k_sleep(K_FOREVER);
 }
+#endif /* !ITEST_PEER_NO_MAIN */

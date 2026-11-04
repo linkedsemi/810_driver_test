@@ -6,7 +6,7 @@
 #   -DETH_UDP_ECHO_TEST=y -> src/eth_udp_echo_test.c  （B 组：数据面 UDP echo）
 #   -DETH_LINK_TEST=y     -> src/eth_link_test.c      （B 组：MDIO 之上，链路状态）
 #   默认                  -> src/eth_mdio_test.c      （A 组：零对端，不依赖网线状态）
-# 变体机制与 wdt_test 一致（SPEC_REFERENCE §6.1.8）。
+# 变体机制与 sec_iwdg_cpu1_test 一致（SPEC_REFERENCE §6.1.8）。
 
 cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})

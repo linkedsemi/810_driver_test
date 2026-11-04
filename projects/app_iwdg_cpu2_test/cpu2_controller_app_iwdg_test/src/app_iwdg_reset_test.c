@@ -31,6 +31,9 @@
 
 #include "soc_reset.h"
 #include "app_iwdg_test_protocol.h"
+#if defined(ITEST_PEER_SECONDARY)
+#include "rlog.h"
+#endif
 
 /* noinit 段跨 HART 复位保留（RAM 不被 hart 复位清空） */
 __noinit static uint32_t test_phase;     /* 0=未跑, 1=已跑(等复位), 2=复位后验证 */
@@ -55,9 +58,17 @@ void app_iwdg_reset_main(void)
 		phase0_passed = 0;
 	}
 
+phase0_restart:
 	if (test_phase == 0) {
 		printk("PHASE 0: install %d ms timeout, will NOT feed, expecting HART reset\n",
 		       WDT_TIMEOUT_MS);
+#if defined(ITEST_PEER_SECONDARY)
+		/* The integrated image keeps cpu2's console off the operator's view;
+		 * relay the arming line so "the reset really happened" is visible on
+		 * cpu1 too, not just as a verdict after the fact. */
+		rlog_emitf("[itest-cpu2] app_iwdg: arming %d ms, expecting HART reset",
+			   WDT_TIMEOUT_MS);
+#endif
 
 		const struct device *wdt_dev = DEVICE_DT_GET(WDT_NODE);
 
@@ -100,8 +111,27 @@ void app_iwdg_reset_main(void)
 		printk("PROJECT EXECUTION FAILED\n");
 		k_sleep(K_FOREVER);
 	} else {
-		/* Phase 1：复位后回读复位原因（test_phase==1：Phase 0 已装狗等复位） */
+		/* test_phase == 1：上一轮 Phase 0 已装狗等复位。
+		 *
+		 * noinit 段跨"重烧 + 复位"存活（cpu2 是 RAM 运行，重烧后 RAM 可能
+		 * 保留上一轮的值），所以 phase==1 也可能是上一次会话留下的。
+		 * 只有"复位来源是看门狗"才证明本轮真的走完了 Phase 0；否则清状态
+		 * 重来，绝不打裁决（否则重烧后会拿烧录复位原因比对，打出假 FAIL
+		 * 并 k_sleep 挂死调用线程）。 */
 		uint32_t reason = reset_reason_get();
+
+		if (reason != APP_IWDT_HART_RESET &&
+		    reason != APP_WWDT_HART_RESET &&
+		    reason != SEC_IWDT_HART_RESET &&
+		    reason != SYS_IWDT_FULL_RESET) {
+			printk("STALE: phase==1 but reset_reason=%u is not a "
+			       "watchdog reset; no test ran this boot, restarting "
+			       "from PHASE 0\n", reason);
+			test_phase = 0;
+			phase0_passed = 0;
+			goto phase0_restart;
+		}
+
 		bool ok = (reason == APP_IWDT_HART_RESET);
 
 		printk("PHASE 1: after reset, reason=%u, expected APP_IWDT_HART_RESET(%d)\n",

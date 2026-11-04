@@ -1,7 +1,15 @@
-# cpu1_iwdg 测试覆盖矩阵
+# sec_iwdg 测试覆盖矩阵（cpu1）
 
+> 本工程 = `app_iwdg_cpu2_test` 的**同驱动对照工程**：同一份
+> `wdt_iwdg_ls.c`，对面工程测 cpu2 的 `app_iwdg`，本工程测 cpu1 的 `sec_iwdg`
+> （外加 `pmu_iwdg` 第二实例）。两套 suite 名成对：
+> `sec_iwdg` / `sec_iwdg_boundary` ↔ `app_iwdg` / `app_iwdg_quick` 等。
+> 工程目录 `projects/sec_iwdg_cpu1_test/`、固件目录 `cpu1_sec_iwdg_test/`
+> （2026-10-29 由 `wdt_test/`、`cpu1_wdt_test/` 改名；源文件名 `wdt_test.c` 等
+> 与 `LOG_MODULE_REGISTER(wdt_test)` 保持原样，避免动用例与日志解析）。
+>
 > 被测驱动：`zephyr/drivers/watchdog/wdt_iwdg_ls.c`（`linkedsemi,ls-watchdog`）。
-> 本工程主实例 = **cpu1_iwdg** `sec_iwdg`@0x400a1800（HART 复位域，cpu1）；
+> 本工程主实例 = **sec_iwdg**@0x400a1800（HART 复位域，cpu1）；
 > `pmu_iwdg`@0x4002f800（SOC 复位域，cpu1）作为第二实例在 `case_boundary` /
 > `case_pmu_iwdg_full_reset` 覆盖；`app_iwdg`@0x40099000（HART 复位域，cpu2）
 > 由独立工程 `app_iwdg_cpu2_test` 覆盖。
@@ -148,7 +156,7 @@ Phase 2 只负责让状态回到可跑 Phase 0。
 
 | 项 | 类型 | 未覆盖原因 | 需要什么才能做 |
 |----|------|-----------|---------------|
-| `app_iwdg_reset`（cpu2 侧 app_iwdg 复位并上报 `APP_IWDT_HART_RESET`） | 结构性 | `app_iwdg` 的复位原因由 **cpu2** 侧 `reset_reason_init()` 的 `SYSC_APP_PER` 分支产生，cpu1 读不到。要做需给 `wdt_test` 新增 `cpu2_*` 固件目录 → 工程分型由**单核变双核**（SPEC_REFERENCE §6.1.10），与既有 `case_non_destructive` 的 1os 分型（不得修改）冲突 | 用户裁定是否允许 `wdt_test` 转双核 |
+| `app_iwdg_reset`（cpu2 侧 app_iwdg 复位并上报 `APP_IWDT_HART_RESET`） | 结构性 | `app_iwdg` 的复位原因由 **cpu2** 侧 `reset_reason_init()` 的 `SYSC_APP_PER` 分支产生，cpu1 读不到。要做需给本工程新增 `cpu2_*` 固件目录 → 工程分型由**单核变双核**（SPEC_REFERENCE §6.1.10），与既有 `case_non_destructive` 的 1os 分型（不得修改）冲突 | 用户裁定是否允许本工程转双核（现由 `app_iwdg_cpu2_test` 覆盖，不重复造） |
 | `app_iwdg` 的 `HAL_IWDG_IS_MATCH` / 生命周期 | 未覆盖 | 同上：`app_iwdg` 由 `lsqsh_evb_cpu2.dts` 使能，cpu1 板级未使能；从 cpu1 跨核操作 cpu2 外设属自造用法，未验证 | 同上的双核裁定 |
 | `iwdt_ls_isr` 回调分支（`data->callback != NULL` 时调用回调） | 平台无法确定性判定 | 驱动 `setup` 恒置 `IWDT_RST_EN=1`，超时必走复位而非仅中断；回调是否在复位前被触发属硬件行为，无硬件无法确认。写死断言 = 假断言 | P6 实机 + 示波器/GDB 观测 |
 | ~~`iwdt_calculate_load` 的 **饱和分支**（`ticks > UINT32_MAX`）~~ | ~~源码可证不可达~~ **已覆盖** | 2026-09-18 驱动修复为 64 位乘法后，该分支**可达**，由 `test_load_ticks_saturation_boundary` / `test_load_ticks_uint32_max_timeout` 覆盖（见 §2.2） | 无（已闭环） |
@@ -175,12 +183,12 @@ Phase 2 只负责让状态回到可跑 Phase 0。
 
 ## 5. P6（首次实测）前置事项
 
-1. **`app_iwdg` 是否需要**：若用户裁定 `wdt_test` 可转双核，再补 `cpu2_*` 固件 +
+1. **`app_iwdg` 是否需要**：若用户裁定本工程可转双核，再补 `cpu2_*` 固件 +
    `case_app_iwdg_reset`（见 §3）。
 2. **mem 兜底 TEST_NAMES 未同步**：`tests/scripts/dump_results.py` 的 `TEST_NAMES`
-   现仅含 `case_non_destructive` 的 5 项（`wdt` 套件链接序）。
-   `case_boundary` 的 `ZTEST_SUITE` 名为 **`wdt_boundary`**，共 19 项
-   （链接序见构建后 `nm --numeric-sort <elf> | grep _ztest_unit_test__wdt_boundary`）。
+   现仅含 `case_non_destructive` 的 5 项（`sec_iwdg` 套件链接序）。
+   `case_boundary` 的 `ZTEST_SUITE` 名为 **`sec_iwdg_boundary`**，共 19 项
+   （链接序见构建后 `nm --numeric-sort <elf> | grep _ztest_unit_test__sec_iwdg_boundary`）。
    在补上按 case 区分的 `TEST_NAMES` 之前，**不要**对 `case_boundary` 使用
    `dump_results.py` 内存兜底，否则会张冠李戴（KNOWN_ISSUES #59）。
    `tests/run_test.py`（回归入口）走串口 `parse_ztest`，不读 `TEST_NAMES`，不受影响。

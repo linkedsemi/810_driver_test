@@ -56,7 +56,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-TARGET_SRC="${I3C_TEST_ROOT}/cpu1_wdt_test"
+TARGET_SRC="${I3C_TEST_ROOT}/cpu1_sec_iwdg_test"
 TARGET_OVERLAY="$(realpath "${TARGET_SRC}/app.overlay")"
 TEST_BUILD_DIR="${I3C_TEST_ROOT}/tests/${TEST_NAME}/build"
 TARGET_BUILD="${TEST_BUILD_DIR}/target"

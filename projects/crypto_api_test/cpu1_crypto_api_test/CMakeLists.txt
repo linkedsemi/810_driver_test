@@ -8,6 +8,7 @@ project(cpu1_crypto_api_test)
 target_sources(app PRIVATE
     src/main.c
     src/sm4_crypto_test.c
+    src/sm4_ext_test.c
     src/hash_crypto_test.c
     src/crypto_err_test.c)
 

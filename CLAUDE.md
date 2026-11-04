@@ -48,7 +48,13 @@ python run_test.py                                    # 单工程回归
 python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 ```
 
-**输出归档**：`reports/<YYYY-MM-DD>-<idx>/`
+**输出归档**：全量回归 `reports/<YYYY-MM-DD>-<idx>/`；单模块测试 `reports/module/<YYYY-MM-DD>-<idx>/`（后者不入库）
+
+**临时内容**：一次性工程 / 脚本 / 日志一律放 `tmp/`（已 gitignore，规则见 `tmp/README.md`），定期清理或合并回正式代码
+
+**问题记录证据**：不引用 `reports/` 作证据；内联结论 + `810_driver_test@<12 位 sha>`（规范见 `SPEC_REFERENCE` §6.4.7.1）
+
+**模块内容记录**：模块自身的地址/分区、寄存器怪癖、接线、已知缺陷、测试预期写进该工程 `tests/COVERAGE.md`；全局文档只放跨工程规则与索引（`SPEC_REFERENCE` §6.3 / §6.5.3）
 
 ## 4. 核心规范速查（必读）
 
@@ -94,6 +100,7 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 | load 极慢（~190s） | 写包参数未调大 | `set remote memory-write-packet-size 16384` |
 | PASS/FAIL 相反 | ANSI 重绘前缀 | `re.search()` 不锚点 |
 | 逐项 MISSING | verbose 输出关了 | `CONFIG_ZTEST_VERBOSE_OUTPUT=y` |
+| **合并 set 里 peer 组全塌**：`i3c_*` 0/35、pinmux `peer refused I2C mode`、`peer otbn` `rc=-28`、`fifo full, channel: 9` | ① 会话中做过**恢复性复位**（`--erase-only --reset-and-run` / GDB reset）⇒ cpu2 不消费 mbox；② 本 boot 的 `itest peer otbn` 没返回过 `rc=0`（`mode_thread` 被占）；③ 跑过 `iopmp`（固件要求它独占 boot） | 三条都**重烧两 bin** 再跑（单纯复位不够）；`iopmp` 排最后一组（KNOWN_ISSUES #137 · `qsh-test-run` §4.2/§5） |
 
 完整清单：[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
 

@@ -3,11 +3,11 @@
   "case": "case_default",
   "board": "lsqsh_evb@1os/lsqsh/cpu1",
   "env": "tgt_uart=auto, timeout=180s",
-  "execution": "SUCCESSFUL",
+  "execution": "FAILED",
   "mem_state": "unavailable",
   "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
   "missing_evidence": [],
-  "timestamp": "2026-10-29T19:41:06",
+  "timestamp": "2026-10-29T20:43:15",
   "results": {
     "sha224_kat": "PASS",
     "sha224_split": "PASS",
@@ -36,7 +36,23 @@
     "sm4_bad_keylen": "PASS",
     "sm4_bad_mode": "PASS",
     "sm4_caps": "PASS",
-    "sm4_ccm_params": "PASS"
+    "sm4_ccm_params": "PASS",
+    "sm4_ccm_aad_large": "PASS",
+    "sm4_ccm_aad_none": "PASS",
+    "sm4_ccm_aad_tamper": "PASS",
+    "sm4_ccm_aad_unaligned": "PASS",
+    "sm4_ccm_noncelen_sweep": "PASS",
+    "sm4_ccm_tag_tamper": "PASS",
+    "sm4_ccm_taglen_sweep": "PASS",
+    "sm4_ctr_ctrlen_sweep": "PASS",
+    "sm4_ctr_len_sweep": "PASS",
+    "sm4_ecb_len_sweep": "PASS",
+    "sm4_ecb_zero_len": "PASS",
+    "sm4_gcm_aad_large": "PASS",
+    "sm4_gcm_aad_none": "PASS",
+    "sm4_gcm_aad_tamper": "PASS",
+    "sm4_gcm_tag_tamper": "PASS",
+    "sm4_stdkey_ecb": "FAIL"
   },
   "infos": {
     "sha224_kat": {
@@ -44,7 +60,7 @@
       "bytes": "3",
       "kat": "1",
       "ret": "0",
-      "us": "10"
+      "us": "9"
     },
     "sha224_split": {
       "algo": "sha224",
@@ -82,7 +98,7 @@
       "bytes": "3",
       "kat": "1",
       "ret": "0",
-      "us": "28"
+      "us": "25"
     },
     "sha384_split": {
       "algo": "sha384",
@@ -90,14 +106,14 @@
       "segments": "3",
       "split_eq_kat": "1",
       "ret": "0",
-      "us": "45"
+      "us": "41"
     },
     "sha512_kat": {
       "algo": "sha512",
       "bytes": "3",
       "kat": "1",
       "ret": "0",
-      "us": "27"
+      "us": "25"
     },
     "sha512_pad_boundary": {
       "algo": "sha512",
@@ -113,7 +129,7 @@
       "segments": "3",
       "split_eq_kat": "1",
       "ret": "0",
-      "us": "44"
+      "us": "40"
     },
     "sm3_kat": {
       "algo": "sm3",
@@ -165,7 +181,7 @@
       "roundtrip": "1",
       "enc_ret": "0",
       "dec_ret": "0",
-      "us": "86"
+      "us": "79"
     },
     "ccm": {
       "algo": "sm4-ccm",
@@ -176,7 +192,7 @@
       "roundtrip": "1",
       "enc_ret": "0",
       "dec_ret": "0",
-      "us": "170"
+      "us": "157"
     },
     "ctr": {
       "algo": "sm4-ctr",
@@ -186,7 +202,7 @@
       "roundtrip": "1",
       "enc_ret": "0",
       "dec_ret": "0",
-      "us": "87"
+      "us": "78"
     },
     "ecb": {
       "algo": "sm4-ecb",
@@ -195,7 +211,7 @@
       "roundtrip": "1",
       "enc_ret": "0",
       "dec_ret": "0",
-      "us": "81"
+      "us": "73"
     },
     "gcm": {
       "algo": "sm4-gcm",
@@ -206,7 +222,7 @@
       "roundtrip": "1",
       "enc_ret": "0",
       "dec_ret": "0",
-      "us": "192"
+      "us": "180"
     },
     "sm4_bad_algo": {
       "algo": "aes",
@@ -244,9 +260,101 @@
       "tag3": "-22",
       "tag5": "-22",
       "tag18": "-22"
+    },
+    "sm4_ccm_aad_large": {
+      "mode": "ccm",
+      "aad_len": "64",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_aad_none": {
+      "mode": "ccm",
+      "aad_len": "0",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_aad_tamper": {
+      "mode": "ccm",
+      "tamper": "aad",
+      "control_ret": "0",
+      "bad_ret": "-1"
+    },
+    "sm4_ccm_aad_unaligned": {
+      "mode": "ccm",
+      "aad_len": "13",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_noncelen_sweep": {
+      "nonce_len": "13",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_tag_tamper": {
+      "mode": "ccm",
+      "tamper": "tag",
+      "control_ret": "0",
+      "bad_ret": "-1"
+    },
+    "sm4_ccm_taglen_sweep": {
+      "tag_len": "16",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ctr_ctrlen_sweep": {
+      "ctr_len": "128",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ctr_len_sweep": {
+      "len": "4081",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "out_len": "4081"
+    },
+    "sm4_ecb_len_sweep": {
+      "len": "4080",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "out_len": "4080"
+    },
+    "sm4_ecb_zero_len": {
+      "ret": "0",
+      "out_len": "0"
+    },
+    "sm4_gcm_aad_large": {
+      "mode": "gcm",
+      "aad_len": "64",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_gcm_aad_none": {
+      "mode": "gcm",
+      "aad_len": "0",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_gcm_aad_tamper": {
+      "mode": "gcm",
+      "tamper": "aad",
+      "control_ret": "0",
+      "bad_ret": "-14"
+    },
+    "sm4_gcm_tag_tamper": {
+      "mode": "gcm",
+      "tamper": "tag",
+      "control_ret": "0",
+      "bad_ret": "-14"
+    },
+    "sm4_stdkey_ecb": {
+      "ret": "0",
+      "ct": "6724718b2ed9579eb6b3b362ff439348"
     }
   },
-  "reasons": {},
+  "reasons": {
+    "sm4_stdkey_ecb": "WEST_TOPDIR/810_driver_test/projects/crypto_api_test/cpu1_crypto_api_test/src/sm4_ext_test.c: 227: sm4_ext_sm4_stdkey_ecb: (memcmp(out, ext_std_ct, sizeof(ext_std_ct)) not equal to 0)"
+  },
   "notes": {
     "sha224_kat": "src=token",
     "sha224_split": "src=token",
@@ -275,6 +383,22 @@
     "sm4_bad_keylen": "src=token",
     "sm4_bad_mode": "src=token",
     "sm4_caps": "src=token",
-    "sm4_ccm_params": "src=token"
+    "sm4_ccm_params": "src=token",
+    "sm4_ccm_aad_large": "src=token",
+    "sm4_ccm_aad_none": "src=token",
+    "sm4_ccm_aad_tamper": "src=token",
+    "sm4_ccm_aad_unaligned": "src=token",
+    "sm4_ccm_noncelen_sweep": "src=token",
+    "sm4_ccm_tag_tamper": "src=token",
+    "sm4_ccm_taglen_sweep": "src=token",
+    "sm4_ctr_ctrlen_sweep": "src=token",
+    "sm4_ctr_len_sweep": "src=token",
+    "sm4_ecb_len_sweep": "src=token",
+    "sm4_ecb_zero_len": "src=token",
+    "sm4_gcm_aad_large": "src=token",
+    "sm4_gcm_aad_none": "src=token",
+    "sm4_gcm_aad_tamper": "src=token",
+    "sm4_gcm_tag_tamper": "src=token",
+    "sm4_stdkey_ecb": "src=token"
   }
 }

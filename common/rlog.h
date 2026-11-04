@@ -76,6 +76,23 @@ void rlog_set_relay_envelope(const char *prefix, const char *core);
  * 返回本次打印的行数。 */
 int rlog_relay_drain(void);
 
+/* 中继行里的 FAIL 明细捕获：drain 时把含 " FAIL (" 的行另存一份，供批末
+ * summary 在 cpu1 侧重打一遍 —— 从核的失败不再只埋在两核日志中间。
+ * 容量固定（RLOG_FAIL_MAX 行），最多保留最早的 8 条。 */
+#define RLOG_FAIL_MAX 8
+void rlog_fail_reset(void);
+int  rlog_fail_count(void);
+const char *rlog_fail_line(int idx);
+
+/* 套件清单捕获：从核应答 LIST 请求时发 `INV <name> <class> <pass> <fail> <skip>`，
+ * 主核收下后由 `itest list` / `itest summary` 分组展示 —— 否则 cpu2 的套件在
+ * cpu1 的 list/summary 里完全不可见。只在主核分配缓冲。 */
+#define RLOG_INV_MAX 56
+#define RLOG_INV_TEXT 64
+void rlog_inv_reset(void);
+int  rlog_inv_count(void);
+const char *rlog_inv_line(int idx);
+
 /* 等从核 DONE 帧：期间反复 drain（保持从核 FIFO 有空间），到点或收到即返回。
  * 返回 true = 收到 DONE。 */
 bool rlog_wait_secondary_done(uint32_t timeout_ms);
@@ -103,6 +120,19 @@ extern volatile uint32_t rlog_stat_tx_max_retry;  /* 单行最大重试次数 */
 extern volatile uint32_t rlog_stat_tx_max_block_ms; /* 单行最长阻塞(ms) */
 extern volatile uint32_t rlog_stat_tx_lost;       /* 重试耗尽丢弃的行数 */
 extern volatile uint32_t rlog_stat_rx_hwm;        /* 接收环最大占用(行) */
+
+/* 非 0 时，ztest token **只中继、不在本核串口回显**。
+ *
+ * 用法：I3C target dispatcher 在逐项跑 35 个 target 套件期间置 1、跑完清 0 ——
+ * 那些套件的 TX-FIFO 重填必须落在 controller 的读窗口内，本核同步 printk 会
+ * 拖慢它（实测过 24/35）。其余驱动套件（在 i2c_mode worker 上跑）置 0，
+ * 本核串口照常出 ztest 行。
+ *
+ * 为什么用全局标志而不是判断线程名：ztest 每个用例都在**自己的线程**
+ * （ztest.c 的 ztest_thread）里跑，PRINT_DATA 里 `k_current_get()` 拿到的
+ * 永远是它，不是 "i3c_target" ⇒ 按线程名判断**从来没生效过**（实测 2026-10-28：
+ * 本核照样打出 35 条 target 套件行）。 */
+extern volatile int rlog_local_echo_off;
 
 /* ---- SECONDARY（无 token 出口的一侧） ---- */
 

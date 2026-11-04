@@ -2,7 +2,7 @@
 # 自动执行 wdt 破坏性复位测试（全程软件，无人为干预）
 set -e
 
-CDIR="d:/zephyr4_0/810_driver_test/projects/wdt_test/tests/case_destructive_reset"
+CDIR="d:/zephyr4_0/810_driver_test/projects/sec_iwdg_cpu1_test/tests/case_destructive_reset"
 FP="d:/zephyr4_0/810_driver_test/scripts/flash_program.py"
 
 echo "=== 1. 构建固件 ==="

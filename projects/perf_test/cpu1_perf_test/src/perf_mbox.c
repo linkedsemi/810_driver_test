@@ -16,6 +16,9 @@
 
 #define PERF_MBOX_MAGIC  0x50455246u /* "PERF" */
 #define PERF_READY_MAGIC 0x52454144u /* "READY" */
+/* "HELO": the peer echoes frames verbatim, so this coming back proves
+ * the echo thread is alive (used when the peer booted long ago). */
+#define PERF_HELLO_MAGIC 0x4F4C4548u
 #define PERF_FRAMES      500
 #define PERF_ECHO_TIMEOUT_MS 1000
 
@@ -51,7 +54,7 @@ static void mbox_rx_cb(const struct device *dev, mbox_channel_id_t channel,
 
 	const struct perf_msg *m = (const struct perf_msg *)msg->data;
 
-	if (m->magic == PERF_READY_MAGIC) {
+	if (m->magic == PERF_READY_MAGIC || m->magic == PERF_HELLO_MAGIC) {
 		peer_ready = true;
 	} else if (m->magic == PERF_MBOX_MAGIC) {
 		rx_count++;
@@ -71,7 +74,26 @@ ZTEST(perf_mbox, roundtrip)
 	zassert_equal(mbox_set_enabled(mbox_rx.dev, mbox_rx.channel_id, 1), 0,
 		      "enable rx channel");
 
-	/* Wait for the peer's READY frame (cpu2 boots after cpu1 in this flow). */
+	/* Liveness probe first: the peer echoes every frame verbatim, so a HELLO
+	 * coming back proves its echo thread is running.  In the integrated image
+	 * cpu1 runs this suite long after cpu2 booted, so a one-shot READY sent at
+	 * boot would be missed; the probe works at any time and costs two frames. */
+	for (int i = 0; i < 30 && !peer_ready; i++) {
+		struct perf_msg hello = {
+			.magic = PERF_HELLO_MAGIC,
+			.seq = 0,
+		};
+		struct mbox_msg hmsg = {
+			.data = &hello,
+			.size = sizeof(hello),
+		};
+
+		(void)mbox_send_dt(&mbox_tx, &hmsg);
+		(void)k_sem_take(&rx_sem, K_MSEC(100));
+	}
+
+	/* Fallback: the peer may announce READY by itself (standalone perf_test,
+	 * where both cores start together). */
 	int64_t deadline = k_uptime_get() + 5000;
 
 	while (!peer_ready && k_uptime_get() < deadline) {
@@ -82,6 +104,11 @@ ZTEST(perf_mbox, roundtrip)
 	zassert_equal(rx_errors, 0, "rx errors before round-trip: %u",
 		      (unsigned)rx_errors);
 
+	/* Drain late HELLO echoes so they cannot be mistaken for round-trip
+	 * frames (one token per send below). */
+	k_msleep(50);
+	while (k_sem_take(&rx_sem, K_NO_WAIT) == 0) {
+	}
 	k_sem_reset(&rx_sem);
 	rx_count = 0;
 

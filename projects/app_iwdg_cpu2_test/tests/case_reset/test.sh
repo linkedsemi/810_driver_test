@@ -4,7 +4,7 @@
 # What is tested:
 #   app_iwdg 超时触发 **cpu2 HART 复位**，复位后由 cpu2 侧
 #   reset_reason_init() 的 SYSC_APP_PER 分支回读原因 == APP_IWDT_HART_RESET。
-#   这是 wdt_test（单核 cpu1）结构上覆盖不到的那条路径——app_iwdg 的复位
+#   这是 sec_iwdg_cpu1_test（单核 cpu1）结构上覆盖不到的那条路径——app_iwdg 的复位
 #   原因只有 cpu2 侧读得到（soc_reset_reason.c 的
 #   DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) 分支）。
 #

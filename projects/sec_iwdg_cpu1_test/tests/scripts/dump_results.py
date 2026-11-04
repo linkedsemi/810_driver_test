@@ -53,7 +53,7 @@ TARGET_ROM_START = int(os.environ.get("TARGET_ROM_START", "0x10000000"), 0)
 # 下划线比较，数字 '0'-'9' 排在 '_' 之前——勿用 plain nm 名字典序，与
 # 真实链接序可能相反）。与 glue 的 tr_record idx（注册顺序）对齐；每次
 # 增删测试项后必须重新核对：
-#   nm --numeric-sort <elf> | grep _ztest_unit_test__wdt__
+#   nm --numeric-sort <elf> | grep _ztest_unit_test__sec_iwdg__
 TEST_NAMES = [
     "test_wdt_disable", "test_wdt_invalid_flags", "test_wdt_invalid_timeout_min",
     "test_wdt_setup_then_feed", "test_wdt_two_timeouts_not_supported",

@@ -19,6 +19,8 @@ cases:
   - projects\otbn_test
   # mbedtls
   - projects\otbn_selftest
+  # Zephyr crypto 驱动 API（SM4 / hash），与 mbedtls 的 *_alt 栈不同层
+  - projects\crypto_api_test
   # otbn_keygen_test 已合并进 otbn_test（2026-10-26），不再单独登记回归
   # - projects\otbn_keygen_test
   - projects\mbedtls_test
@@ -36,8 +38,8 @@ cases:
   # malloc -> sxy
   - projects\qspi_flash_test
   - projects\mbox_test
-  # cpu1_iwdg
-  - projects\wdt_test
+  # sec_iwdg (cpu1)
+  - projects\sec_iwdg_cpu1_test
   - projects\app_iwdg_cpu2_test
   - projects\iopmp_test
   - projects\spif_test

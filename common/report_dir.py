@@ -1,19 +1,36 @@
 #!/usr/bin/env python3
 """报告会话目录与 summary 管理（810_driver_test 公共模块）。
 
-会话目录（2026-08-29 起）：reports/<YYYY-MM-DD>-<idx>
-  idx = 当天第几次测试会话，从 1 累加（扫描已有目录取 max+1）。
-  一次批量会话（regression/run_all.py）内全部 case 共用同一个会话目录；
-  单独跑某个 case（run_*_tests.py 不带 --session-dir）时自动分配新会话目录。
+会话目录按**运行类型**分两处（2026-11-04 起）：
+  - 全量回归（regression/run_all.py）：reports/<YYYY-MM-DD>-<idx>/
+  - 单模块测试（run_test.py 单独运行）  ：reports/module/<YYYY-MM-DD>-<idx>/
+  idx = 当天该类型第几次会话，从 1 累加（各类型独立扫描取 max+1）。
+  一次批量会话内全部 case 共用同一个会话目录；单独跑某个 case（不带
+  --session-dir）时自动分配 module 会话目录。
+每个会话目录写 session_meta.json（kind / project(s) / git_sha），summary 标题
+据此显示“全量/单模块”。历史目录（无 meta）保持原样可读。
 目录结构：
-  reports/2026-08-29-1/
-    summary.md                                    # 最外层，行粒度 = case
-    trng_test_case_default/trng_test_report.md    # 每 case 一个子文件夹
-    i3c_dualcore_test_case_mixed_1m_6m25/i3c_dualcore_test_report.md
+  reports/2026-08-29-1/                    # 全量
+    summary.md
+    trng_test_case_default/trng_test_report.md
+  reports/module/2026-08-29-1/             # 单模块
+    summary.md
+    trng_test_case_default/trng_test_report.md
 旧格式目录（reports/2026-08-29/，无 idx）不再产生，历史归档保持原样可读。
 """
+import datetime
+import functools
+import json
 import re
+import subprocess
 from pathlib import Path
+
+KIND_MODULE = "module"
+KIND_FULL = "full"
+KINDS = (KIND_MODULE, KIND_FULL)
+MODULE_SUBDIR = "module"
+SESSION_META = "session_meta.json"
+META_SCHEMA = 1
 
 SESSION_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d+)$")
 # O-12（2026-09-20）：通过/总数允许"未知"。run 脚本没留下 summary 行、也拿不到
@@ -76,24 +93,128 @@ def _read_trailing_notes(f):
     return []
 
 
-def allocate_session_dir(reports_root, date_str):
-    """返回 reports_root/<date_str>-<max_idx+1> 并创建之。"""
-    reports = Path(reports_root)
-    reports.mkdir(parents=True, exist_ok=True)
+def _kind_root(reports_root, kind):
+    """会话根目录：full -> reports/；module -> reports/module/。"""
+    root = Path(reports_root)
+    if kind == KIND_FULL:
+        return root
+    if kind == KIND_MODULE:
+        return root / MODULE_SUBDIR
+    raise ValueError(f"unknown report kind: {kind!r}（只接受 {KINDS}）")
+
+
+def plan_session_dir(reports_root, date_str, kind=KIND_MODULE):
+    """返回下一个会话目录 Path；**不创建目录、不写 meta**（dry-run 用）。"""
+    root = _kind_root(reports_root, kind)
     max_idx = 0
-    for d in reports.glob(f"{date_str}-*"):
-        m = SESSION_RE.match(d.name)
-        if m:
-            max_idx = max(max_idx, int(m.group(2)))
-    session = reports / f"{date_str}-{max_idx + 1}"
+    if root.exists():
+        for d in root.glob(f"{date_str}-*"):
+            m = SESSION_RE.match(d.name)
+            if m:
+                max_idx = max(max_idx, int(m.group(2)))
+    return root / f"{date_str}-{max_idx + 1}"
+
+
+@functools.lru_cache(maxsize=1)
+def _git_sha():
+    """当前 810_driver_test 仓库的 12 位短 sha；取不到返回 None。"""
+    repo = Path(__file__).resolve().parents[1]
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
+            capture_output=True, text=True, timeout=2)
+        sha = out.stdout.strip()
+        return sha if out.returncode == 0 and sha else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _write_session_meta(session_dir, kind, project=None, projects=None):
+    """写 session_meta.json；失败静默（不得影响回归主流程）。"""
+    meta = {
+        "schema": META_SCHEMA,
+        "kind": kind,
+        "session": Path(session_dir).name,
+        "created": datetime.datetime.now().isoformat(timespec="seconds"),
+        "repo": "810_driver_test",
+        "git_sha": _git_sha(),
+        "project": project,
+        "projects": sorted({p for p in (projects or []) if p}),
+    }
+    try:
+        (Path(session_dir) / SESSION_META).write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def read_session_meta(session_dir):
+    """读 session_meta.json；缺失/损坏返回 {}（绝不抛异常）。"""
+    try:
+        meta = json.loads((Path(session_dir) / SESSION_META).read_text(encoding="utf-8"))
+        return meta if isinstance(meta, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def session_kind(session_dir):
+    """meta.kind 优先；否则父目录名为 module 判 module，其余判 full。"""
+    kind = read_session_meta(session_dir).get("kind")
+    if kind in KINDS:
+        return kind
+    return KIND_MODULE if Path(session_dir).parent.name == MODULE_SUBDIR else KIND_FULL
+
+
+def register_session_project(session_dir, project):
+    """把 project 记入 meta.projects（幂等）；历史全量目录（无 meta）不写。"""
+    if not project:
+        return
+    session = Path(session_dir)
+    meta = read_session_meta(session)
+    if not meta:
+        if session.parent.name != MODULE_SUBDIR:
+            return
+        meta = {
+            "schema": META_SCHEMA,
+            "kind": KIND_MODULE,
+            "session": session.name,
+            "created": datetime.datetime.now().isoformat(timespec="seconds"),
+            "repo": "810_driver_test",
+            "git_sha": _git_sha(),
+            "project": project,
+            "projects": [project],
+        }
+    else:
+        projects = meta.get("projects")
+        if not isinstance(projects, list):
+            projects = []
+        if project not in projects:
+            projects.append(project)
+        meta["projects"] = projects
+        if not meta.get("project"):
+            meta["project"] = project
+    try:
+        (session / SESSION_META).write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def allocate_session_dir(reports_root, date_str, kind=KIND_MODULE, *,
+                         project=None, projects=None):
+    """创建并返回下一个会话目录；module -> <root>/module/<date>-<idx>，
+    full -> <root>/<date>-<idx>。同时写 session_meta.json（失败静默）。"""
+    session = plan_session_dir(reports_root, date_str, kind)
     session.mkdir(parents=True, exist_ok=True)
+    _write_session_meta(session, kind, project=project, projects=projects)
     return session
 
 
 def case_dir_for(session_dir, project, case):
-    """返回 <session>/<project>_<case>/ 并创建之。"""
+    """返回 <session>/<project>_<case>/ 并创建之；顺带登记 project 到 meta。"""
     d = Path(session_dir) / f"{project}_{case}"
     d.mkdir(parents=True, exist_ok=True)
+    register_session_project(session_dir, project)
     return d
 
 
@@ -113,6 +234,20 @@ def read_summary(session_dir):
                                 "result": _RESULT_MARK_RE.sub("", m.group(3)),
                                 "passed": _num(m.group(4)), "total": _num(m.group(5))}
     return rows
+
+
+def _summary_title(session_dir):
+    """summary 标题：module -> “单模块”，full（有 meta）-> “全量”，历史无 meta 原样。"""
+    name = Path(session_dir).name
+    meta = read_session_meta(session_dir)
+    kind = meta.get("kind")
+    if kind == KIND_MODULE:
+        return f"# 810_driver_test 汇总（单模块 {name}）"
+    if kind == KIND_FULL:
+        return f"# 810_driver_test 汇总（全量 {name}）"
+    if Path(session_dir).parent.name == MODULE_SUBDIR:
+        return f"# 810_driver_test 汇总（单模块 {name}）"
+    return f"# 810_driver_test 汇总（{name}）"
 
 
 def update_summary(session_dir, key, result, passed, total, report_rel):
@@ -135,7 +270,7 @@ def update_summary(session_dir, key, result, passed, total, report_rel):
     notes = _read_trailing_notes(f)      # ⚠️ 必须在覆写**之前**取，否则就没了
     rows[key] = {"report": report_rel, "result": result,
                  "passed": passed, "total": total}
-    lines = [f"# 810_driver_test 汇总（{Path(session_dir).name}）", "",
+    lines = [_summary_title(session_dir), "",
              "| 测试 | 结果 | 通过/总数 |", "|---|---|---|"]
     total_cases = len(rows)
     pass_cases = sum(1 for v in rows.values() if v["result"] == "PASS")

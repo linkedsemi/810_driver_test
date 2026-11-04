@@ -4,7 +4,7 @@
 > 被测实例：**`app_iwdg`@0x40099000**（HART 复位域，cpu2 应用核；`lsqsh.dtsi:592-599`，
 > 由 `lsqsh_evb_cpu2.dts` 使能，alias `watchdog0`）。
 > **片内**外设，无引脚接线（SPEC_REFERENCE §6.6）。
-> 同驱动的另两个实例 `sec_iwdg`(cpu1) / `pmu_iwdg`(cpu1) 由 `wdt_test` 覆盖（单核 1os），
+> 同驱动的另两个实例 `sec_iwdg`(cpu1) / `pmu_iwdg`(cpu1) 由 `sec_iwdg_cpu1_test` 覆盖（单核 1os），
 > 本案不重复——本工程存在的唯一理由就是 `app_iwdg` 只能从 cpu2 侧测
 > （复位原因由 `soc_reset_reason.c` 的 `SYSC_APP_PER` 分支产生，cpu1 读不到）。
 >
@@ -160,11 +160,11 @@ Phase 1，Phase 2 只负责让状态回到可跑 Phase 0。
 
 | 项 | 判据类型 | 未覆盖原因 | 需要什么才能做 |
 |----|---------|-----------|---------------|
-| ~~`iwdt_calculate_load` 饱和分支（`ticks > UINT32_MAX`）~~ | ~~**源码可证不可达**（非实测）~~ → **2026-09-18 已修：可达且已覆盖** | 2026-09-18 驱动加 `(uint64_t)` 提升（`wdt_iwdg_ls.c:43-51`），饱和判据**可达**：超限即钳到 `0xFFFFFFFF`。**该分支已由 cpu1 侧 `wdt_test/case_boundary` 的 `test_load_ticks_saturation_boundary` / `test_load_ticks_uint32_max_timeout` 覆盖**（详见 `wdt_test/tests/COVERAGE.md` §2.2）；本案（cpu2 / app_iwdg）不重复立项 —— 见 §3.2 评估 | 无（已闭环） |
-| 回绕区间（`window.max` ≥ 131072 ms）的确定性预期 | **已由驱动修复消除歧义**（2026-09-18） | 修后语义按 64 位算式是否越 `UINT32_MAX` 分段：`< 131072000 ms` 为精确值，`>= 131072000 ms` 钳到 `0xFFFFFFFF`。⚠ 旧表述"驱动意图与实现不符 / 回绕起点 131072 ms"**已作废** —— 131072 ms 与 **131072000 ms** 差 1000 倍（饱和阈值，≈36.4 h；`DEFECT_ANALYSIS_2026-09-17.md §1.6` 已就地更正）。本案 cpu2 侧仍只在未饱和区间写断言，饱和区间由 `wdt_test` 覆盖 | 无（已闭环） |
+| ~~`iwdt_calculate_load` 饱和分支（`ticks > UINT32_MAX`）~~ | ~~**源码可证不可达**（非实测）~~ → **2026-09-18 已修：可达且已覆盖** | 2026-09-18 驱动加 `(uint64_t)` 提升（`wdt_iwdg_ls.c:43-51`），饱和判据**可达**：超限即钳到 `0xFFFFFFFF`。**该分支已由 cpu1 侧 `sec_iwdg_cpu1_test/case_boundary` 的 `test_load_ticks_saturation_boundary` / `test_load_ticks_uint32_max_timeout` 覆盖**（详见 `sec_iwdg_cpu1_test/tests/COVERAGE.md` §2.2）；本案（cpu2 / app_iwdg）不重复立项 —— 见 §3.2 评估 | 无（已闭环） |
+| 回绕区间（`window.max` ≥ 131072 ms）的确定性预期 | **已由驱动修复消除歧义**（2026-09-18） | 修后语义按 64 位算式是否越 `UINT32_MAX` 分段：`< 131072000 ms` 为精确值，`>= 131072000 ms` 钳到 `0xFFFFFFFF`。⚠ 旧表述"驱动意图与实现不符 / 回绕起点 131072 ms"**已作废** —— 131072 ms 与 **131072000 ms** 差 1000 倍（饱和阈值，≈36.4 h；`DEFECT_ANALYSIS_2026-09-17.md §1.6` 已就地更正）。本案 cpu2 侧仍只在未饱和区间写断言，饱和区间由 `sec_iwdg_cpu1_test` 覆盖 | 无（已闭环） |
 | `iwdt_ls_isr` 回调实际被调用 | **平台不可确定性判定**（未实测） | 驱动 `setup` 恒置 `IWDT_RST_EN=1`（`:90`），超时必走复位而非仅中断；回调是否在 HART 复位前被调用属硬件行为，无判据可写（写死断言 = 假断言） | P6 实机 + GDB 断点/示波器观测 |
 | `IWDT_CNT` 计数方向与 `feed` 的重装载语义 | **寄存器语义未确认** | `reg_iwdgv2_type.h` 只有 `IWDT_CNT` 字段无行为说明；数据手册未在手。按 §1.9h「边界常量必须有实测/源码出处」，不凭猜写断言（如"feed 后 CNT 回到 LOAD"可能方向相反） | 数据手册，或 P6 实机写-回读实测确立语义 |
-| 非 app_iwdg 实例（`sec_iwdg` / `pmu_iwdg`）的本驱动路径 | **范围划分** | 同驱动的另两实例在 cpu1 域，已由 `wdt_test` 覆盖（单核 1os）；本案存在理由只是 app_iwdg 只能从 cpu2 测 | 无（不重复造） |
+| 非 app_iwdg 实例（`sec_iwdg` / `pmu_iwdg`）的本驱动路径 | **范围划分** | 同驱动的另两实例在 cpu1 域，已由 `sec_iwdg_cpu1_test` 覆盖（单核 1os）；本案存在理由只是 app_iwdg 只能从 cpu2 测 | 无（不重复造） |
 | `reset_reason` 其它枚举（PWR/SOFT/CPU/EXT/EMUL/SEC_IWDT/SEC_WWDT/SOFT_HART/APP_WWDT） | **范围划分** | 非 app_iwdg 触发路径；且 `lsqsh.dtsi` 无 app_wwdt 实例（WWDT 侧无 Zephyr 驱动，桶 C） | 无（不属本案范围） |
 | `reset_reason_app_set/get`（`CONFIG_NUM_OS>1` 的 app 复位原因跨核传递） | **范围划分** | 属"cpu1 主动复位并跨核告知"的复位联动场景，需 mbox 类跨核通道，不在 app_iwdg 单外设范围 | 若需覆盖，另立跨核复位用例 |
 
@@ -172,8 +172,8 @@ Phase 1，Phase 2 只负责让状态回到可跑 Phase 0。
 
 | 发现 | 位置 | 影响 |
 |---|---|---|
-| ~~驱动 `iwdt_calculate_load` 的 `timeout_ms * frequency` 是**两个 `uint32_t` 相乘**（32 位先回绕），使饱和判据 `ticks > UINT32_MAX` 成为**死分支**~~ → **2026-09-18 已修** | `zephyr/drivers/watchdog/wdt_iwdg_ls.c:43-51`（现为 `(uint64_t)timeout_ms * frequency / 1000`，饱和判据可达） | `OPEN_ITEMS.md` **O-15** 与 `KNOWN_ISSUES.md` **#74** 均已更新为**已修**；`wdt_test/case_boundary` 的 3 项换算已同步改判为 64 位语义 |
-| `wdt_test/case_boundary` 3 项换算预期的**终态** | `projects/wdt_test/cpu1_wdt_test/src/wdt_boundary_test.c:50-55`、`:371-435` | **2026-09-18 终态**：驱动修复为 64 位乘法后改判为 `131071999→4294967263`、`131072000→0xFFFFFFFF`、`0xFFFFFFFF→0xFFFFFFFF`，现为**预期 PASS 且语义正确**。历史：2026-09-17 曾按 32 位回绕值（`4294934 / 0 / 4294934`）改判过一次 —— 那次只与**当时的实现**一致（PASS ≠ 驱动正确），驱动修复后**已作废** |
+| ~~驱动 `iwdt_calculate_load` 的 `timeout_ms * frequency` 是**两个 `uint32_t` 相乘**（32 位先回绕），使饱和判据 `ticks > UINT32_MAX` 成为**死分支**~~ → **2026-09-18 已修** | `zephyr/drivers/watchdog/wdt_iwdg_ls.c:43-51`（现为 `(uint64_t)timeout_ms * frequency / 1000`，饱和判据可达） | `OPEN_ITEMS.md` **O-15** 与 `KNOWN_ISSUES.md` **#74** 均已更新为**已修**；`sec_iwdg_cpu1_test/case_boundary` 的 3 项换算已同步改判为 64 位语义 |
+| `sec_iwdg_cpu1_test/case_boundary` 3 项换算预期的**终态** | `projects/sec_iwdg_cpu1_test/cpu1_sec_iwdg_test/src/wdt_boundary_test.c:50-55`、`:371-435` | **2026-09-18 终态**：驱动修复为 64 位乘法后改判为 `131071999→4294967263`、`131072000→0xFFFFFFFF`、`0xFFFFFFFF→0xFFFFFFFF`，现为**预期 PASS 且语义正确**。历史：2026-09-17 曾按 32 位回绕值（`4294934 / 0 / 4294934`）改判过一次 —— 那次只与**当时的实现**一致（PASS ≠ 驱动正确），驱动修复后**已作废** |
 
 ### 3.2 饱和分支可测性评估（2026-09-18，**结论：无需在 cpu2 侧补项**）
 
@@ -183,9 +183,9 @@ Phase 1，Phase 2 只负责让状态回到可跑 Phase 0。
 | 问题 | 结论 |
 |------|------|
 | 分支现在可测吗？ | **可测**。修后 `(uint64_t)timeout_ms * 32768 / 1000 > UINT32_MAX` 在 `window.max >= 131072000 ms` 时为真 ⇒ `IWDT_LOAD` 被钳到 `0xFFFFFFFF`；回读 `app_iwdg` 的 `IWDT_LOAD`（偏移 0x0）即可断言 |
-| 是否应在本案补项？ | **不补**。`iwdt_calculate_load()` 是**纯函数**（入参只有 `timeout_ms` 与实例的 `clock_frequency`），与实例无关；该分支已由 cpu1 侧 `wdt_test/case_boundary` 的两项覆盖（两实例 clock-frequency 同为 32768）。在本案再写一遍只是**同代码路径的重复覆盖**，不新增判别力，反而增加 P6 的实测与维护面 |
+| 是否应在本案补项？ | **不补**。`iwdt_calculate_load()` 是**纯函数**（入参只有 `timeout_ms` 与实例的 `clock_frequency`），与实例无关；该分支已由 cpu1 侧 `sec_iwdg_cpu1_test/case_boundary` 的两项覆盖（两实例 clock-frequency 同为 32768）。在本案再写一遍只是**同代码路径的重复覆盖**，不新增判别力，反而增加 P6 的实测与维护面 |
 | 若父会话仍要 cpu2 侧独立覆盖 | 可行且成本低：加 1 项 `install_timeout(max=131072000)` 后回读 `app_iwdg` 的 `IWDT_LOAD == 0xFFFFFFFF`（白盒回读，同 `wdt_boundary_test.c` 手法）。**本轮未做**（无裁定 + 属重复覆盖） |
-| 未饱和区是否已覆盖？ | 已由本案既有 `case_quick_enable`（quick 启动换算）与 cpu1 侧 `wdt_test` 覆盖 |
+| 未饱和区是否已覆盖？ | 已由本案既有 `case_quick_enable`（quick 启动换算）与 cpu1 侧 `sec_iwdg_cpu1_test` 覆盖 |
 
 ## 4. ⚠ 不可进批量回归的 case
 

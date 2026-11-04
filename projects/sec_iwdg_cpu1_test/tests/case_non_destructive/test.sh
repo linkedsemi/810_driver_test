@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# cpu1_iwdg non-destructive test
+# sec_iwdg non-destructive test（cpu1，对照 app_iwdg_cpu2_test）
 #
 # What is tested:
-#   LinkedSemi cpu1_iwdg driver (sec_iwdg): invalid params, setup+feed, disable, two-timeout.
+#   LinkedSemi sec_iwdg driver: invalid params, setup+feed, disable, two-timeout.
 #   非破坏性（不触发复位）。
 #
 # Usage:
@@ -30,7 +30,7 @@ done
 if [ "${AUTO_GDB}" != "y" ]; then SKIP_LOAD="y"; fi
 if [ "${AGENT_RUN}" = "y" ]; then SKIP_LAUNCH_PRINT="y"; RUN_TIMEOUT="0"; fi
 
-TARGET_SRC="${I3C_TEST_ROOT}/cpu1_wdt_test"
+TARGET_SRC="${I3C_TEST_ROOT}/cpu1_sec_iwdg_test"
 TARGET_OVERLAY="$(realpath "${TARGET_SRC}/app.overlay")"
 TEST_BUILD_DIR="${I3C_TEST_ROOT}/tests/${TEST_NAME}/build/target"
 TARGET_ELF="${TEST_BUILD_DIR}/zephyr/zephyr.elf"

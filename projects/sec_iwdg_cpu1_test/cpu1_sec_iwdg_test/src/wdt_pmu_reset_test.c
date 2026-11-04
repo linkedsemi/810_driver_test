@@ -55,6 +55,7 @@ void wdt_pmu_reset_main(void)
 		pmu_phase0_passed = 0;
 	}
 
+phase0_restart:
 	if (pmu_test_phase == 0) {
 		/* Phase 0: 装超时，不喂狗，等整芯片复位 */
 		printk("PHASE 0: install pmu_iwdg timeout (SOC reset), will NOT feed, "
@@ -100,10 +101,26 @@ void wdt_pmu_reset_main(void)
 		printk("PROJECT EXECUTION: FAILED\n");
 		k_sleep(K_FOREVER);
 	} else {
-		/* Phase 1: 复位后校验复位原因（pmu_test_phase==1：Phase 0 已装狗等复位） */
-		printk("PHASE 1: after reset, checking reset_reason\n");
-
+		/* pmu_test_phase == 1：上一轮 Phase 0 已装狗等复位。
+		 *
+		 * noinit 段跨"重烧 + 复位"存活，phase==1 也可能是上一次会话留下的。
+		 * 只有"复位来源是看门狗"才证明本轮真的走完了 Phase 0；否则清状态重来，
+		 * 不打裁决（否则重烧后会拿烧录复位原因比对，打出假 FAIL 并挂死 shell）。 */
 		uint32_t reason = reset_reason_get();
+
+		if (reason != SYS_IWDT_FULL_RESET &&
+		    reason != SEC_IWDT_HART_RESET &&
+		    reason != SEC_WWDT_HART_RESET) {
+			printk("STALE: pmu_test_phase==1 but reset_reason=%u is not a "
+			       "watchdog reset; no test ran this boot, restarting "
+			       "from PHASE 0\n", reason);
+			pmu_test_phase = 0;
+			pmu_phase0_passed = 0;
+			goto phase0_restart;
+		}
+
+		/* Phase 1: 复位后校验复位原因 */
+		printk("PHASE 1: after reset, checking reset_reason\n");
 		bool ok = (reason == SYS_IWDT_FULL_RESET);
 
 		if (ok) {

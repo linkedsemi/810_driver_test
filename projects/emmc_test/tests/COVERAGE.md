@@ -1,5 +1,7 @@
 # eMMC 测试覆盖矩阵
 
+> 证据口径：不引用 `reports/`；结论内联，版本戳 `810_driver_test@<12 位 sha>`（见 `SPEC_REFERENCE` §6.4.7.1）。
+
 - 工程：`projects/emmc_test`
 - 被测硬件：**板载 eMMC**（非外插卡），7.28 GiB（`TOTAL_SECTORS=15269888`），8-bit，
   `sdhci1@40049000`（别名 `sdhc0`），FatFS 盘名必须 `"SD2"`。**零外部接线**
@@ -10,7 +12,7 @@
 - 外部环境：**无**（板载器件，SPEC_REFERENCE §6.6.1「无」分支）
 - 状态口径：`⬜` = 未实测（P2 只做「生成 + 编译通过 + 合规自检」，实测推迟到 P6）；
   `⚠` = 钉住已知缺陷现状（断言的是**当前实现行为**，非「正确性已通过」）；
-- ⚠️ **语料可用性（2026-09-24）**：本文引用的 `reports/2026-09-17-4` / `-5` / `2026-09-18-1`
+- ⚠️ **语料可用性（2026-09-24）**：本文引用的历史会话
   **已不可得、且从未入库** ⇒ 相关引用**仅作留痕**（不得据此外出查证）；判据见
   `SPEC_REFERENCE` §6.4.7「语料可用性声明」。
   `❌预期FAIL` = 用例按**契约**断言，当前实现违反契约，P6 首轮应报 FAIL（缺陷靶点）
@@ -68,7 +70,7 @@ case 维度：`case_block_driver` = SDMA 使能（DMA 通路）；`case_block_pi
 - 写 2 后**回读 = `0x0`**（并非 `>0`；`reset` 后回读亦为 `0x0`）⇒ `is_app_cpu_running()`
   为**假** ⇒ **守卫实际不生效**。
 - `case_block_driver` 重建后 10 项带 `EMMC_SKIP_IF_GUARDED` 的用例 **SKIP = 0**，
-  `disk_access_init=0`、读写 PASS；历史归档（`reports/2026-09-17-4`/`-5`、`2026-09-18-1`）
+  `disk_access_init=0`、读写 PASS；历史归档（原报告未入库）
   亦为 **`FAIL (8/10)`、零 SKIP** ⇒ **eMMC 通路实际可用，且已被真正测到**。
 - 写 `1` 后回读 = `0x3` **且触发 bootrom 级重启**（OTP dump + "Flash Boot..."，固件不跑），
   与 SDK 注释"写 1 = 释放"**指向相反**（只记录，`test_common.sh` 写 2 不动）。
@@ -112,7 +114,7 @@ case 维度：`case_block_driver` = SDMA 使能（DMA 通路）；`case_block_pi
 
 | # | 障碍 | 影响 | 可选方案（留父会话裁定） |
 |---|------|------|------------------------|
-| O-A | `regression/run_all.py` 的 **`PROJECT_SCRIPT` 是硬编码表**（工程名 → run 脚本，仅覆盖现有 15 个工程） | ~~批量回归时 `qspi_flash_test` / `emmc_test` 的 case 命中 `PROJECT_SCRIPT.get(proj) == None` → 打印 `[run_all] SKIP ...: 无 run 脚本映射` 并按 SKIP 记账（不会崩，但也不跑）~~ **⚠️ 已失效（2026-09-19 复核）**：`run_all.py:64-76` 的 `_resolve_script()` 已加**目录约定回退**（未列名时探测 `projects/<proj>/tests/run_test.py`）⇒ emmc_test 不再静默 SKIP；且 `regression/cases.yaml:47-48` 已登记 `case_block_driver`/`case_block_pio`（历史归档 `reports/2026-09-17-4|5`、`2026-09-18-1` 确有这两个 case 的结果即是佐证） | 见左（已由 G-P2-3 修复，无需再动 `PROJECT_SCRIPT`） |
+| O-A | `regression/run_all.py` 的 **`PROJECT_SCRIPT` 是硬编码表**（工程名 → run 脚本，仅覆盖现有 15 个工程） | ~~批量回归时 `qspi_flash_test` / `emmc_test` 的 case 命中 `PROJECT_SCRIPT.get(proj) == None` → 打印 `[run_all] SKIP ...: 无 run 脚本映射` 并按 SKIP 记账（不会崩，但也不跑）~~ **⚠️ 已失效（2026-09-19 复核）**：`run_all.py:64-76` 的 `_resolve_script()` 已加**目录约定回退**（未列名时探测 `projects/<proj>/tests/run_test.py`）⇒ emmc_test 不再静默 SKIP；且 `regression/cases.yaml:47-48` 已登记 `case_block_driver`/`case_block_pio`（历史归档（原报告未入库）确有这两个 case 的结果即是佐证） | 见左（已由 G-P2-3 修复，无需再动 `PROJECT_SCRIPT`） |
 | O-B | `case_fat_fs_api` 复用上游固件 → **不链接 810 公共结果模块**（`test_results.c` / `ztest_glue.c`），因此没有 `test_results[]` 符号、也不打印 `ZT_BOOT` | `scripts/dump_results.py` 的 GDB 内存兜底**不可用**（`nm` 找不到符号，会直接 `ERROR: symbol not found`）；`dbg_run.py` 的角色识别 banner 也要按上游输出调整。**但** `tests/run_test.py` 的判定链（`parse_ztest` 取 `PROJECT EXECUTION SUCCESSFUL` + 逐项 `PASS - <name>`）**不依赖 `ZT_BOOT`**，可正常判 PASS/FAIL | ① 该 case 只走 `run_test.py`（不经 `dump_results.py`），串口不可用时标记 `mem-unavailable` 容忍；② 在 810 侧加一个"壳 main + 链接 glue"的 wrapper 工程；③ 给 harness 增加"上游 ztest 模式"开关（公共脚本改造）。⚠ 需父会话确认 |
 | O-C | `case_fs_sample` 是**控制台 sample，非 ztest**：无 `Running TESTSUITE` / `PASS - <name>` / `PROJECT EXECUTION SUCCESSFUL` | `parse_ztest` 拿不到任何判定信息 → `run_test.py` 会因 `items` 为空 + `execution != SUCCESSFUL` 判 FAIL（假失败） | ① 仅作人工验证（跑 `test.sh -g` 看串口），**不注册进 `cases.yaml`**；② 为 harness 增加 `sample` 模式判据（公共脚本改造）；③ 改写成自建 ztest 工程（偏离"复用上游 sample"的要求）。⚠ 需父会话裁定 |
 | O-D | `case_fat_fs_api` 需要 `CONF_FILE="<上游>/prj_mmc.conf;<810 增量 conf>"` 这种**双文件且不含 APP prj.conf** 的组合，而 `test_common.sh` 的 `build_single_test()` 只会拼 `"<APP>/prj.conf;<conf>"` | 无法用 `build_single_test`；本工程的 `case_fat_fs_api/test.sh` 改为**直接调 `west build`**（仍走 `${SINGLE_BOARD}` 与 `print_launch_json_single`/`load_and_run_single`，未硬编码板级） | ① 保持现状（本工程内自包含，不碰公共脚本）；② 给 `build_single_test` 增加"conf 覆盖"语义（公共脚本改造） |
@@ -167,7 +169,7 @@ request_mutex_not_leaked | !none | !none:以"第二次请求 2000ms 内返回"�
 
 ## ⚠️ 2026-09-23 更正批注（本条与上文冲突时，以本条为准）
 
-> 完整定位与修复见 `810_driver_test/reports/2026-09-23-1/emmc_test_case_block_driver/emmc_rootcause.md`。
+> 完整定位与修复结论见本文件正文。
 > 本节只做**事实更正**，不改写上文原文（沿用本项目「就地更正、留痕不删」的惯例）。
 
 **「钉住缺陷」表第 1 行（mutex 泄漏）中「已于 2026-09-18 修复」= 不实记录。**
@@ -177,8 +179,8 @@ request_mutex_not_leaked | !none | !none:以"第二次请求 2000ms 内返回"�
   `k_mutex_lock`(:422) 与 `k_mutex_unlock`(:505) 之间**，**全文件没有任何 `unlock:` 标签**。
   上文描述的 `` `default` 改为 `ret = -ENOTSUP; goto unlock;` `` 与「白名单校验前置」那一版代码，
   **在全仓 `.c` 文件中不存在**（`grep data_opcode_supported` 零命中）。
-- ⇒ 该项**从来没有通过过**：`reports/2026-09-17-4|5`、`2026-09-18-1`、`2026-09-21-1`、`2026-09-22-1`、
-  `2026-09-23-1` **全部为 `FAIL (8/10)`，失败项完全相同**。它不是回归。
+- ⇒ 该项**从来没有通过过**：连续多轮历史实测（原报告未入库）
+  **全部为 `FAIL (8/10)`，失败项完全相同**。它不是回归。
 - 机理同 `OPEN_ITEMS O-16`：**文档记「已修」而代码未提交 ⇒ 被后续 git 分支操作静默冲掉**。
 - **状态列改判**：`request_mutex_not_leaked`、`request_data_invalid_opcode_notsup`
   由「✅ PASS（2026-09-18 驱动修复后改判）」改为 **「⏳ 修复已落入工作区（2026-09-23，未提交），待上板实测」**。

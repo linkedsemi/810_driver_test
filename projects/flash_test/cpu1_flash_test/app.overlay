@@ -15,3 +15,25 @@
 &flash1 {
 	status = "okay";
 };
+
+/*
+ * 实测 4 MiB 器件上的真实布局（两核镜像分别烧录）：
+ *   0x000000..0x051000  cpu1 XIP 镜像（331776 B）
+ *   0x100000..0x13f100  cpu2 镜像（258304 B，烧在 0x08100000）
+ * 分区表是从 32 MiB 器件抄来的陈旧信息，a_sec_image 声明到 0x100000；
+ * 这里把它缩到 0x80000，并在 cpu1 与 cpu2 镜像之间的空档划出测试区：
+ *   0x080000..0x100000  512 KB，末端正好止于 cpu2 镜像起点 0x08100000。
+ * 上方距 cpu1 镜像末尾（0x51000）还有 ~188 KB 余量，镜像增长不会撞进来；
+ * 512 KB 同时满足 flash_test 的 `fa_size >= 512 KB` 断言。
+ */
+&a_sec_image_partition {
+	reg = <0x00010000 0x00070000>;
+};
+
+&flash1_partitions {
+	test_scratch_partition: partition@80000 {
+		label = "test_scratch";
+		reg = <0x00080000 0x00080000>;
+		attr = <(PMP_R | PMP_W)>;
+	};
+};

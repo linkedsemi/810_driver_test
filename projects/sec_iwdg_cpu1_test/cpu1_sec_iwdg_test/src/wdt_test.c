@@ -33,7 +33,6 @@
 #define WDT_TICKS_10000MS 327680u   /* 10000 * 32768 / 1000 */
 
 static const struct device *wdt_dev;
-static struct wdt_timeout_cfg wdt_cfg;
 
 static void *wdt_test_setup(void)
 {
@@ -45,12 +44,15 @@ static void *wdt_test_setup(void)
 static void wdt_test_teardown(void *data)
 {
 	ARG_UNUSED(data);
-	/* 确保狗被关闭，不影响后续 case */
+	/* 确保狗被关闭，不影响后续 case。pmu_iwdg 也要关：本套件现在可进
+	 * run all，任何一条 case 断言失败都不能把已装好的狗留给后面的套件
+	 * （10s 后复位会打断整批）。 */
 	wdt_disable(wdt_dev);
+	wdt_disable(DEVICE_DT_GET(DT_NODELABEL(pmu_iwdg)));
 }
 
 /* TC-1: install_timeout with max_time_ms=0 -> -EINVAL */
-ZTEST(wdt, test_wdt_invalid_timeout_min)
+ZTEST(sec_iwdg, test_wdt_invalid_timeout_min)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -63,7 +65,7 @@ ZTEST(wdt, test_wdt_invalid_timeout_min)
 }
 
 /* TC-2: install_timeout with invalid flags -> -EINVAL */
-ZTEST(wdt, test_wdt_invalid_flags)
+ZTEST(sec_iwdg, test_wdt_invalid_flags)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = 0xFF,  /* 无效 flags */
@@ -83,7 +85,7 @@ ZTEST(wdt, test_wdt_invalid_flags)
 }
 
 /* TC-3: setup + feed (不复位) */
-ZTEST(wdt, test_wdt_setup_then_feed)
+ZTEST(sec_iwdg, test_wdt_setup_then_feed)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -106,7 +108,7 @@ ZTEST(wdt, test_wdt_setup_then_feed)
 }
 
 /* TC-4: disable 后不再触发回调 */
-ZTEST(wdt, test_wdt_disable)
+ZTEST(sec_iwdg, test_wdt_disable)
 {
 	struct wdt_timeout_cfg cfg = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -134,7 +136,7 @@ ZTEST(wdt, test_wdt_disable)
 }
 
 /* TC-5: install 两次超时（第二次应报错，单通道） */
-ZTEST(wdt, test_wdt_two_timeouts_not_supported)
+ZTEST(sec_iwdg, test_wdt_two_timeouts_not_supported)
 {
 	struct wdt_timeout_cfg cfg1 = {
 		.flags = WDT_FLAG_RESET_CPU_CORE,
@@ -168,4 +170,4 @@ ZTEST(wdt, test_wdt_two_timeouts_not_supported)
 	wdt_disable(wdt_dev);
 }
 
-ZTEST_SUITE(wdt, NULL, wdt_test_setup, NULL, wdt_test_teardown, NULL);
+ZTEST_SUITE(sec_iwdg, NULL, wdt_test_setup, NULL, wdt_test_teardown, NULL);

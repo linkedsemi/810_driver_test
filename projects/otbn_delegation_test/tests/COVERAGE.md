@@ -1,5 +1,7 @@
 # otbn_delegation_test 测试覆盖矩阵
 
+> 证据口径：不引用 `reports/`；结论内联，版本戳 `810_driver_test@<12 位 sha>`（见 `SPEC_REFERENCE` §6.4.7.1）。
+
 **被测对象**：OTBN ECDSA **delegation**（代理）通路 —— cpu2（controller，
 uart5）的 `mbedtls_ecdsa_{genkey,sign,verify}` 是**代理桩**，把每次运算经
 `otbn_crypto` mbox 通道发给 cpu1（target，uart1）；cpu1 执行**真实** OTBN
@@ -143,7 +145,7 @@ ECDSA 并把结果回填。被测/依赖源码：
 > **契约负例（2026-11-02 复测：双核均按契约拒绝，只报不改）**：无效私钥 `d`（=0 / ≥n）
 > 返回 `rc=-19584`（`MBEDTLS_ERR_ECP_INVALID_KEY`）；无效公钥（非曲线点 / 无穷远点）、
 > 跨密钥对验签返回 `rc=-19968`（`MBEDTLS_ERR_ECP_VERIFY_FAILED`）。双核均 PASS，
-> 无 `FATAL` / panic / 断言失败。证据：`reports/2026-11-02-1/otbn_delegation_test_case_default/`
+> 无 `FATAL` / panic / 断言失败。证据：`otbn_delegation_test_case_default/`（原归档未入库）
 > 的 `serial_CTRL.log` / `serial_TGT.log`（5 条 `INFO <item>:` 行 + t17/t19/t21/t88/t89 均 `PASS -`；键名当前带套件前缀，见 INBOX 2026-11-02 G-ZTINFO-KEY-MISMATCH）。
 > **历史背景（2026-11-02 之前，已被本轮回测推翻，仅存档）**：早期 vendor OTBN ECDSA ALT
 > **不做输入校验** —— 无效私钥 `d`（=0 / ≥n）**被接受并返回成功**；无效公钥（非曲线点 /

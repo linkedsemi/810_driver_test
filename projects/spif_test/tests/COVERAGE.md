@@ -1,5 +1,7 @@
 # SPI filter (PFR/TMP SPI monitor) 测试覆盖矩阵
 
+> 证据口径：不引用 `reports/`；结论内联，版本戳 `810_driver_test@<12 位 sha>`（见 `SPEC_REFERENCE` §6.4.7.1）。
+
 - 驱动: `modules/lib/zephyr_pfr_tpm/drivers/pfr/spi/spi_filter.c`
 - 接口: `modules/lib/zephyr_pfr_tpm/drivers/pfr/spi/spi_filter.h`；寄存器定义 `reg_spi_filter.h`
 - 实例: `spif1..4` @ `0x40070000 / 0x40072000 / 0x40074000 / 0x40076000`（overlay 全 `okay`）
@@ -25,7 +27,7 @@
 > 因此把 DUMMY 往返判据移到 **索引 6 = SPIF_READ_FAST_CMD(0x0b)**（DT 默认 dummy=8，
 > 硬件实现该字段），槽 5 保留 CMD 往返 + DUMMY 诊断。
 >
-> 实机证据（`reports/2026-10-29-1/spif_test_case_default/serial_TGT.log`）：
+> 实机证据（`spif_test_case_default/serial_TGT.log`；原归档未入库）：
 > ```
 > INFO cmd_idx_accessors.slot5_read: raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0 (READ has no dummy phase)
 > INFO cmd_idx_accessors.slot6_fast_read: raw=0x90b,cmd=0xb,raw_dummy=0x9,get_dummy=0x9
@@ -37,8 +39,8 @@
 |---|---|
 | 失败断言 | `cpu1_spif_test/src/spif_test.c:351` `zassert_equal(dummy, 9, "set/get dummy by idx roundtrip")`<br>（基线行号 `:327`；现行为槽 6 版本，判据文本相应改为 `slot 6 FAST_READ`） |
 | 测什么 | 命令表**按索引访问**：命令行 / 使能位 / **DUMMY 周期数**都应正确往返（DUMMY 为 5 bit，`0xff` 应被截断为 `0x1f`） |
-| 实测现象（上板） | 索引 5 槽位：**命令行 ✓、使能位 ✓、DUMMY 周期数 ✗**<br>`INFO cmd_idx_accessors: slot5_raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0`（`reports/2026-09-23-1/spif_test_case_default/serial_TGT.log:38`）<br>关键：**原始寄存器**的 `[12:8]` 位段就是 `0`（`raw_dummy=0`），不只是 API 回读不对 |
-| 确定性 | `reports/2026-09-21-1` / `2026-09-22-1` / `2026-09-23-1` **三轮全 FAIL**，非 flaky |
+| 实测现象（上板） | 索引 5 槽位：**命令行 ✓、使能位 ✓、DUMMY 周期数 ✗**<br>`INFO cmd_idx_accessors: slot5_raw=0x77,cmd=0x77,raw_dummy=0,get_dummy=0`（`spif_test_case_default/serial_TGT.log:38`；原归档未入库）<br>关键：**原始寄存器**的 `[12:8]` 位段就是 `0`（`raw_dummy=0`），不只是 API 回读不对 |
+| 确定性 | 连续三轮历史实测（原报告未入库）**全 FAIL**，非 flaky |
 | 判定依据 | `raw_dummy=0` ⇒ 命中"**该槽的 DUMMY 字段不可写/未实现**"（原始寄存器位段即 0），而非"位写进去了、只是回读通路不对" |
 
 ### 已排除（**不是**这些原因）
@@ -55,7 +57,7 @@
 - 已把 DUMMY 往返判据移到槽 6 = `SPIF_READ_FAST_CMD(0x0b)`（DT 默认 dummy=8）；
   槽 5 保留 CMD 往返与 DUMMY 诊断。
 - 实机确认：槽 6 写 9 → 原始寄存器 `0x90b`、回读 9；`cmd_idx_accessors` PASS。
-  **驱动未修改**；`spif_test case_default` **24/24 PASS**（`reports/2026-10-29-1`）。
+  **驱动未修改**；`spif_test case_default` **24/24 PASS**（当轮实测）。
 
 ## 用例 → 实例分配（保证用例间零残留）
 
@@ -94,7 +96,7 @@
 | bus_pairing | DT 静态契约：`SPI_FILTER_INIT` 的 `.spi = DEVICE_DT_GET(DT_INST_PHANDLE(inst, spi))`、`.cs = GPIO_DT_SPEC_INST_GET(inst, cs_gpios)`；访问器 `spif_spi_dev()`（`:1407`）/ `spif_spi_cs()`（`:1416`） | 功能通路 | 4 实例：`spif_spi_dev(dev)` 指针 == `DT_PHANDLE(spifN, spi)` 解析出的设备；`spif_spi_cs(dev)` 的 port+pin == DT `cs-gpios`（spif1→spi3/GPIOI8、spif2→spi3/GPIOG2、spif3→spi4/GPIOI0、spif4→spi4/GPIOQ0） | DT 声明（模块 dtsi `&spifN { spi=…; cs-gpios=…; }`）。**零外部条件** | ✅ 2026-10-29 PASS |
 | master_read_with_addr | `spif_switch_to_master()`（`:1540`）+ `spif_spi_dev()`/`spif_spi_cs()` 取配对 spi3 与 CS，`spi_transceive()` 发 `0x03 + 24bit 地址`（复刻参考资产 `spi_monitor_send_read_addr()` 的命令形态） | 功能通路 | SPI 事务返回 0；读回字节经 `ZT_INFO` 上报（不预设器件值） | 外部器件（spi3 总线上 NOR flash 读契约）。`spif1` 的相邻实例为 `spif2`（驱动内 `spif_spi_check_dev_name_arr`）。⚠️ **待实测确认器件存在**：参考资产有该路径但**无实测输出佐证**（其 `README.rst` 是 hello_world 模板）；**P6 登记时带 `#` 屏蔽，由父会话处理**（裁定 2026-09-17） | ✅ 2026-10-29 PASS |
 
-> 状态标记：`✅ 2026-10-29 PASS` = 实机 24/24 通过（证据 `reports/2026-10-29-1/spif_test_case_default/serial_TGT.log`）。
+> 状态标记：`✅ 2026-10-29 PASS` = 实机 24/24 通过（证据 `spif_test_case_default/serial_TGT.log`（原归档未入库））。
 
 ## 跳过项
 
@@ -216,7 +218,7 @@
 - 纳入外部参考资产 `spi_monitor_filter`（出处见上）后**新增 3 项**：`passthrough_mode_switch`、
   `bus_pairing`、`master_read_with_addr`；2026-10-29 又新增 6 项回环
   `loopback_filter_*` 四组合 / `loopback_jedec` / `loopback_read_addr`，共 **24 项**；编译通过并上板
-  **24/24 PASS**（`reports/2026-10-29-1`，`cmake --build build_spif_1os` 无 warning）。
+  **24/24 PASS**（当轮实测，`cmake --build build_spif_1os` 无 warning）。
 - 三项的可断言性分级：`bus_pairing` / `passthrough_mode_switch` **零外部条件**；
   `master_read_with_addr` 走 `spif1 → spi3 → flash` 外部路径（与 `master_read_jedec_id` 同源）。
 - 参考资产中**不可断言**的部分（监视日志、`flash_size != 0` 地址镜像、`spif_add_cmd`、DMA 日志）

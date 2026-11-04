@@ -4,10 +4,11 @@
 > `CLAUDE.md` §5「常见现象速查」只保留最高频几条（精简版），完整清单在本文档。
 > 新坑先加这里，高频的再精简进 CLAUDE.md。
 >
-> ⚠️ **语料可用性（2026-09-24）**：本文引用的 `reports/` 会话凡**非 `<date>-1`** 者
-> （`2026-09-17~09-20` 全部，及 `2026-09-21-2` / `2026-09-22-2` 等同日其它序号）
-> **均已不可得、且从未入库** ⇒ 相关引用**仅作留痕**（不得据此外出查证，也不得据此再向外指路）；
-> 留存范围与纪律见 `SPEC_REFERENCE` §6.4.7「**语料可用性声明**」。**不要重建或推测缺失报告的内容。**
+> ⚠️ **证据口径（2026-11-04）**：`reports/` 是**可删除的临时归档**，不作为本文证据。
+> 本文条目只保留**结论与判据**；需要版本时写 `810_driver_test@<12 位 sha>`（工作区有未提交
+> 修改时加 `+dirty`）。命令示例统一用 `reports/<会话>` 占位；历史条目里的具体报告路径已清理，
+> **不要重建或推测已清理报告的内容**。本轮清理基线：`810_driver_test@a076f0b6c891+dirty`。
+> 规范见 `SPEC_REFERENCE` §6.4.7.1「**问题记录的证据口径**」。
 
 ---
 
@@ -469,7 +470,7 @@ TEST_NAMES 按 `nm --numeric-sort <elf>` 链接序对齐，勿用 plain nm 名�
 `common/acquire.py:507-517` 载明用户裁定（"全量测试 gdb 只负责烧录、不自动取结果"）：批量路径
 **三个取数点一律写死 `mem = None`** ⇒ 报告头部渲染 `内存兜底: 不可用（未执行）`、来源列落 `missing`。
 - **语义**：`missing` = "该核**既无 token 也无 mem**"，**不是**"结果被采集链路弄丢"。
-- **群体现象（实测）**：`reports/2026-09-21-1` **0/50** 个 case 标"不可用"（裁定生效前）；
+- **群体现象（实测）**：当轮实测 **0/50** 个 case 标"不可用"（裁定生效前）；
   `2026-09-22-1` / `2026-09-23-1` 各 **29/50**（裁定生效后**全体**如此，**非**某 case 特有异常）。
 - **误判形态（已发生）**：排查时把 `missing` 当"采集故障"、去查串口/管道 —— 属诊断陷阱，不是缺陷。
 - **判定中性**：取与不取 mem 的 PASS/FAIL **完全相同**（`SPEC_REFERENCE` §6.4.10 的 51-case 重放：
@@ -600,7 +601,7 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   command file:`）⇒ **极易误判成"环境/连接问题"**，白查一轮。**纪律：每段 gdb 脚本收尾都要"断言
   关键动作真的发生"**（如断言出现 `Restoring binary file` / `Loading section`，否则中止），
   **不能只看"有没有报错"** —— 静默什么都没做比报错更危险。配比见
-  `reports/2026-09-24-1/o39-nack-log-origin.md` §2.2；速查见 qsh-debug §7。
+  `o39-nack-log-origin.md`（原归档未入库） §2.2；速查见 qsh-debug §7。
 
 **62. 按名字杀 python.exe = 自杀：连坐 west/ninja/run_test.py 本体 → 全量回归每个 case 秒级 `BUILD FAILED`**（2026-09-16，极具迷惑性）
 - 场景：回归中途想清残留构建进程，执行 `taskkill //F //IM python.exe`（连带 `west.exe`/`ninja.exe`）。
@@ -911,9 +912,8 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 **75. 单核加载流程写 `APP_CPU_SRST=2`（保持 cpu2 复位）⇒ `is_app_cpu_running()` 返回 true ⇒ 带该守卫的驱动 API 全部 `-EBUSY`**（2026-09-17）
 > ⚠️ **更正批注（2026-09-18 硬件验证批次 2 实测；证据来源：`tmp/hw2/` 日志）——本条前提未获实测支持**
 > **证据可得性（2026-09-24）**：`tmp/hw2/`（含 `emmc_fresh_raw.log`）**已随 2026-09-24 的 `tmp/` 清理移除**，
-> 外部不可回溯；下文数值均已**内联**，结论以**本批注正文**为准。被引作反证的 `reports/2026-09-17-4` /
-> `2026-09-17-5` / `2026-09-18-1` **亦不在本仓**（`reports/` 现仅存 09-21 起；这三份从未提交、无法从
-> git 恢复）⇒ 引用本条时**不得再向外指路**。
+> 外部不可回溯；下文数值均已**内联**，结论以**本批注正文**为准。被引作反证的三份历史报告
+> **亦不在本仓**（从未提交、无法从 git 恢复）⇒ 引用本条时**不得再向外指路**。
 > - **寄存器实测（GDB 与固件自读，两路一致）**：`reset` 后 `x/1xw 0x4002200c` = `0x0`；
 >   `set {int}0x4002200c = 2` 之后**回读 = `0x0`**（**并非 `>0`**）；写 `1` 后回读 = `0x3`，
 >   **且写 1 会触发 bootrom 级重启**（写 1 = **释放**，释放后核从 bootrom 起 ⇒ 该输出属正常，见下方措辞更正）。
@@ -924,8 +924,8 @@ overlay 报 `undefined node label`；但 `-p auto` 的旧 build 缓存不触发�
 > - ⇒ 下文"写 2 ⇒ `>0` ⇒ 守卫误判 ⇒ API 全 `-EBUSY`"的因果链**基于 SDK 注释（`app_cpu_reset`
 >   语义），未获实测支持**；此前"10 项 SKIP"的观测**未留下任何日志证据**（全树 grep 无
 >   `app_cpu_srst=0x` 记录）。
-> - **历史报告反证（2026-09-19 复核归档）**：`reports/2026-09-17-4`、`reports/2026-09-17-5`、
->   `reports/2026-09-18-1` 三份 `emmc_test_case_block_driver/emmc_test_report.md` 均记为
+> - **历史报告反证（2026-09-19 复核归档）**：三份
+>   `emmc_test_case_block_driver/emmc_test_report.md` 均记为
 >   **`FAIL (8/10)`** —— 10 项**全部有结果**、8 PASS 2 FAIL、**`grep -c SKIP` = 0**（零 SKIP）。
 >   两项 FAIL 分别是 `request_mutex_not_leaked`（修复前的 mutex 泄漏，`:441 jret is non-zero`）
 >   与 `set_io_clock_out_of_range_not_silent`（那个**预期就该 FAIL** 的未修缺陷）。
@@ -1167,7 +1167,7 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   ① **日志模式**：本工程 `projects/i3c_i2c_switch_test/cpu0_i3c_controller/prj.conf:2` =
   `CONFIG_LOG_MODE_DEFERRED=y` ⇒ **日志行的位置/先后不可信**（deferred 只延迟格式化与输出；
   **但自带时间戳仍 = 生成时刻**，见下「纪律收紧」）；
-  ② **实证**：`reports/2026-09-24-1/i3c-b1b2-probe-run6.log`（同 `-run7.log`）第 118–119 行那条 `<err>`
+  ② **实证**：`i3c-b1b2-probe-run6.log`（同 `-run7.log`；原归档未入库）第 118–119 行那条 `<err>`
   **被劈开、插进了后一行 `B1B2PROBE:S t=28ms …` 的中间** —— deferred 日志线程与 `printk` 抢串口的
   典型形貌 ⇒ 它是**打印晚了**，不是"错误位晚置位"（**位置不可信**）；
   ③ **更硬的矛盾**：通用路径 `ls_i3c_request_transfer_flag()`（`zephyr/drivers/i3c/i3c_linkedsemi.c:1161` 段）
@@ -1188,7 +1188,7 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   命中只落在 `:2364`（37 次，均 `SER = 0`，每个用例项起始的 ISR ERR）与 `:1761`（3 次，启动期
   `i3c_ccc_do_getmrl` 收 `SER.PERR`）⇒ **当前（B2 修复后）树里不存在能置 `SER.ANACK` 的操作**，
   那条日志**不可复现**（**结构性推断**：属当时存在、现已不在树中的一次操作 —— **非观测**，本实验未
-  直接观测到那次 ANACK）。见 `reports/2026-09-24-1/o39-nack-log-origin.md`。全文与处置见 `OPEN_ITEMS.md` O-39。
+  直接观测到那次 ANACK）。见 `o39-nack-log-origin.md`（原归档未入库）。全文与处置见 `OPEN_ITEMS.md` O-39。
 - **剩下两条独立线索（未决，裁定权在驱动侧）**：① target 切 I2C 引脚复用后，I3C 广播在总线上
   **是否真的无应答** —— 需示波器看窗口内 `PJ08/PJ09` 的 **ACK 位**（`embedded-debug` §3.3：
   寄存器全对 ≠ 总线没问题）；② 本 SoC 控制器在**广播地址无人应答**时**是否在某个（同步窗口之后
@@ -1198,8 +1198,8 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   **永不置位**，则 `r1 != 0` 判据在此硬件上**本身不可达**（属**判据**问题，**不得擅自放宽**，
   须驱动侧裁定；**驱动侧是否改成异步复查 `SER/ERRF` 属未决**，若改，应把本用例判据**收紧回
   `r1 != 0`** —— 用例已用 `INFO … win_broadcast_ret=` 保留现场）。
-- 证据：`reports/2026-09-24-1/board-2026-09-24.md`「事项 ①」（探针已完整回退、镜像已重建）；
-  边界更正与晚同步实测见 `reports/2026-09-24-1/i3c-b1b2-experiment.md` §2.4 / §3.2 / §8、
+- 证据：`board-2026-09-24.md`（原归档未入库）「事项 ①」（探针已完整回退、镜像已重建）；
+  边界更正与晚同步实测见 `i3c-b1b2-experiment.md`（原归档未入库） §2.4 / §3.2 / §8、
   `i3c-erff-experiment.md` §5（推论已收紧）。
   ⚠️ 其中"晚同步实测"一节**已于同日二次更正撤回**（依据不成立）—— 见上述二次更正批注，各落点均已挂批注。
 - **★ 与「增补」/「增补 2」的更正关系（不得静默并存）**：增补 2 的归因
@@ -1224,7 +1224,7 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   qsh-test-gen §1.6 第 10 条；检查项见 qsh-test-validate §1.10x。
 - 关联：#51 / #52（本工程恢复域）· #98（同一实验场，本项即该实验 §4.2 定位）·
   `projects/i3c_i2c_switch_test/tests/COVERAGE.md`「已知基线」B-2。
-- 证据：`reports/2026-09-24-1/i3c-b1b2-experiment.md` §4.2 / §4.3（修复后 `case_switch_core`
+- 证据：`i3c-b1b2-experiment.md`（原归档未入库） §4.2 / §4.3（修复后 `case_switch_core`
   双核 11/11 PASS，连跑两次一致）。
 
 ---
@@ -1354,7 +1354,7 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   2 B FIFO ⇒ `<err> mbox_linkedsem: mbox: msg size error, channel: 4, msg size: 127, mtu: 2`；
   `common/rlog.c` 每行重试 `RLOG_RETRY_MAX=200 × RLOG_RETRY_MS=2` ⇒ 从核 token 不中继、主核读到
   MISSING/超时。实测 `app_iwdg_cpu2_test case_non_destructive` 的 `serial_TGT.log` **1557** 行；
-  基线 `reports/2026-09-24-1` 同 case **0** 行且 PASS。
+  基线 当轮实测 同 case **0** 行且 PASS。
 - **影响面（20 case，同一根因）**：`i3c_dualcore_test`×7、`i3c_i2c_switch_test`×2、`i2c_pure_test`×2、
   `app_iwdg_cpu2_test`×3、`mbox_test`×6。前四者的 `rlog_channel` overlay 首格 4→5；
   `mbox_test` 自带两个 consumer（`mbox_test_ch4`/`mbox_test_ch5`，均 width 64）应改为 5/6 —— 其中 4 正落到
@@ -1370,11 +1370,11 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
 - **状态（2026-10-26 已修）**：10 份 overlay 首格改到位 —— 4 个双核工程 × 两核的 `rlog_channel`
   **4→5**；`mbox_test` 自有 consumer **4/5→5/6**。另在 `common/rlog.c` 加
   `BUILD_ASSERT(首格 == DT_NODE_CHILD_IDX(rlog_channel))` ⇒ 同类错位以后在**构建期**失败，
-  不再静默跑坏。复测 `reports/2026-10-26-1`：清单 21 case **全 PASS**（含 mbox_test 6 个 FAIL→PASS），
+  不再静默跑坏。复测 当轮实测：清单 21 case **全 PASS**（含 mbox_test 6 个 FAIL→PASS），
   全批 `channel: 4 … mtu: 2` 0 行；`mbox_test case_mbox_invalid` 仍有 3 条 `msg size error`
   属用例**故意触发**的负向项（65>64 / 空数据 / 9>8，7/7 PASS），不是复发。
 - **落点**：`qsh-test-run` §4.1（诊断与处置）· `qsh-test-gen` §1.8 第 5 条（overlay 生成规则）·
-  证据 `reports/2026-10-23-4/failures/`（修复前）与 `reports/2026-10-26-1/`（修复后）。
+  证据：修复前/后两轮实测（归档未入库）。
 
 **133. 驱动能力扩展后，旧用例的「必须拒绝」断言会过期 —— 先查驱动白名单，别当驱动回归（G-TEST-EXPECTATION-STALE，2026-10-26）**
 - **形貌**：`otbn_delegation_test case_rsa_delegation` 的 `r03_reject_unsupported_modulus`
@@ -1392,7 +1392,7 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   先 `git log -S <白名单函数/尺寸常量>` 查驱动能力是否被有意扩展；**别按驱动回归排查**。
   改拒绝样本时选**两侧白名单交集之外**的尺寸，并在注释里写清两侧各自放行什么。
 - **落点**：`projects/otbn_delegation_test/tests/src/otbn_delegation_rsa.c` · 同工程 `COVERAGE.md` ·
-  证据 `reports/2026-10-26-1/otbn_delegation_test_case_rsa_delegation/`（3/3 PASS，r90 SKIP 属设计）。
+  证据 `otbn_delegation_test_case_rsa_delegation/`（3/3 PASS，r90 SKIP 属设计；原归档未入库）。
 
 **139. `E: mbox: fifo full, channel: N` 是发送侧背压重试日志，不是丢帧/失败证据 —— 判据是消费侧的行是否到齐（G-MBOX-FIFO-FULL-BACKPRESSURE，2026-10-27 实测）**
 - **这句在哪儿打的**：`mbox_linkedsemi_send()` 把自己这一核的 **TX FIFO 区** 塞不下本帧时打这行
@@ -1646,14 +1646,14 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
   目录**本就只有** `serial_TGT.log`（`projects/<工程>/` 下 `cpu*` 子目录数 **1 = 单核**，cpu1=target；
   **2 = 双核**才有 `serial_CTRL.log`(cpu2)）⇒ **单核恒报 `[CTRL] MISSING` / `ARCHIVE: BAD`**，
   与归档是否干净无关。**判据**：应核几口由**工程核数**决定（**脚本现已自动判定**，见末句），**单核只核
-  TGT**（H1/H2/H3 本身不因单核失效）；**"判 BAD 先分成因"仍是要做的动作**。实测 `reports/2026-09-24-1/i2cf_test_case_default` = `[CTRL] MISSING` + `[TGT] OK
+  TGT**（H1/H2/H3 本身不因单核失效）；**"判 BAD 先分成因"仍是要做的动作**。实测 `i2cf_test_case_default`（原归档未入库） = `[CTRL] MISSING` + `[TGT] OK
   lines=86` ⇒ 整体 BAD；基线快照 `tmp/o35_base/i2cf_test_case_default` **同形貌** ⇒ 属 ② 非 ①。
   **危害**：24 个工程中 **19 个是单核** ⇒ 会把其正常归档**一律误判为坏归档**，进而诱使放弃在这些
   工程上做归档核验 —— 而那是本项**唯一**的退化探测器。**已修（2026-09-24）**：脚本迁至
   `scripts/check_archive.py`，**核集合由工程决定**（1 = 单核只核 TGT）、解析不出工程时退回按实际
   日志枚举并打 `[NOTE]`、**零日志 fail-closed**（`[ERR]`/rc=2，不再静默判 `COMPLETE`）；**上述误报
   现象留痕不删**。**仍存的口径边界**：按 ztest **原生 D1 文法**核 ⇒ **D2 token 型**工程仍会一律报
-  BAD，须按工程文法人工核。操作面见 `qsh-test-run` §4.2。来源：`reports/2026-09-24-1/o35-hw-discriminator.md` §4.2。
+  BAD，须按工程文法人工核。操作面见 `qsh-test-run` §4.2。来源：`o35-hw-discriminator.md`（原归档未入库） §4.2。
   **增补 2（2026-09-24，崩溃与 BAD 同码 —— 已修）**：迁移后曾暴露两条缺陷，**均已修**（现象留痕不删）：
   ① **编码**：非 UTF-8 输出通道（重定向 / 管道 / 被捕获 ⇒ `sys.stdout.encoding` = `gbk/cp936`）下打印
   含 `⇒` 的 `[工程] …` 行抛 `UnicodeEncodeError`、**无判定输出**（无参数打印 `__doc__` 亦崩）；现存以
@@ -1672,13 +1672,13 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
      **没有** `Running TESTSUITE` 行 ⇒ `n_suite = 0` 报 BAD（实测 mbox **0** 次）。**修法方向**：按工程文法
      分派（D2 工程不按 ztest D1 文法核）。
   **危害**：把**正常归档**误判成坏归档 ⇒ 诱使放弃在这些工程上做归档核验 —— 而那是本项**唯一**的退化探测器
-  （"判定对退化完全不敏感"）。**操作面**：`qsh-test-run` §4.2。**证据**：`reports/2026-10-12-2/`（本轮归档核验普查）。
+  （"判定对退化完全不敏感"）。**操作面**：`qsh-test-run` §4.2。**证据**：当轮实测（本轮归档核验普查）。
   **增补 3b（2026-10-12，「头污染」sub-mode —— 判定无误，但会误触 H1）**（G-ARCH-H1-1）：`otbn_delegation_test
   case_throughput`（PASS 1/1）归档**头 3 行**是上一轮 `INFO bench:`，其后才是 `*** Booting` → `ZT_BOOT` →
   **完整 capture 轮** → `SUCCESSFUL` ⇒ H1 报"尾片段"。**定性**：capture 轮**完整**（ZT_BOOT→suite→SUCCESSFUL）
   ⇒ **判定无误**、非假 PASS；属 `acquire` 的 `clear()` 与采集线程**竞态残留**（本项家族，方向是**"头污染"**
   不是"尾片段/假 PASS"）。**与增补 3 ① 的区分**：多套件是"`Running TESTSUITE` 多于 1 次"，头污染是"`ZT_BOOT`
-  之前已有测试项行"。判读时先确认 capture 轮本身完整，再决定是否按退化处理。来源 `reports/2026-10-12-2/`。
+  之前已有测试项行"。判读时先确认 capture 轮本身完整，再决定是否按退化处理。来源 当轮实测。
 - **处置（本轮，只本工程）**：`projects/app_iwdg_cpu2_test/tests/run_test.py` 的 `--case-timeout`
   `default` **120 → 30**（= 实测下界 11s 的 ~3 倍，留裕量）；回归耗时 **12.3 → 3.1 min**。
   **`common/` 未改**（按既定口径"只调本工程默认值，不动公共层"）。
@@ -1688,7 +1688,7 @@ switch 固件**从不调 `ztest_run_all`** ⇒ ztest `test_status` 恒 0 ⇒ `en
 - **可复用教训**：窗口取值**贴边界不可靠**（它是竞态，11s 只是"本次两轮都干净"）⇒ 取实测下界的
   数倍；且**跨轮对比前先核归档完整性**（H1/H2/H3），别只看"逐项结果一致"。
 - 关联：#100/#102（本工程"采集窗按标称值设"的同族）· #88（产物/证据新鲜度同族）· `qsh-test-run` §4.2 ·
-  `reports/2026-09-24-1/board-2026-09-24.md`「事项 ②」。
+  `board-2026-09-24.md`（原归档未入库）「事项 ②」。
 
 **148. `app_iwdg` 的 quick 两套依赖互斥的 DT 属性 ⇒ 单镜像不能同时满足；`CONFIG_WDT_DISABLE_AT_BOOT=n` 不等于装狗**（G-ITEST-MERGED-DT-PROP-GAP，2026-10-28 实测）
 
@@ -2302,7 +2302,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   （`i2c_filter.c:231-236`）推断**，且**在本次之前从未被独立验证**。⇒ 按"期望来源分级"
   （`qsh-test-gen` §1.6 第 4 条 (g)），它属**③级 = 软件位映射推断 = 待验假设**：**不得当作驱动行为的事实**、
   **更不得据此判驱动缺陷**。⇒ **H1/H2 两条假设仍并列、归因未定**，判别实验见
-  `reports/2026-09-23-1/i2c_failure_triage.md` §3.4。
+  `i2c_failure_triage.md`（原归档未入库） §3.4。
   （**入 skill 的只是这条通用纪律（来源分级），不是本条的结论**。⚠ 2026-09-23 曾一度把"H1 已实测定性"
   写入 `qsh-test-gen` §1.6 第 4 条 (g) 与 `qsh-driver-review` §1.11 —— **该判据已撤回**，两处已改为
   "**证据不足却当结论用**"的角度，见 (g)/(h) 与 §1.11。）
@@ -2323,7 +2323,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
     哪怕结论方向"看起来对"（改用例确实对，但依据不是 H1，而是"位置不可测"）。
     落点：`qsh-test-gen` §1.6 第 4 条 (g)/(h)、`qsh-driver-review` §1.11；同族招式见 `debug-knowledge`
     common 域 `probe-scan-selfcheck-invariants.md`。
-  - 完整复核：`reports/2026-09-23-1/i2c_failure_triage.md` §9.4。实验码为**一次性诊断**
+  - 完整复核：`i2c_failure_triage.md`（原归档未入库） §9.4。实验码为**一次性诊断**
     （Kconfig `I2CF_FILTEROFF_PROBE` + `#ifdef` 块 + `tests/case_filteroff_probe/`），**未登记、不影响回归**，保留供复现。
 
 **116. 被滤波器拦下（NACK）的一笔之后，紧接的下一笔在同通路上多半会丢；裸 `i2c_read` 不如 `i2c_burst_read` 可靠**（2026-09-23 实测）
@@ -2344,11 +2344,11 @@ gdb `load` 仅 **4s**（写包提速已生效）。
      无效构造上 ⇒ 判据作废（见 #112「★ 判据撤回」）。
 - 关联：#112 · `qsh-test-gen` §1.6 第 4 条 (g)/(h) · `debug-knowledge` common 域
   `probe-scan-selfcheck-invariants.md`（读数/对照必须先自证有效）。
-- 证据：`reports/2026-09-23-1/i2c_failure_triage.md` §9.2 上板记录 / §9.3 规律。
+- 证据：`i2c_failure_triage.md`（原归档未入库） §9.2 上板记录 / §9.3 规律。
 
 **换址后的陈旧文案（残留清查，2026-09-22）**：脚本侧**已同步**（`run_test.py:151` / `test.sh:19,94` /
 `i2cf_test.c:969` 均已改为"零外部器件 + 片内 target `eeprom@33`"，本次核实）；**已生成的报告未修** ——
-`reports/2026-09-21-1/` 与 `reports/2026-09-22-1/` 的 `i2cf_test_report.md` 头部"接线: 外接 EEPROM@0x50…"
+两轮历史报告的 `i2cf_test_report.md` 头部"接线: 外接 EEPROM@0x50…"
 及 `serial_*.log` 内 `0x50` 断言文案仍是旧配置 ⇒ **归因前先核产物新鲜度**（#88 / G-CLEAN-2），
 旧报告**不得**用于归因。
 - 关联：`qsh-test-gen` §1.6（报告头"接线"行须与实测配置一致）· KNOWN_ISSUES #88。
@@ -2358,10 +2358,10 @@ gdb `load` 仅 **4s**（写包提速已生效）。
 ## i3c_dualcore_test 域（2026-09-22 登记）
 
 **113. `i3c_dualcore_test case_mixed_1m_12m5` 的 `multi_msg_4` 瞬态 FAIL（flaky 观测，非驱动回归）**（2026-09-22 实测）
-- 现象：全量回归（`reports/2026-09-22-2`）中该 case 的 **`multi_msg_4` 首次观测 FAIL**，
+- 现象：全量回归（当轮实测）中该 case 的 **`multi_msg_4` 首次观测 FAIL**，
   reason = `msg3 num_xfer 0 != 8`（`i3c_controller_test.c:201`）。
 - **瞬态证据（四条）**：① 同批次其余 **6 个 i3c case 的同名项 `multi_msg_4` 全 PASS**；
-  ② 基线（`reports/2026-09-21-1`）该 case **PASS 35/35**；③ `reports/` 全库历史**无此前
+  ② 基线（当轮实测）该 case **PASS 35/35**；③ `reports/` 全库历史**无此前
   `FAIL - multi_msg_4`**；④ **单 case 复跑 = PASS 35/35**。⇒ 记 **flaky 观测**，**不是**驱动回归
   （本轮改动 `acquire.py` / `test_common.sh` / `run_test.py` 均不碰 i3c 固件）。
 - 失效形态 = **用例内部单项瞬态数据错**（`num_xfer` 读到 0）。
@@ -2507,7 +2507,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
 `CONFIG_MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION=y`（或改调显式名
 `mbedtls_ls_otbn_ecdsa_*`）。全仓扫描「`..._DELEGATION_CLIENT=y` 且无 ALT 项」的 conf **仅此一处**
 （810 工程已按角色迁移）。另：该样例记录的 board `lsqsh_evb@1os/lsqsh/cpu{1,2}` **本就编不过**
-（**先于本轮**、同 G-LSQSH-BOARD-1 族；`@2os` 方可编）。证据 `reports/2026-10-13-1/…` §5②。
+（**先于本轮**、同 G-LSQSH-BOARD-1 族；`@2os` 方可编）。证据 `…`（原归档未入库） §5②。
 
 ---
 
@@ -2528,7 +2528,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   （`genkey_or_fail()` / `bench` / `soak` / `run_neg_op` ctx2 那处）后，全量 **7/7 case PASS、
   双核 `PROJECT EXECUTION SUCCESSFUL`、与基线 0 差异**；服务端 TGT 不再出现 `private_grp.N==0` 整片
   FAIL（`case_default` TGT 24/24 原生 PASS、`INFO genkey: gid=3,nbits=256`、零 `Assertion failed`）。
-  证据 `reports/2026-10-13-1/otbn_delegation_test_case_*/`。
+  证据 `otbn_delegation_test_case_*/`（原归档未入库）。
 - **⚠ 唯一仍需显式载 group 的路径**：**不经 `genkey` 就直接 sign/verify** 的项（如 `run_neg_op` 的
   `NEG_SIGN_D_ZERO`/`NEG_SIGN_D_N` 分支手工构造 `d` 直调 `DELEG_SIGN`，与 `genkey` 契约**无关**）。
   判据：**凡经 `genkey` 的路径都不需要预载曲线**；别据旧文给经 `genkey` 的用例加回预载。
@@ -2560,7 +2560,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   **一核 64 一核 32 混烧立即复现**上述故障（客户端 17 FAIL / `PROJECT EXECUTION FAILED`，服务端全 PASS）
   ⇒ **两核必须同批重建、同烧**（硬约束）。反例模板与操作规则见 `qsh-test-run` §4.1。
 - **招式/规则入库**：`debug-knowledge` mcu 域 `mbox-channel-width-dt-fifo.md`（通道宽度是 DT/软 FIFO 属性）；
-  生成规则 `qsh-test-gen` §1.6 第 13 条；证据 `reports/2026-10-13-1/otbn_delegation_test_mtu-rootcause-2026-10-13.md`。
+  生成规则 `qsh-test-gen` §1.6 第 13 条；证据 `otbn_delegation_test_mtu-rootcause-2026-10-13.md`（原归档未入库）。
 
 **123. 服务端在「被代理的 ECDSA sign」上内核 panic（`_sched_spinlock` / `sys_work_q` 损坏）**（2026-10-13 实测坐实；**同日已修并上板复测通过** —— 见文末「2026-10-13 修订」；"根因未定位/只报不改"的初版状态**已过期**）
 - **现象**：MTU 修复（#122，fifo 32→64）后复测，**发送路径已通**（`t01–t03` genkey 经代理 PASS、
@@ -2580,7 +2580,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   ② 负向用例（期望 `rc≠0`）在**服务端死后"PASS"是假 PASS**（死服务器返回 `-EIO` 也满足），归因/判定不得采信；
   ③ 内核 panic 现场应做**符号解析**（`Invalid spinlock X` / `mtval` / `Current thread` 三者）再下结论，别停在 `mcause`。
 - **招式入库**：`debug-knowledge` zephyr 域 `kernel-panic-scene-symbol-resolution.md`；负向判据
-  `qsh-test-gen` §1.6 第 4 条；证据 `reports/2026-10-13-1/otbn_delegation_test_mtu-rootcause-2026-10-13.md` §2–§5。
+  `qsh-test-gen` §1.6 第 4 条；证据 `otbn_delegation_test_mtu-rootcause-2026-10-13.md`（原归档未入库） §2–§5。
 
 ### 2026-10-13 修订：已修（服务端迁出 system workqueue）
 
@@ -2615,7 +2615,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   `CONFIG_LS_OTBN_DELEGATION` 门控（mbedtls / wolfssl 两侧都 `select` 它）。
 - **通用坑（可复用）**：把一个"库无关"的公共源放进某个库的 `if()` 里 ⇒ 只有那个库开的镜像才编得到它；
   **跨库共用源要按通用开关门控**。招式入库 `debug-knowledge` common 域 `shared-build-unit-wrong-gate.md`；
-  诊断行 `qsh-test-run` §6；证据 `reports/2026-10-14-1/`。
+  诊断行 `qsh-test-run` §6；证据 当轮实测。
 
 ---
 
@@ -2633,7 +2633,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   同族（都是"没跑到"被记成"过了"）。
 - **不是驱动回归**：该断言由 `dc7238fbab53` 引入，是 HEAD 祖先，不在本轮三个 DMA 提交
   （`e69b5d184c3` / `501e782e48f` / `6090210eaef`）内；同形貌 panic（当时断言行 `dma_dw_common.c:206`）
-  已存在于 `reports/2026-09-23-1` 与 `reports/2026-09-24-1`，那两轮判 `PASS (7/7)` ⇒ 差异来自
+  已存在于 当轮实测 与 当轮实测，那两轮判 `PASS (7/7)` ⇒ 差异来自
   **判定口径收紧**（现按"窗口内出现 `ZEPHYR FATAL ERROR`"判 FAIL）。
 - **状态（2026-10-22）**：`projects/dma_test/cpu1_dma_test/src/dma_test.c` 已见补入
   `source_burst_length = 1` / `dest_burst_length = 1`（文件 mtime **18:10**），但归档 ELF / object 为
@@ -2644,7 +2644,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   正常 FAIL 路径）—— 归因不得写成"断言失败"；③ 正对照 panic ⇒ 被测负向路径的覆盖是**假的**，
   报告必须写覆盖损失，且不得据此反推"该守卫没回归"。
 - 生成期规则 `qsh-test-gen` §1.6 第 18 条；校验项 `qsh-test-validate` §1.10 **ab / ac**；
-  归因口径 `qsh-test-compare` §2 + §4.1；证据 `reports/2026-10-22-1/failures/dma_test_default.md`。
+  归因口径 `qsh-test-compare` §2 + §4.1；证据 `failures/dma_test_default.md`（原归档未入库）。
 
 ---
 
@@ -2992,9 +2992,9 @@ gdb `load` 仅 **4s**（写包提速已生效）。
     （基线为 7/30）。只改 DTS 属性不改 soc.c 无效；`SDA_HD=0` 是读方向 T-bit 采样余量不足的直接相关项。
   - **附带观察（不需要保留）**：在 25 MHz 版上把 `CFGR.TXTHRES` 1→0 可把失败率从 ~19% 压到 ~3%
     （1/30），属部分缓解，说明该失败对 FIFO 触发时序敏感；50 MHz 版不需要此改动。
-  - 证据：`reports/2026-11-03-i3c-errwarn-fix-v3/`（`integrated_rounds/`、`integrated_ewprobe/`、
-    `integrated_v4/`、`integrated_v5/`、`integrated_ds2/`、`integrated_txthres0/`、
-    `integrated_txthres1_ab/`、**`integrated_clk50_full/`**）。
+  - 证据：实验报告目录（`integrated_rounds/`、`integrated_ewprobe/`、`integrated_v4/`、
+    `integrated_v5/`、`integrated_ds2/`、`integrated_txthres0/`、`integrated_txthres1_ab/`、
+    `integrated_clk50_full/`）已随 2026-11-04 的报告清理删除，原始日志不再保留；结论以本条正文为准。
   - **✅ 2026-11-04 终局（用户裁定，已固化 50 MHz）**
     - **最终配置**：`lsqsh.dtsi` `I3C_CLOCK = DT_FREQ_M(50)`、`soc.c`
       `SYSC_APP_AWO_CLK_SEL_I3C = 0x2`（DPLL 50 MHz，驱动内部计数时钟 = 2× = 100 MHz）、
@@ -3011,10 +3011,8 @@ gdb `load` 仅 **4s**（写包提速已生效）。
     - **25 MHz 失败根因归到边界时序**：失败形貌固定在 16 字节 FIFO 边界（第 17 字节起 0xff/短读），
       示波器上伴随约 70 µs 的 SCL 低停（正常 25/58 µs）；此前 <5 µs 的 ISR 注入即可扰动失败率 ⇒
       该边界余量在 25 MHz 下不足。50 MHz 下余量足够，读不再出现该失败。
-    - **实测基线**：50 MHz 完整版 30 轮 36/36（2026-11-03，见上条证据
-      `integrated_clk50_full/`）；2026-11-04 恢复 50 MHz 后 fresh boot sanity 1 轮 36/36
-      （`reports/2026-11-04-i3c-restore-50m/STATE.md` + `sanity.log`）；
-      同日 RX-full 场景对照见 `reports/2026-11-04-i3c-rxfull-stall/`。
+    - **实测基线**：50 MHz 完整版 30 轮 36/36（2026-11-03）；2026-11-04 恢复 50 MHz 后
+      fresh boot sanity 1 轮 36/36，同日完成 RX-full 场景对照（相关报告目录已清理）。
     - **已撤除的临时探针**：驱动内 `probe_hold_en/at/hits` + RX ISR `while(1)`、`probe_stall/arm/at/hits`、
       `probe_rxoff`、target ISR 的 PA05 SPAR/开机脉冲、controller 测试的对应 shell 命令 —— 全部已从源码移除；
       最终 binary 中 `grep -a probe_hold` 应为空。
@@ -3044,7 +3042,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   `-ENOTSUP`**；CCM 的 7 项 pkt 级 `-EINVAL` **未动**。理由已写进该文件头：session 级参数的枚举值本身合法、
   只是不支持，`-ENOTSUP` 语义更贴切；**刻意与本树多数惯例（EINVAL 184 : ENOTSUP 23）不一致**，并写明回退条件
   「若驱动将来统一成 `-EINVAL`，本组期望值需同步改回」。
-  **复测**：`reports/2026-10-29-1/crypto_api_test_case_default/` **28/28 PASS**，7 项实测 `ret=-134`，
+  **复测**：`crypto_api_test_case_default/`（原归档未入库） **28/28 PASS**，7 项实测 `ret=-134`，
   且每条都命中驱动自己的 `LOG_ERR("Unsupported …")` 分支（非空跑、非初值造成的假 PASS）。
   本条在**测试侧已闭环**（裁定已落地，不再有 7 项 FAIL）；`OPEN_ITEMS` **O-55** 的台账状态仍由用户关闭
   （决策台账不代关），其厂商调研仅在"驱动统一错误码"时重新触发。
@@ -3070,7 +3068,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   防"修好后又被下一轮重构抹掉"）。
   **复测判据**：整份日志 `ASSERTION FAIL` **0** 条、`ZEPHYR FATAL` **0** 条；
   `hash_caps_sha256/sha512` 均 `caps=0x32, raw_key=1, sync=1, sep_io=1`（不再 panic）。证据
-  `reports/2026-10-29-1/crypto_api_test_case_default/`。
+  `crypto_api_test_case_default/`（原归档未入库）。
   **影响面**：`CAP_RAW_KEY` 是**加法位**，`hash_begin_session` 不检查 key 位，树内无其它消费者对这两颗
   hash 的 caps 做断言。⚠️ **`mbedtls_test` 本轮未重跑** —— 该消费者的回归未覆盖，下次跑 mbedtls 时按本条
   判据（扫 `ZEPHYR FATAL ERROR 4` + `mcause 11`、不看 PASS 行）复核，不要据本轮结果宣称其无影响。
@@ -3095,7 +3093,7 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   `tamper_tag ? ext_tag2 : ext_tag`；正对照失败给独立判词。
 - 落点 `qsh-test-gen` §1.6 第 36 条 · 检查项 `qsh-test-validate` §1.10ae · 判读 `qsh-test-compare` §2。
 - **✅ 2026-10-29 已修复 + 复测**：现源码 `sm4_ext_test.c:258` 正对照在 `:262-267` 篡改之前、
-  `:271` 传 `tamper_tag ? ext_tag2 : ext_tag`；`reports/2026-10-29-1/crypto_api_test_case_default/`
+  `:271` 传 `tamper_tag ? ext_tag2 : ext_tag`；`crypto_api_test_case_default/`（原归档未入库）
   两项均 PASS（`mode=gcm/ccm, tamper=tag, control_ret=0, bad_ret=-14/-1`）。本条保留为**回归护栏**：
   把篡改挪回正对照之前，两项会重新以"正对照失败"收场（不会变成假 PASS，但会掩盖负路径覆盖为 0）。
 
@@ -3117,8 +3115,8 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   检查项落在 `qsh-driver-review` §1.6。
 - **✅ 2026-10-30 19:23 已修复**：`zephyr/soc/linkedsemi/lsqsh/otbn/mbedtls/mbedtls_otbn_ecdsa_slot_mbox.c`
   8 处转换（`ENOENT→NOENT`、`EPROTO→PROTO`、`EBADMSG→CURVE`、`EMSGSIZE→MSGSIZE`）；
-  `ls_otbn_err_from_errno()` 幂等（自定义码原样返回）。修复前证据 `reports/2026-10-30-4/`
-  （case_slot 4/17）；修复后双核复跑 `reports/2026-10-30-5/`：OVERALL PASS、0 FAIL
+  `ls_otbn_err_from_errno()` 幂等（自定义码原样返回）。修复前证据 当轮实测
+  （case_slot 4/17）；修复后双核复跑 当轮实测：OVERALL PASS、0 FAIL
   （CTRL 14 PASS/3 SKIP、TGT 9 PASS/8 SKIP；按双核同名折叠 6 PASS/11 SKIP —— SKIP 是各角色
   不跑自己那一侧的设计项，不是缺证据）。双核须同批重建同烧（与 #122 同一跨核耦合）。
 - **落点**：`qsh-driver-review` §1.6 · `qsh-test-compare` §2 · `debug-knowledge` common 域

@@ -43,7 +43,7 @@ GDB_HOST, GDB_PORT = "127.0.0.1", "1025"
 # test.sh → test_common.sh 的 build_single_test/load_and_run_single
 # （SINGLE_BOARD / SINGLE_ROM_START），本脚本不消费 TARGET_ROM_START/BOARD。
 # 原 2os 硬编码常量（0x100c0000 / lsqsh_evb@2os）会误导，已删（KNOWN_ISSUES #57）
-DRIVER_NAME = "wdt_test"
+DRIVER_NAME = "sec_iwdg_cpu1_test"
 REPORT_BASE = f"{DRIVER_NAME}_report"
 
 
