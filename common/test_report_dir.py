@@ -48,6 +48,11 @@ def main():
     update_summary(f1, "trng_test_case_default", "PASS", 9, 9,
                    "trng_test_case_default/trng_test_report.md")
     assert "全量" in (f1 / "summary.md").read_text(encoding="utf-8").splitlines()[0]
+    # 全量会话不得被 case_dir_for 写成“单一主工程”
+    case_dir_for(f1, "trng_test", "case_default")
+    fmeta = read_session_meta(f1)
+    assert fmeta["project"] is None, "全量会话不应记录单一主工程"
+    assert "trng_test" in fmeta["projects"]
     legacy = root / "2026-08-28-1"
     legacy.mkdir()
     update_summary(legacy, "x_case", "PASS", 1, 1, "x_case/x_report.md")

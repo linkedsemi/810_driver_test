@@ -1,0 +1,44 @@
+{
+  "case": "case_default",
+  "result": "PASS",
+  "execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "test_dma_channel_config_stop",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dma_dmac2_transfer",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dma_invalid_channel",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dma_lli_chain",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dma_loop_transfer",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dma_multi_channel_concurrent",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dma_transfer_ones_zeros",
+      "result": "PASS",
+      "reason": ""
+    }
+  ],
+  "zero_evidence": false,
+  "items_note": ""
+}

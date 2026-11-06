@@ -556,306 +556,109 @@ ZTEST(i3c,write_indexed_read_16)
 }
 #endif /* I3C_TEST_EN_WRITE_INDEXED_READ_16 */
 
-#if I3C_TEST_EN_WRITE_DELAY_READ_16
+#if I3C_TEST_EN_WRITE_DUMMY_READ_16
 /*
- * write_delay_read_16：实测从机"写段 data → 读段欠载"的可用准备窗口
- * （P1→T-bit 的实测值，协议固定 ≈11-12 SCL 周期）。
+ * write_dummy_read_16：验证“主机 write 期间从机完成后续读数据的预填”。
  *
- * 协议：主机写 3 字节 {CMD_INDEXED_READ_DELAY, idx, delay_step}，restart 后
- * 读 16 字节。从机收到写段最后字节（delay_step）后 spin delay_step×50ns
- * 再 FLUSHTB+预填；spin 过长则读段 T-bit 采样前 FIFO 仍空 → 读欠载。
+ * 协议：主机写 {CMD_INDEXED_READ, idx, 0xA5 × N} 后 restart 读 16 字节。
+ * 从机收到索引字节即按 idx 预填；后续 N 个 dummy 字节（写段）走 default
+ * 分支，每次 target_prefill_tx() 幂等续填——不依赖 ns 级延时阈值。
  *
- * 方法：扫描 delay_step 0..79（0-3950ns，50ns 步进），记录每档读回字节数；
- * 临界档 = 最后一个读满 16 字节的档位 = 从机"恰好来得及"的最大准备延时。
- * 欠载档从临界档+1 开始（读回字节数 < 16）。
+ * 判定：N ∈ {0,8,16,32,64,128} 各一笔，全部 ret==0、actual==16 且数据
+ * 从 idx（0x10）pattern 开始 = PASS；任何一档失败即 FAIL。
  */
-/* WDR16 临界档跨 ZTEST 传递：write_delay_read_len 用它判定"续发不缩小窗口"
- * （ztest 按 enum 顺序注册，WDR16 先于 WDR_LEN 执行，本变量必然已赋值） */
-static int g_wdr16_critical_step = -1;
-/* 'Z' 协议逐 len 临界档：仅作特征数据经 ZT_INFO 上报（非判定）。
- * 原先两处注释声称存在"判定②：len64↔len32 互比（8 档容差）"，但这两个
- * 变量在代码里**只赋值从不读取**（死变量）⇒ 该判定并不存在（COVERAGE 已
- * 同步降级为 INFO 描述）。本轮不补判定：续发路径的临界档在无实测基线的
- * 情况下无法定标阈值（len17 仅 1 字节续发，实测波动 120-146 档），凭猜
- * 写死容差会造出假 FAIL。 */
-static int g_wdrlen17_critical_step = -1;
-static int g_wdrlen32_critical_step = -1;
-
-ZTEST(i3c,write_delay_read_16)
+ZTEST(i3c,write_dummy_read_16)
 {
-	static const int DELAY_STEP_NS = 50;    /* 档位单位（与协议头注释一致） */
-	static const int DELAY_MAX_STEP = 255;  /* 扫描上限 255 档 = 12750ns */
-
-	g_wdr16_critical_step = -1; /* 重置（每次测试运行重新测量） */
-	int first_short = -1;   /* 第一个欠载档位（诊断用） */
-	int stop_step = -1;     /* master 报错停止扫描的档位（欠载后恢复问题，观察用） */
+	static const int DUMMY_N[] = { 0, 8, 16, 32, 64, 128 };
+	static const uint8_t IDX = 0x10;
 	uint8_t rd[16];
 
-	if (!ctrl_test_begin(I3C_TEST_WRITE_DELAY_READ_16)) {
+	if (!ctrl_test_begin(I3C_TEST_WRITE_DUMMY_READ_16)) {
 		ctrl_test_end();
 		return;
 	}
 
-	for (int step = 0; step <= DELAY_MAX_STEP; step++) {
-		/* idx=0x10：读回数据必须来自 tgt_tx_buf[0x10..0x1f]（pattern seed
-		 * 0x10），与 FIFO 常备数据（0x00..0x0f）区分，证明 spin 后
-		 * 重新 prefill 生效（对照：FLUSHTB 无效时会读到常备数据） */
-		uint8_t wr[3] = { CMD_INDEXED_READ_DELAY, 0x10, (uint8_t)step };
+	int max_ok = -1;
+	for (size_t i = 0; i < ARRAY_SIZE(DUMMY_N); i++) {
+		int n = DUMMY_N[i];
+		uint8_t wr[2 + 128];
+		size_t wr_len = 2 + (size_t)n;
+
+		wr[0] = CMD_INDEXED_READ;
+		wr[1] = IDX;
+		memset(&wr[2], CMD_DUMMY_BYTE, (size_t)n);
+
 		size_t actual = 0;
-		int ret = i3c_write_read_actual(target_desc, wr, sizeof(wr),
+		int ret = i3c_write_read_actual(target_desc, wr, wr_len,
 						rd, sizeof(rd), &actual);
-		/* 前几步 retry：post-IBI / post-NACK 黑窗期偶发 bus error，
-		 * 重试可吸收瞬态故障；后续步失败 = 真 NACK，不重试 */
-		if (ret != 0 && step < 3) {
-			for (int r = 0; r < 3 && ret != 0; r++) {
-				k_sleep(K_MSEC(5));
-				actual = 0;
-				ret = i3c_write_read_actual(target_desc, wr,
-							    sizeof(wr), rd,
-							    sizeof(rd), &actual);
-			}
-		}
-		if (ret != 0) {
-			/* master 读欠载（target 提前终止）后的恢复问题：
-			 * 下一笔 transfer 报错即停止扫描。这是 controller 侧
-			 * 状态恢复课题（另行观察），不影响"从机准备窗口"测量 */
-			stop_step = step;
-			break;
-		}
-		printk("CTRL_STEP: delay step=%d actual=%zu\n", step, actual);
-		if (actual == sizeof(rd)) {
-			g_wdr16_critical_step = step;
-			validate_pattern(rd, actual, 0x10, "delay-read");
-		} else if (first_short < 0) {
-			first_short = step;
+		CTRL_EXPECT(ret == 0, "dummy=%d write-read failed: %d", n, ret);
+		CTRL_EXPECT(actual == sizeof(rd),
+			    "dummy=%d read actual %zu != %zu", n, actual, sizeof(rd));
+		if (ret == 0 && actual == sizeof(rd)) {
+			validate_pattern(rd, actual, IDX, "dummy read");
+			max_ok = n;
 		}
 	}
 
-	/* INFO：扫描结果上报（报告"实际"列取用，§13.4） */
-	ZT_INFO("write_delay_read_16",
-		"critical_delay_ns=%d,first_short_step=%d,master_stop_step=%d",
-		(g_wdr16_critical_step >= 0) ?
-			g_wdr16_critical_step * DELAY_STEP_NS : 0,
-		first_short, stop_step);
-
-	/* 判定：临界档必须存在——0 档（不延时）都欠载说明时序基线异常 */
-	CTRL_EXPECT(g_wdr16_critical_step >= 0,
-		    "no step read full 16B (step 0 underrun)");
-	if (first_short >= 0) {
-		CTRL_EXPECT(first_short > 0,
-			    "underrun at step 0 (no delay), window < %dns",
-			    DELAY_STEP_NS);
-	} else {
-		printk("CTRL_STEP: delay scan all %d steps OK, window >= %dns\n",
-		       DELAY_MAX_STEP + 1, (DELAY_MAX_STEP + 1) * DELAY_STEP_NS);
-	}
-
-	/* 常态化门限（§13.1 时序维度）：窗口值必须在 case 配置区间内，
-	 * 超出 = 驱动/配置改动导致准备时间退化（<min）或基线异常（>max）。
-	 * case 差异在 controller.conf（25M 源 [5500,7000]，0=禁用）。 */
-#if CONFIG_I3C_TEST_WDR_MIN_CRITICAL_NS > 0
-	int wdr_min = CONFIG_I3C_TEST_WDR_MIN_CRITICAL_NS;
-	int wdr_max = CONFIG_I3C_TEST_WDR_MAX_CRITICAL_NS;
-	int wdr_ns = (g_wdr16_critical_step >= 0) ?
-			g_wdr16_critical_step * DELAY_STEP_NS : 0;
-	CTRL_EXPECT(wdr_ns >= wdr_min,
-		    "window %dns < min %dns (target prep time degraded)",
-		    wdr_ns, wdr_min);
-	if (wdr_max > 0) {
-		CTRL_EXPECT(wdr_ns <= wdr_max,
-			    "window %dns > max %dns (timing baseline anomaly)",
-			    wdr_ns, wdr_max);
-	}
-#endif
-
-	/* NACK 边界硬判定：master 在欠载后下一笔 Address NACK（err=-5）
-	 * 停止扫描是已知行为（从机状态恢复课题，观察项），但 NACK 只能
-	 * 发生在最后一个读满档（临界档）之后；若在窗口内就 NACK → 从机
-	 * 通信失败提前，属回归（配置开关控制，默认启用）。
-	 * 容差：stop==critical+1（差 1 档）属 I3C 时序抖动边界，
-	 * 不判为回归；stop<critical 才是真正的提前 NACK。 */
-#if CONFIG_I3C_TEST_WDR_NACK_BOUNDARY_CHECK
-	if (stop_step >= 0 && g_wdr16_critical_step >= 0) {
-		CTRL_EXPECT(stop_step >= g_wdr16_critical_step,
-			    "Address NACK at step %d < critical %d (early NACK)",
-			    stop_step, g_wdr16_critical_step);
-	}
-#endif
-
-	/* nack_recovery：欠载扫描以 Address NACK（stop_step）结束是 WDR 场景
-	 * 的终点。紧接发一笔 2 字节写段 {CMD_INDEXED_READ, idx=0} 索引读：
-	 * - master 侧：err=-5 后驱动状态机必须已恢复，本笔 ret==0；
-	 * - target 侧：NACK 后总线 STOP → 驱动 STOP 分支 FLUSHTB + stop_cb
-	 *   常备预填 + tx_offset=0 复位；若 FIFO 残留 WDR 预填数据
-	 *   （0x10..0x1f）或偏移未复位，读回 pattern 不是 0x00..0x0f →
-	 *   validate_pattern 失败。数据对齐 buf[0] 即证明清理链正确。
-	 *
-	 * 实测（6.25MHz mixed / 1MHz mixed）：NACK 后控制器驱动状态机偶发
-	 * 未恢复，i3c_transfer 无限阻塞。重试3次（间隔10ms），仍失败则
-	 * 记录为观察项而非硬失败——nack_recovery 验证的是"驱动状态机恢复
-	 * 能力"，偶发未恢复不等于从机窗口测量失效（临界档/first_short/
-	 * stop_step 已在扫描阶段获取）。 */
-	if (stop_step >= 0) {
-		uint8_t wrr[2] = { CMD_INDEXED_READ, 0x00 };
-		uint8_t rdr[16];
-		size_t actual_r = 0;
-		int ret_r = -1;
-
-		for (int nack_retry = 0; nack_retry < 3; nack_retry++) {
-			actual_r = 0;
-			ret_r = i3c_write_read_actual(target_desc, wrr, sizeof(wrr),
-						      rdr, sizeof(rdr), &actual_r);
-			if (ret_r == 0 && actual_r == sizeof(rdr)) {
-				break;
-			}
-			printk("CTRL_STEP: nack_recovery attempt %d ret=%d actual=%zu\n",
-			       nack_retry + 1, ret_r, actual_r);
-			k_sleep(K_MSEC(10));
-		}
-		if (ret_r == 0 && actual_r == sizeof(rdr)) {
-			validate_pattern(rdr, actual_r, 0x00, "nack-recovery");
-			ZT_INFO("write_delay_read_16", "nack_recover_ok=1");
-		} else {
-			/* 记录但不硬失败：nack_recovery 超时是控制器驱动
-			 * 状态机恢复的已知边界（6.25MHz/1MHz mixed 偶发），
-			 * 不影响"从机准备窗口"核心测量值 */
-			printk("CTRL_STEP: nack_recovery skipped (ret=%d actual=%zu), "
-			       "controller may need manual reset\n", ret_r, actual_r);
-			ZT_INFO("write_delay_read_16",
-				"nack_recover_ok=0,ret=%d,actual=%zu",
-				ret_r, actual_r);
-		}
-	} else {
-		ZT_INFO("write_delay_read_16", "nack_recover_ok=skip(no-nack)");
-	}
-
+	ZT_INFO("write_dummy_read_16", "dummy_max_ok=%d", max_ok);
 	ctrl_test_end();
 }
-#endif /* I3C_TEST_EN_WRITE_DELAY_READ_16 */
+#endif /* I3C_TEST_EN_WRITE_DUMMY_READ_16 */
 
-#if I3C_TEST_EN_WRITE_DELAY_READ_LEN
+#if I3C_TEST_EN_WRITE_DUMMY_READ_LEN
 /*
- * write_delay_read_len：写段内容决定读长度的 FIFO 深度临界测试。
+ * write_dummy_read_len：写段 dummy 字节期间预填 + 跨 FIFO 深度续发。
  *
- * 协议：写 4 字节 {CMD_INDEXED_READ_DELAY_LEN, idx, delay_step, len}，
- * restart 后读 len 字节。target 收 len 字节（=写段最后字节）后 spin
- * delay×50ns 再 FLUSHTB+prefill——FIFO 深 16 只装 16B，第 17 字节起由
- * TXSEND 中断 read_processed_cb 续发（T-bit 间隔内补字节）。
- *
- * 方法：len∈{17,32,64} 各扫 delay 档找临界（最后一个读满 len 的档）。
- * 判定：临界档存在（能读满 len 且 pattern 对，idx=0x10 对照验证续发
- * 数据来自 tgt_tx_buf[0x10+16..] 而非 FIFO 残留/复位值）。
- * 临界值跨 len 上报 INFO 作特征数据（不同跑次 ISR 调度时机不同，
- * 临界档天然有波动，不作为通过标准）。
+ * 协议：写 {CMD_INDEXED_READ_LEN, idx, len, 0xA5 × N} 后 restart 读 len
+ * 字节；从机按 idx/len 预填（FIFO 深 16，>16 由 TXSEND 续发）。判定不依赖
+ * 延时档位，只看每档能否读满 len 且 pattern 正确。
  */
-ZTEST(i3c,write_delay_read_len)
+ZTEST(i3c,write_dummy_read_len)
 {
-	static const int DELAY_STEP_NS = 50;    /* 档位单位（与协议头注释一致） */
-	static const int DELAY_MAX_STEP = 255;  /* 扫描上限 255 档 = 12750ns */
-	static const int LENS[] = { 17, 32, 64 }; /* FIFO 深度 16 的临界+倍率 */
+	static const int LENS[] = { 16, 17, 32, 64 };
+	static const int DUMMY_N[] = { 0, 16, 64 };
+	static const uint8_t IDX = 0x10;
 	uint8_t rd[64];
 
-	if (!ctrl_test_begin(I3C_TEST_WRITE_DELAY_READ_LEN)) {
+	if (!ctrl_test_begin(I3C_TEST_WRITE_DUMMY_READ_LEN)) {
 		ctrl_test_end();
 		return;
 	}
 
+	int max_len_ok = 0;
 	for (size_t li = 0; li < ARRAY_SIZE(LENS); li++) {
 		int len = LENS[li];
-		int critical = -1;	/* 最后一个读满 len 的档位 */
-		int first_short = -1;	/* 第一个欠载档（诊断用） */
-		int stop = -1;		/* master 报错停止扫描的档位 */
+		for (size_t ni = 0; ni < ARRAY_SIZE(DUMMY_N); ni++) {
+			int n = DUMMY_N[ni];
+			uint8_t wr[3 + 64];
+			size_t wr_len = 3 + (size_t)n;
 
-		/* WDR16 扫描结束后总线状态可能不稳定（NACK 黑窗残余），
-		 * 每轮扫描前给5ms settling 让 controller/target 状态机复位 */
-		k_sleep(K_MSEC(5));
+			wr[0] = CMD_INDEXED_READ_LEN;
+			wr[1] = IDX;
+			wr[2] = (uint8_t)len;
+			memset(&wr[3], CMD_DUMMY_BYTE, (size_t)n);
 
-		for (int step = 0; step <= DELAY_MAX_STEP; step++) {
-			uint8_t wr[4] = { CMD_INDEXED_READ_DELAY_LEN, 0x10,
-					  (uint8_t)step, (uint8_t)len };
 			size_t actual = 0;
-			int ret = i3c_write_read_actual(target_desc, wr, sizeof(wr),
-							rd, sizeof(rd), &actual);
-			/* 前几步 retry：post-IBI / post-NACK 黑窗期偶发 bus error，
-			 * 重试可吸收瞬态故障；后续步失败 = 真 NACK，不重试 */
-			if (ret != 0 && step < 3) {
-				printk("CTRL_STEP: WDR_LEN len=%d step=%d ret=%d, retrying\n",
-				       len, step, ret);
-				for (int r = 0; r < 3 && ret != 0; r++) {
-					k_sleep(K_MSEC(5));
-					actual = 0;
-					ret = i3c_write_read_actual(
-						target_desc, wr, sizeof(wr),
-						rd, sizeof(rd), &actual);
-				}
-				printk("CTRL_STEP: WDR_LEN len=%d step=%d retry result: ret=%d\n",
-				       len, step, ret);
-			}
-			if (ret != 0) {
-				stop = step;
-				break;
-			}
-			/* pattern 前缀完整性：第一个 ≠ 0x10+i 的下标 = target 实际
-			 * 供数边界。bnd ≥ len ⟺ rd[0..len-1] 全对（target 供满
-			 * len）——残留污染只会把 bnd 往大推，不会把"真欠载"
-			 * （断裂点 < len）改判成功，判定无污染风险。 */
-			int bnd = actual;
-			for (int i = 0; i < 64; i++) {
-				if (rd[i] != (uint8_t)(0x10 + i)) {
-					bnd = i;
-					break;
+			int ret = i3c_write_read_actual(target_desc, wr, wr_len,
+							rd, (size_t)len, &actual);
+			CTRL_EXPECT(ret == 0, "len=%d dummy=%d read failed: %d",
+				    len, n, ret);
+			CTRL_EXPECT(actual == (size_t)len,
+				    "len=%d dummy=%d actual %zu != %d",
+				    len, n, actual, len);
+			if (ret == 0 && actual == (size_t)len) {
+				validate_pattern(rd, actual, IDX, "dummy len read");
+				if (len > max_len_ok) {
+					max_len_ok = len;
 				}
 			}
-			if (bnd >= (int)len) {
-				/* 成功档：target 供满 len。actual 可能被 master 读段
-				 * DCNT 放大（target 供完 32B 后 FIFO 空 → 中途欠载 →
-				 * master 继续读满 DCNT 收 0xff，actual=64 假象）——
-				 * target 供数正确即成功，多收字节是 master 侧硬件
-				 * 行为，非 target 欠供。 */
-				critical = step;
-				validate_pattern(rd, len, 0x10, "delay-read-len");
-			} else {
-				/* 欠载步：bnd < len = target 供数在 len 前断流
-				 * （prefill 没赶上/续发跟不上 T-bit）；bnd 值
-				 * 区分供数边界。 */
-				if (first_short < 0) {
-					first_short = step;
-				}
-			}
-		}
-
-		/* INFO：每 len 一条（报告"实际"列取用，§13.4） */
-		ZT_INFO("write_delay_read_len",
-			"len=%d,critical_ns=%d,first_short_step=%d,stop_step=%d",
-			len, (critical >= 0) ? critical * DELAY_STEP_NS : 0,
-			first_short, stop);
-
-		/* 判定①：临界档存在——len 档连 step 0（不延时）都读不满 =
-		 * 时序基线异常（或续发路径根本跟不上 T-bit 间隔） */
-		printk("CTRL_STEP: WDR_LEN len=%d critical=%d first_short=%d stop=%d\n",
-		       len, critical, first_short, stop);
-		CTRL_EXPECT(critical >= 0,
-			    "len=%d: no step read full %dB", len, len);
-
-		/* INFO：临界档跨 len 上报（报告"实际"列取用，§13.4）。
-		 * 判定①已证明续发路径工作（step0 能读满 len），
-		 * 临界值是特征测量，不是通过标准——不同 len/不同跑次
-		 * 的 ISR 调度时机不同，临界档天然有波动。 */
-		if (li == 0) {
-			g_wdrlen17_critical_step = critical;
-		} else if (li == 1) {
-			g_wdrlen32_critical_step = critical;
 		}
 	}
 
-	/* 跨 len 临界档特征数据上报（INFO，非判定；此前这两个变量是死变量）。
-	 * 报告"实际"列取用，判定以每 len 的"临界档存在 + pattern 前缀完整"为准。 */
-	ZT_INFO("write_delay_read_len", "critical17_step=%d,critical32_step=%d",
-		g_wdrlen17_critical_step, g_wdrlen32_critical_step);
-
+	ZT_INFO("write_dummy_read_len", "max_len_ok=%d", max_len_ok);
 	ctrl_test_end();
 }
-#endif /* I3C_TEST_EN_WRITE_DELAY_READ_LEN */
+#endif /* I3C_TEST_EN_WRITE_DUMMY_READ_LEN */
 
 /*
  * write+stop+start+read 变体：数据内容与 write_read 完全一致，

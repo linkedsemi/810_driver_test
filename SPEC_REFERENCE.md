@@ -520,6 +520,11 @@ CPU2 MASTER / CPU1 SLAVE ...                    # 角色 banner，保留，角�
 - 旧格式目录（`reports/<date>/`，无 idx）不再产生，历史归档保持原样可读。
 - 单次 `dbg_run.py`（调试）不归档，只归档一键回归。
 - `reports/module/` 已在 `.gitignore`（单模块报告不入库）；全量报告路径维持现状。
+- **交付物落点（2026-11-05 用户裁定）**：`tmp/` 用户不会查看且会被定期清理；
+  **需要给用户看的报告 / 结果 / 结论必须写入 `reports/<会话>/<工程>_<case>/<工程>_report.md`**
+  （单模块写 `reports/module/<会话>/<工程>_<case>/`），不得只放在 `tmp/`。
+  `tmp/` 仅保留过程日志、脚本、临时构建。⚠️ `tmp/` 可能被**整目录清空（含
+  `tmp/README.md`）**，规则以本节与根 `CLAUDE.md` 为准，不依赖 README 存活。
 
 #### 6.4.2 报告内容模板（Markdown）
 

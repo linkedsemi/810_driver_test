@@ -50,7 +50,9 @@ python scripts/dbg_run.py --case case_<name> --timeout 35  # 单 case 调试
 
 **输出归档**：全量回归 `reports/<YYYY-MM-DD>-<idx>/`；单模块测试 `reports/module/<YYYY-MM-DD>-<idx>/`（后者不入库）
 
-**临时内容**：一次性工程 / 脚本 / 日志一律放 `tmp/`（已 gitignore，规则见 `tmp/README.md`），定期清理或合并回正式代码
+**临时内容**：一次性工程 / 脚本 / 日志一律放 `tmp/`（已 gitignore），定期清理或合并回正式代码。⚠️ `tmp/` 可能被**整目录清空（含 README）**，规则以本文与 `SPEC_REFERENCE` 为准
+
+**交付物落点**：`tmp/` 用户不会看且会被定期清理；**需要给用户看的报告/结果必须写进 `reports/<会话>/<工程>_<case>/`**（单模块写 `reports/module/<会话>/...`），不能只放 tmp
 
 **问题记录证据**：不引用 `reports/` 作证据；内联结论 + `810_driver_test@<12 位 sha>`（规范见 `SPEC_REFERENCE` §6.4.7.1）
 

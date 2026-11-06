@@ -42,6 +42,7 @@ enum tgt_parse_state {
 	TGT_PARSE_WRITE_LEN,
 	TGT_PARSE_WRITE_DATA,
 	TGT_PARSE_INDEXED_READ,	/* CMD_INDEXED_READ 后等索引字节 */
+	TGT_PARSE_INDEXED_READ_LEN,	/* CMD_INDEXED_READ_LEN 后等 索引+长度 2 字节 */
 	TGT_PARSE_INDEXED_READ_DELAY,	/* CMD_INDEXED_READ_DELAY 后等 索引+延时 2 字节 */
 	TGT_PARSE_INDEXED_READ_DELAY_LEN,	/* CMD_INDEXED_READ_DELAY_LEN 后等
 						 * 索引+延时+长度 3 字节 */
@@ -72,6 +73,10 @@ static volatile uint16_t tx_idx;
 static volatile uint16_t tx_len;
 static volatile uint16_t tx_offset;	/* 索引读：tgt_tx_buf 起始偏移（CMD_INDEXED_READ 设置） */
 static volatile bool indexed_read_pending;	/* 索引读进行中：写匹配时 tx_offset 未收到，延迟预填 */
+static volatile bool dummy_read_seen;	/* dummy 索引读：收到过 'X'（validate 用） */
+static volatile bool dummy_len_seen;	/* dummy 长度索引读：收到过 'V'（validate 用） */
+static volatile uint8_t vread_idx;	/* 'V' 已收字节数（0=等索引 1=等长度） */
+static volatile uint8_t vread_offset;	/* 'V' 暂存索引字节 */
 static volatile uint8_t delay_read_idx;	/* 延时索引读：0=未收索引 1=已收索引（首字节暂存于 delay_read_offset） */
 static volatile uint8_t delay_read_offset;	/* 延时索引读：暂存索引字节（延时字节后 prefill 生效） */
 static volatile bool delay_read_seen;	/* 延时索引读：收到过 'Y' opcode（stop_cb 不清，validate 用） */
@@ -584,6 +589,15 @@ static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val
 			nackx_opcode_pstate = parse_state;	/* 探针：opcode 分发前状态 */
 			parse_state = TGT_PARSE_INDEXED_READ;
 			indexed_read_pending = true;
+			dummy_read_seen = true;
+			break;
+		case CMD_INDEXED_READ_LEN:
+			/* dummy 长度索引读：等 索引+长度 2 字节；收到长度后按
+			 * idx/len 预填，后续 dummy 字节再幂等续填。 */
+			parse_state = TGT_PARSE_INDEXED_READ_LEN;
+			indexed_read_pending = true;
+			dummy_len_seen = true;
+			vread_idx = 0;
 			break;
 		case CMD_INDEXED_READ_DELAY:
 			/* 延时索引读：等 索引+延时 2 字节，收到延时字节后
@@ -679,6 +693,28 @@ static int slave_write_received_cb(struct i3c_target_config *config, uint8_t val
 		indexed_read_pending = false;
 		{
 			/* 清空 TX FIFO 后按新偏移预填（FLUSHTB 清除写方向预填的旧数据） */
+			I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
+			base->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
+			target_prefill_tx();
+		}
+		parse_state = TGT_PARSE_IDLE;
+		break;
+
+	case TGT_PARSE_INDEXED_READ_LEN:
+		/* 长度索引读：第 1 字节 = 索引，第 2 字节 = 读长度（0→256）。
+		 * 收到长度后按 idx/len 预填；后续 dummy 字节走 default 分支
+		 * 幂等续填（验证写段期间完成预填，不依赖 ns 延时）。 */
+		if (vread_idx == 0) {
+			vread_offset = val;
+			vread_idx = 1;
+			break;
+		}
+		vread_idx = 0;
+		tx_offset = vread_offset;
+		tx_len = (val == 0) ? 256 : val;
+		last_read_len = tx_len;
+		indexed_read_pending = false;
+		{
 			I3C_TypeDef *base = (I3C_TypeDef *)DT_REG_ADDR(DT_NODELABEL(i3c6));
 			base->SDATACTRL |= I3C_SDATACTRL_FLUSHTB_MASK;
 			target_prefill_tx();
@@ -1065,10 +1101,12 @@ ZTEST_SUITE(ccc_rapid_8, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(read_master_abort, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(ibi_neg_paths, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(api_neg_paths, NULL, NULL, NULL, NULL, NULL);
+#if I3C_TEST_EN_MULTI_MSG_4
 ZTEST_SUITE(multi_msg_4, NULL, NULL, NULL, NULL, NULL);
+#endif
 ZTEST_SUITE(write_indexed_read_16, NULL, NULL, NULL, NULL, NULL);
-ZTEST_SUITE(write_delay_read_16, NULL, NULL, NULL, NULL, NULL);
-ZTEST_SUITE(write_delay_read_len, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_dummy_read_16, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(write_dummy_read_len, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(read_underrun_stress, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(multi_msg_short_read, NULL, NULL, NULL, NULL, NULL);
 ZTEST_SUITE(short_read_then_nack, NULL, NULL, NULL, NULL, NULL);
@@ -1171,84 +1209,22 @@ static void validate_write_indexed_read_16(void)
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
 }
 
-static void validate_write_delay_read_16(void)
+static void validate_write_dummy_read_16(void)
 {
-	/* 延时索引读：协议点确认——收到过 'Y'（delay_read_seen，stop_cb
-	 * 不清此标志）、读长度协议正确。数据能否在 T-bit 前入 FIFO
-	 * （欠载与否）由 controller 侧扫描判定，target 侧不参与。 */
-	TGT_EXPECT(delay_read_seen, "no CMD_INDEXED_READ_DELAY received");
+	/* dummy 索引读：收到过 'X' 且读长度为 16。数据正确性由 controller
+	 * 侧 pattern 校验；target 侧只确认协议点（写段期间预填路径被走到）。 */
+	TGT_EXPECT(dummy_read_seen, "no CMD_INDEXED_READ received");
 	TGT_EXPECT(last_read_len == 16, "last_read_len %u != 16", last_read_len);
-	/* nack_recovery 诊断（临时探针）：'X' 分发前 parse_state（非 IDLE 即
-	 * 卡状态）、索引到达时残留 tx_offset（0x10=WDR 残留未复位）、
-	 * 读匹配时 tx_offset/tx_idx（0x10/0 = 偏移未复位直接供残留数据） */
-	printk("TGT_DBG7: nackx opcode_pstate=0x%x idx_txoff=%u read_txoff=%u read_txidx=%u\n",
-	       nackx_opcode_pstate, nackx_idx_txoff, nackx_read_txoff,
-	       nackx_read_txidx);
-	/* spin 实测核对 + 总线阶段/新 match 时序（最后有效一笔）：
-	 * - spin_done_actstate：spin 完成时刻总线阶段（0=idle 1=write 2=read）
-	 * - match2delay：delay 字节收完 → MATCHED 置位（"新 match"）的物理
-	 *   间隔；0 = spin 期间未匹配（该笔 master 间隙 > spin，欠载档） */
-	printk("TGT_DBG: spin=%ucyc(%lluns) actstate=0x%x match2delay=%dus\n",
-	       spin_ns_last,
-	       spin_ns_last * 1000000000ULL /
-		       (uint64_t)CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
-	       spin_done_actstate,
-	       (int)((matched_cyc_last - rx_delay_byte_cyc) /
-		     (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000ULL)));
-	/* 首笔（step 0，无人工延时）：delay 字节收完 → MATCHED 物理间隔
-	 * = master 写段结束到 restart+地址匹配的实际时间（直接对照波形）。
-	 * wait_sst_entry：wait 入口（delay 字节 ISR 处理时刻）SSTATUS 快照——
-	 * 0x200（MATCHED）= 入口时 restart+地址 已匹配（gap≈0，ISR 处理 delay
-	 * 字节时匹配已完成）；0 = 未匹配（wait 等新匹配）。 */
-	printk("TGT_DBG2: step0 match2delay=%dus (no spin, master gap+addr)\n",
-	       (int)((matched_cyc_first - rx_delay_byte_cyc_first) /
-		     (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000ULL)));
-	printk("TGT_DBG3: step0 sst_entry=0x%x (%s) wait_timeout_sst=0x%x match_first=%u(0=timeout) rx_first=%u\n",
-	       wait_sst_entry,
-	       (wait_sst_entry & I3C_SSTATUS_MATCHED_MASK) ? "MATCHED-already-set" : "no-match-yet",
-	       wait_sst_timeout,
-	       matched_cyc_first, rx_delay_byte_cyc_first);
-	printk("TGT_DBG4: last sst_entry=0x%x match_last=%u(0=spin-didnt-see) rx_delay_cyc=%u\n",
-	       wait_sst_entry, matched_cyc_last, rx_delay_byte_cyc);
-	printk("TGT_DBG5: hit_txcount=%u hit_sst=0x%x (%s)\n",
-	       hit_txcount, hit_sst,
-	       (hit_txcount == 0xFFFFU) ? "spin-didnt-see" : "16=常备未发,<16=数据已发出");
-	/* per-step 时间线：每档 wait 入口 SSTATUS、命中间隔（delay→MATCHED
-	 * cycles，-1=未命中）、命中时 TXCOUNT。观察"假匹配"（写段残留）与
-	 * 真读匹配的分界，回答死等预算与 match 时机的关系。 */
-	printk("WDR_TIMELINE:\n");
-	for (uint16_t i = 0; i < wdr_cnt && i < WDR_MAX_STEP; i++) {
-		printk("W%03u:%s e=0x%x d=%d tx=%u hs=0x%x\n", i,
-		       (wdr_match_delta[i] >= 0) ? "hit" : "miss",
-		       wdr_entry_sst[i], wdr_match_delta[i], wdr_txcount[i],
-		       wdr_hit_sst[i]);
-	}
-	printk("TGT_DBG6: pre_flush=0x%x prefill_cyc=%u (spin后FLUSHTB前状态)\n",
-	       sst_pre_flush, pre_fill_cyc);
-	/* CPU 频率 probe（cycle→ns 基准校准）：printk 逐字节轮询 @115200，
-	 * 77 字符 ≈ 77×86.8µs = 6.68ms 外部基准。dt_cycles / 6.68ms =
-	 * cycle counter 实际频率（CONFIG 声明 600MHz，若实际不同则所有
-	 * cycle→ns 换算虚高/虚低）。 */
-	uint32_t _t0 = k_cycle_get_32();
-	printk("CPUFREQ_PROBE:0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n");
-	uint32_t _dt = k_cycle_get_32() - _t0;
-	printk("CPUFREQ: cyc=%u -> %u MHz (declared 600)\n", _dt,
-	       (uint32_t)((uint64_t)_dt * 1000ULL / 6680ULL));
 }
-
-static void validate_write_delay_read_len(void)
+static void validate_write_dummy_read_len(void)
 {
-	/* 延时长度索引读：协议点确认——收到过 'Z'（delay_len_seen，stop_cb
-	 * 不清此标志）、读长度来自写段内容（≥17 = 跨 FIFO 深度 16 边界，
-	 * 由续发路径补齐；非默认 16）。数据正确性由 controller 侧扫描判定
-	 * （pattern 校验读回内容），target 侧只确认协议点与长度记账。 */
-	TGT_EXPECT(delay_len_seen, "no CMD_INDEXED_READ_DELAY_LEN received");
-	TGT_EXPECT(last_read_len >= 17 && last_read_len <= 256,
+	/* dummy 长度索引读：收到过 'V'，读长度来自写段（16/17/32/64）。
+	 * pattern 正确性由 controller 侧校验。 */
+	TGT_EXPECT(dummy_len_seen, "no CMD_INDEXED_READ_LEN received");
+	TGT_EXPECT(last_read_len == 16 || last_read_len == 17 ||
+		   last_read_len == 32 || last_read_len == 64,
 		   "last_read_len %u not from write segment", last_read_len);
-	printk("TGT_DBG: wdrlen last_len=%u spin=%ucyc actstate=0x%x\n",
-	       last_read_len, spin_ns_last, spin_done_actstate);
 }
-
 static void validate_write_read_17(void)
 {
 	/* 写方向真实数据校验 + 读方向续发证据（关键长度 17 > FIFO 深度 16）。 */
@@ -1463,6 +1439,7 @@ static void validate_api_neg_paths(void)
 		   (size_t)write_len);
 }
 
+#if I3C_TEST_EN_MULTI_MSG_4
 static void validate_multi_msg_4(void)
 {
 	/* 两个写段各带 1 个占位字节 0xA5 */
@@ -1476,6 +1453,7 @@ static void validate_multi_msg_4(void)
 	/* 协议点：controller 现已显式下发 CMD_SET_READ_LEN(32)（此前裸依赖
 	 * reset_test_state 默认值 ⇒ 恒真）。写段两个占位字节已在上方校验。 */
 }
+#endif /* I3C_TEST_EN_MULTI_MSG_4 */
 
 static void validate_read_underrun_stress(void)
 {
@@ -1595,10 +1573,12 @@ TGT_ZTEST(ccc_rapid_8)
 TGT_ZTEST(read_master_abort)
 TGT_ZTEST(ibi_neg_paths)
 TGT_ZTEST(api_neg_paths)
+#if I3C_TEST_EN_MULTI_MSG_4
 TGT_ZTEST(multi_msg_4)
+#endif
 TGT_ZTEST(write_indexed_read_16)
-TGT_ZTEST(write_delay_read_16)
-TGT_ZTEST(write_delay_read_len)
+TGT_ZTEST(write_dummy_read_16)
+TGT_ZTEST(write_dummy_read_len)
 TGT_ZTEST(read_underrun_stress)
 TGT_ZTEST(multi_msg_short_read)
 TGT_ZTEST(short_read_then_nack)

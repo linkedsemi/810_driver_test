@@ -1,0 +1,45 @@
+{
+  "case": "case_mbox_fifo_full",
+  "result": "PASS",
+  "ctrl_execution": "SUCCESSFUL",
+  "tgt_execution": "SUCCESSFUL",
+  "ctrl_errs": 2,
+  "tgt_errs": 0,
+  "items": [
+    {
+      "name": "ctrl_execution",
+      "core": "CTRL",
+      "kind": "execution",
+      "result": "PASS",
+      "detail": "PROJECT EXECUTION SUCCESSFUL"
+    },
+    {
+      "name": "tgt_execution",
+      "core": "TGT",
+      "kind": "execution",
+      "result": "PASS",
+      "detail": "PROJECT EXECUTION SUCCESSFUL"
+    },
+    {
+      "name": "fifo_full_enospc",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "sent=6,ok=4,enospc=2,other=0,expect_ok=4,expect_enospc=2"
+    },
+    {
+      "name": "fifo_full_drain_on_enable",
+      "core": "TGT",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "drained=4,drop=0,expect=4"
+    }
+  ],
+  "notes": [],
+  "behavior_total": 2,
+  "behavior_passed": 2,
+  "timed_out": false,
+  "elapsed_s": 11.5
+}

@@ -1,0 +1,21 @@
+{
+  "archive_version": 2,
+  "case": "case_pure_i3c_12m5",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 320
+    },
+    "CTRL": {
+      "port": "COM18",
+      "lines": 396
+    }
+  },
+  "timeout": 120,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\i3c_dualcore_test\\tests\\run_test.py",
+  "script_md5": "9066b80cf9b52491b06390cda151da10",
+  "timestamp": "2026-11-05T22:01:28",
+  "split_from_primary": true,
+  "relay_envelope_stripped": true
+}

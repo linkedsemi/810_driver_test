@@ -1,0 +1,19 @@
+{
+  "archive_version": 1,
+  "case": "case_throughput_iso_local",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "CTRL": {
+      "port": "COM18",
+      "lines": 12
+    },
+    "TGT": {
+      "port": "COM16",
+      "lines": 26
+    }
+  },
+  "timeout": 60,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\otbn_delegation_test\\tests\\run_test.py",
+  "script_md5": "673c1f485df1a20470215668970ef90c",
+  "timestamp": "2026-11-05T00:30:01"
+}

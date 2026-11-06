@@ -191,7 +191,9 @@ def register_session_project(session_dir, project):
         if project not in projects:
             projects.append(project)
         meta["projects"] = projects
-        if not meta.get("project"):
+        # 只有单模块会话记录“主工程”；全量会话保持 project=null（projects 列表已由
+        # run_all 预填），否则第一条 case 的工程名会被误写成整批的主工程。
+        if meta.get("kind") == KIND_MODULE and not meta.get("project"):
             meta["project"] = project
     try:
         (session / SESSION_META).write_text(

@@ -1,0 +1,111 @@
+{
+  "case": "case_mbox_invalid",
+  "result": "PASS",
+  "ctrl_execution": "SUCCESSFUL",
+  "tgt_execution": "SUCCESSFUL",
+  "ctrl_errs": 7,
+  "tgt_errs": 0,
+  "items": [
+    {
+      "name": "ctrl_execution",
+      "core": "CTRL",
+      "kind": "execution",
+      "result": "PASS",
+      "detail": "PROJECT EXECUTION SUCCESSFUL"
+    },
+    {
+      "name": "tgt_execution",
+      "core": "TGT",
+      "kind": "execution",
+      "result": "PASS",
+      "detail": "PROJECT EXECUTION SUCCESSFUL"
+    },
+    {
+      "name": "inv_send_null_msg",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-134,expect=-134"
+    },
+    {
+      "name": "inv_send_bad_channel",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-22,expect=-22"
+    },
+    {
+      "name": "inv_send_oversize_ch4",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-122,expect=-122"
+    },
+    {
+      "name": "inv_send_null_data",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-122,expect=-122"
+    },
+    {
+      "name": "inv_send_oversize_ch2",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-122,expect=-122"
+    },
+    {
+      "name": "inv_register_bad_channel",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-22,expect=-22"
+    },
+    {
+      "name": "inv_set_enabled_bad_channel",
+      "core": "CTRL",
+      "kind": "behavior",
+      "ok": true,
+      "result": "PASS",
+      "detail": "ret=-22,expect=-22"
+    },
+    {
+      "name": "inv_zero_size_accepted",
+      "core": "CTRL",
+      "kind": "observe",
+      "ok": true,
+      "result": "OBS",
+      "detail": "ret=0,recorded=0"
+    },
+    {
+      "name": "inv_mtu_get_unimplemented",
+      "core": "CTRL",
+      "kind": "observe",
+      "ok": true,
+      "result": "OBS",
+      "detail": "ret=-88,recorded=-88"
+    },
+    {
+      "name": "tgt_invalid_idle",
+      "core": "TGT",
+      "kind": "guard",
+      "ok": true,
+      "result": "GUARD",
+      "detail": "idle_ms=4000"
+    }
+  ],
+  "notes": [
+    "结构性守卫（非行为证据）：TGT:tgt_invalid_idle"
+  ],
+  "behavior_total": 7,
+  "behavior_passed": 7,
+  "timed_out": false,
+  "elapsed_s": 14.5
+}

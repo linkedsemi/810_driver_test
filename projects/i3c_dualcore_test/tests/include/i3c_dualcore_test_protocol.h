@@ -34,6 +34,10 @@ extern "C" {
 					 * 能被寻址本身即证明地址已切换） */
 #define CMD_INDEXED_READ       'X'	/* 0x58：索引读——下一字节是索引，target 按
 					 * 索引预填 tgt_tx_buf[idx..idx+len-1] 返回 */
+#define CMD_INDEXED_READ_LEN   'V'	/* 0x56：长度索引读——后随 2 字节（索引 + 读长度），
+					 * target 按 idx 偏移、len 长度预填；用于验证
+					 * "写段 dummy 字节期间完成预填"（FIFO 深 16，
+					 * >16 由 TXSEND 续发）。长度 0 → 256。 */
 #define CMD_INDEXED_READ_DELAY 'Y'	/* 0x59：延时索引读——后随 2 字节（索引 + 延时档位），
 					 * target 收到延时字节后先 spin 延时再预填，用于实测
 					 * "写段 data 到读段欠载"的可用准备窗口（P1→T-bit）。
@@ -110,14 +114,12 @@ enum i3c_test_id {
 	 * 验证 write_received_cb 改 tx_len/偏移后，write_requested_cb 能按新
 	 * 参数预填（ISR 顺序重构：MATCHED 先于 RXPEND） */
 	I3C_TEST_WRITE_INDEXED_READ_16,
-	/* 延时索引读：测从机收到写段 data 后到读段欠载的可用准备窗口。
-	 * controller 扫延时档位，target 收到写段后 spin 延时再预填，
-	 * 临界档位（恰好不欠载的最大延时）即 P1→T-bit 实测窗口 */
-	I3C_TEST_WRITE_DELAY_READ_16,
-	/* 延时长度索引读：写段内容决定读长度（FIFO 深 16 临界 17/32/64），
-	 * target spin 后 prefill 16B，>16 由续发路径补齐——验证跨 FIFO
-	 * 深度边界的回复能力 + 续发不缩小可用准备窗口 */
-	I3C_TEST_WRITE_DELAY_READ_LEN,
+	/* dummy 索引读：controller 写 {X, idx, 0xA5 × N} 后 restart 读 16B，
+	 * N 个 dummy 字节给 target 在写段期间完成预填（不测 ns 阈值）。 */
+	I3C_TEST_WRITE_DUMMY_READ_16,
+	/* dummy 长度索引读：controller 写 {V, idx, len, 0xA5 × N} 后 restart
+	 * 读 len 字节（FIFO 深 16 临界 17/32/64），验证写段期间预填 + 续发。 */
+	I3C_TEST_WRITE_DUMMY_READ_LEN,
 	/* read_underrun_stress：连续 8 轮短读（target 准备 8B，controller 读 16B），
 	 * 压测 FC double-give 竞态 + 信号量计数泄漏 */
 	I3C_TEST_READ_UNDERRUN_STRESS,
@@ -163,8 +165,8 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 	[I3C_TEST_API_NEG_PATHS] = "api_neg_paths",
 	[I3C_TEST_MULTI_MSG_4] = "multi_msg_4",
 	[I3C_TEST_WRITE_INDEXED_READ_16] = "write_indexed_read_16",
-	[I3C_TEST_WRITE_DELAY_READ_16] = "write_delay_read_16",
-	[I3C_TEST_WRITE_DELAY_READ_LEN] = "write_delay_read_len",
+	[I3C_TEST_WRITE_DUMMY_READ_16] = "write_dummy_read_16",
+	[I3C_TEST_WRITE_DUMMY_READ_LEN] = "write_dummy_read_len",
 	[I3C_TEST_READ_UNDERRUN_STRESS] = "read_underrun_stress",
 	[I3C_TEST_MULTI_MSG_SHORT_READ] = "multi_msg_short_read",
 	[I3C_TEST_SHORT_READ_THEN_NACK] = "short_read_then_nack",
@@ -221,10 +223,13 @@ static const char * const i3c_test_names[I3C_TEST_COUNT] = {
 #define I3C_TEST_EN_READ_MASTER_ABORT   1
 #define I3C_TEST_EN_IBI_NEG_PATHS       1
 #define I3C_TEST_EN_API_NEG_PATHS       1
-#define I3C_TEST_EN_MULTI_MSG_4         1
+/* 2026-11-05：多段（4 段 repeated-START）暂不在覆盖范围，屏蔽该测试；
+ * 单次 restart（write → restart → read）仍由 write_read_* 等覆盖。
+ * 恢复时改回 1，并同步恢复 run_test.py/dump_results.py 的 TEST_NAMES。 */
+#define I3C_TEST_EN_MULTI_MSG_4         0
 #define I3C_TEST_EN_WRITE_INDEXED_READ_16 1
-#define I3C_TEST_EN_WRITE_DELAY_READ_16   1
-#define I3C_TEST_EN_WRITE_DELAY_READ_LEN  1
+#define I3C_TEST_EN_WRITE_DUMMY_READ_16   1
+#define I3C_TEST_EN_WRITE_DUMMY_READ_LEN  1
 #define I3C_TEST_EN_READ_UNDERRUN_STRESS  1
 #define I3C_TEST_EN_MULTI_MSG_SHORT_READ  1
 #define I3C_TEST_EN_SHORT_READ_THEN_NACK  1

@@ -103,10 +103,10 @@ TGT_BANNERS = ("CPU1 SLAVE", "i3c_slave_test")
 # 复核只认 `nm --numeric-sort <elf> | grep z_ztest_unit_test`（地址序）。
 # 实测（2026-08-30 构建产物，case_mixed_400k_12m5 两核 elf 同名序一致）：
 #   api_neg_paths, back_to_back_8x8, big_256, ccc_basic, ccc_rapid_8,
-#   daa_discovery, hot_join, ibi, ibi_neg_paths, multi_msg_4, nack_bad_addr,
+#   daa_discovery, hot_join, ibi, ibi_neg_paths, nack_bad_addr,
 #   read_32_direct, read_master_abort, read_underrun_16_32, read_underrun_8_16,
-#   setaasa, setdasa, write_100, write_8, write_delay_read_16,
-#   write_delay_read_len, write_indexed_read_16, write_read_15, write_read_16,
+#   setaasa, setdasa, write_100, write_8, write_dummy_read_16,
+#   write_dummy_read_len, write_indexed_read_16, write_read_15, write_read_16,
 #   write_read_17, write_read_1, write_read_32, write_stop_read_15,
 #   write_stop_read_16, write_stop_read_17, write_stop_read_1, write_stop_read_32
 # 两核前缀名相同（CTRL `i3c__` / TGT `suite__suite`），
@@ -114,13 +114,13 @@ TGT_BANNERS = ("CPU1 SLAVE", "i3c_slave_test")
 TEST_NAMES = [
     "api_neg_paths", "back_to_back_8x8", "big_256", "ccc_basic",
     "ccc_rapid_8", "daa_discovery", "hot_join", "ibi",
-    "ibi_neg_paths", "multi_msg_4", "multi_msg_short_read",
+    "ibi_neg_paths", "multi_msg_short_read",
     "nack_bad_addr", "read_32_direct",
     "read_master_abort", "read_underrun_16_32", "read_underrun_8_16",
     "read_underrun_stress",
     "setaasa", "setdasa", "short_read_then_nack",
     "write_100", "write_8",
-    "write_delay_read_16", "write_delay_read_len", "write_indexed_read_16",
+    "write_dummy_read_16", "write_dummy_read_len", "write_indexed_read_16",
     "write_read_15", "write_read_16", "write_read_17", "write_read_1",
     "write_read_32", "write_stop_read_15", "write_stop_read_16",
     "write_stop_read_17", "write_stop_read_1", "write_stop_read_32",

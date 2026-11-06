@@ -34,10 +34,10 @@
 | read_master_abort | 主机主动截断读 + target TERM 恢复（STOP 后 FLUSHTB 重填对齐） | 异常/提前终止 | 读 32 取 8 后，下一笔读从 pattern 起点对齐 | 协议文档 | ✅ |
 | ibi_neg_paths | ls_i3c_ibi_raise fail-fast 三分支：payload>8/-EINVAL、IBIDIS/-EACCES、DAVALID HJ/-EACCES | 异常参数 | 三个返回值精确匹配 | 驱动契约 | ✅ |
 | api_neg_paths | ls_i3c_transfer 入口：num_msgs=0/dynamic_addr=0/hdr_mode=1/msgs=NULL → -EINVAL | 异常参数 | 全部 -EINVAL，事后正常读 OK | 驱动契约 | ✅ |
-| multi_msg_4 | ls_i3c_transfer 4 段复合帧（W+R+W+R）+ isr_tx 读消息拦截 | 功能通路/时序 | 各段 num_xfer 正确、两段读数据 == pattern | 协议文档 | ✅ |
+| multi_msg_4 | ls_i3c_transfer 4 段复合帧（W+R+W+R）+ isr_tx 读消息拦截 | 功能通路/时序 | 各段 num_xfer 正确、两段读数据 == pattern | 协议文档 | ⏸ **已屏蔽**（2026-11-05：多次 restart 不在覆盖范围；`I3C_TEST_EN_MULTI_MSG_4=0`，只保留单次 restart 的 write_read_* 覆盖） |
 | write_indexed_read_16 | ISR 顺序重构（MATCHED 先于 RXPEND）：write_received_cb 改 tx_offset/tx_len 后 restart 读按新参数预填（target_prefill_tx 偏移路径） | 功能通路/中断时序 | 3 索引（0x00/0x10/0x20）读回 tgt_tx_buf[idx..idx+15] 全部匹配 pattern | 驱动契约 | ✅ |
-| write_delay_read_16 | 从机"写段 data → 读段欠载"可用准备窗口实测：target 收写段后 spin 延时再 FLUSHTB+prefill（TGT_PARSE_INDEXED_READ_DELAY 分支），controller 扫 0-255 档（50ns 步进）找临界 + NACK 边界（欠载后 master Address NACK err=-5 停止档）+ **nack_recovery**（NACK 后立即恢复写读：master 状态机恢复 + target FIFO 残留清理 + tx_offset 复位，pattern 0x00..0x0f 校验） | 中断/时序 | 25M 源窗口 6000-7100ns 漂移（±9%，5 轮）；NACK 边界 = 窗口+~0.1µs（stop 122-144 档）；**常态化门限**：case controller.conf 配 MIN/MAX_CRITICAL_NS（25M case [5500,8000]）+ NACK 边界硬判定（stop>critical），超限 FAIL（Kconfig: I3C_TEST_WDR_*）；nack_recover_ok=1（实测 PASS） | 实测（2026-08-27，I3C SCL 12.5MHz；CPU 实际 547MHz） | ✅ |
-| write_delay_read_len | 写段内容决定读长度的 FIFO 深度临界测试：target 收 len 字节（写段最后字节）后 spin→FLUSHTB→prefill 16B，读段按 len 返回（FIFO 深 16，>16 由 TXSEND read_processed_cb 续发）；controller 对 len∈{17,32,64} 各扫 delay 档找临界。**判定：pattern 前缀完整性 bnd≥len（吸收 master 读段 DCNT 固定导致的 actual 放大假象）。⚠ 原文声称另有"判定② len64↔len32 互比（8 档容差）"，**该判定并不存在**：`g_wdrlen17_critical_step` / `g_wdrlen32_critical_step` 在代码里只赋值从不读取（死变量，2026-09-18 审计发现）。本轮处置 = **降级为 INFO 特征数据**（不再是判定），并在 `write_delay_read_len` 末尾经 ZT_INFO 上报 `critical17_step/critical32_step` 使其不再死；不补判定② 的理由：阈值化差比需实机基线定标，len17 仅 1 字节续发、实测波动 120-146 档，凭空写死容差=假 FAIL** | 边界长度/中断时序 | 临界档：len32≈115-124、len64≈107-123（互差 ≤3 档常态，偶发 6-7 档）；len17（1 字节续发）波动 120-146 档（ISR 抖动放大，仅 INFO 上报不判定）；critical 存在 + 数据 pattern 对 | 实测（2026-08-27）+ FIFO 深度 16 契约 | ✅ |
+| write_dummy_read_16 | 写段 dummy 字节期间预填：controller 写 {CMD_INDEXED_READ, idx=0x10, 0xA5×N} 后 restart 读 16B；target 收到索引即按 idx 预填，N 个 dummy 字节走 default 分支幂等续填（不测 ns 阈值）。判定：N∈{0,8,16,32,64,128} 全部读满 16B 且 pattern 从 idx 开始 | 写段时长/预填 | 写段任意 dummy 数（0-128）均能预填；INFO dummy_max_ok=128 | 实测（2026-11-05，SCL 12.5MHz，50M DPLL 源） | ✅ |
+| write_dummy_read_len | 写段 dummy 字节期间预填 + FIFO 深度续发：controller 写 {CMD_INDEXED_READ_LEN, idx, len, 0xA5×N} 后读 len 字节；len∈{16,17,32,64}、N∈{0,16,64}，读满且 pattern 正确（>16 由 TXSEND 续发） | 边界长度/中断时序 | 全部组合读满且 pattern 正确；INFO max_len_ok=64 | 实测（2026-11-05） | ✅ |
 | read_underrun_stress | ls_i3c_transfer 连续短读压测（8 轮 target 备 8B / master 读 16B）+ 第 9 轮恢复读 | 异常/提前终止 + 并发 | 8 轮 actual==8 且 pattern 对；恢复读 ret==0/actual==16 | 协议文档（T-bit 提前终止合法）+ FC double-give 竞态回归 | ✅ |
 | multi_msg_short_read | ls_i3c_transfer 4 段帧（W+R+W+R）末段短读 + 恢复读（整帧重试 ≤3 次吸收时序抖动） | 异常/提前终止 | 前三段 num_xfer 正确、rd1 pattern 对；恢复读 8B pattern 对 | 协议文档 | ✅ |
 | short_read_then_nack | 4 轮 [短读 8B → 伪造地址 0x55 NACK → 恢复读] | 异常/恢复 | 每轮短读 actual==8、恢复读 ret==0/actual==8/pattern 对 | 协议文档（跨帧 ERR/RXTGTEND 组合恢复） | ✅ |
@@ -118,8 +118,8 @@ ibi_neg_paths | !none | !none:"三个返回值精确匹配"，但键名未在 IN
 api_neg_paths | !none | !none:全部 -EINVAL + 事后正常读 OK 的合取
 multi_msg_4 | !none | !none:num_xfer + 两段读数据的合取
 write_indexed_read_16 | !none | !none:3 个索引的 pattern 匹配合取
-write_delay_read_16 | !none | !none:原文是**实测漂移窗口**（25M 源 6000-7100ns），属"实测记录"而非独立预期
-write_delay_read_len | !none | !none:同上（临界档实测区间）
+write_dummy_read_16 | !none | !none:写段任意 dummy 数均读满 16B 且 pattern 正确，非标量
+write_dummy_read_len | !none | !none:同上（len/N 组合的 pattern 校验）
 read_underrun_stress | !none | !none:8 轮 actual==8 且 pattern 对的合取
 multi_msg_short_read | !none | !none:前三段 num_xfer + 恢复读 pattern 的合取
 short_read_then_nack | !none | !none:每轮 short read 与恢复读的合取

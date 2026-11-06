@@ -1,0 +1,258 @@
+{
+  "timestamp": "2026-11-05T00:45:51.995509",
+  "board": "lsqsh_evb@2os",
+  "overall": "PASS",
+  "cases": [
+    {
+      "name": "case_explicit_api",
+      "result": "PASS",
+      "ctrl_done": "SUCCESSFUL",
+      "tgt_done_conflict": false,
+      "exec_conflict": false,
+      "exec_conflict_note": "",
+      "tgt_done": "SUCCESSFUL",
+      "mem_unavailable": true,
+      "mem_state": "unavailable",
+      "zero_evidence": false,
+      "evidence_gap": [],
+      "evidence_note": "",
+      "mem_note": "\u5185\u5b58\u515c\u5e95\u672a\u6267\u884c\uff08gdb/dump \u5931\u8d25\u3001\u8d85\u65f6\u6216\u7b26\u53f7\u89e3\u6790\u5931\u8d25\uff09\u3002",
+      "tests": [
+        {
+          "name": "t01_genkey_p256",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t02_genkey_p384",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t03_genkey_sm2",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t04_sign_p256",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t05_sign_p384",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t06_sign_sm2",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t07_verify_p256",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t08_verify_p384",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t09_verify_sm2",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t10_reject_unsupported_curve",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t11_sign_blen_lt_n",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t12_sign_blen_gt_n",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t13_verify_r_out_of_range",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t14_verify_s_zero",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t15_concurrent_genkey",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t16a_sign_blen_zero",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t16b_sign_blen_eq_n",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t16c_repeat_channel_init",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t16d_mbedtls_and_explicit_agree",
+          "ctrl": "PASS",
+          "tgt": "SKIP",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "SKIP"
+        },
+        {
+          "name": "t17_sign_bad_d_zero",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:finished=1, gid=3, rc=-19584, what=sign_d0; TGT:finished=1, gid=3, rc=-19584, what=sign_d0",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t19_verify_bad_q_off_curve",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:finished=1, gid=3, rc=-19968, what=verify_q_off; TGT:finished=1, gid=3, rc=-19968, what=verify_q_off",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t21_verify_wrong_keypair",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:finished=1, gid=3, rc=-19968, what=verify_wrongkey; TGT:finished=1, gid=3, rc=-19968, what=verify_wrongkey",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t80_proxy_responds_within_timeout",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t88_sign_bad_d_ge_n",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:finished=1, gid=3, rc=-19584, what=sign_d_n; TGT:finished=1, gid=3, rc=-19584, what=sign_d_n",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t89_verify_bad_q_infinity",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:finished=1, gid=3, rc=-19968, what=verify_q_inf; TGT:finished=1, gid=3, rc=-19968, what=verify_q_inf",
+          "reason": "",
+          "result": "PASS"
+        },
+        {
+          "name": "t91_err_domain",
+          "ctrl": "PASS",
+          "tgt": "PASS",
+          "src": "token",
+          "info": "CTRL:ok=1; TGT:ok=1",
+          "reason": "",
+          "result": "PASS"
+        }
+      ]
+    }
+  ]
+}

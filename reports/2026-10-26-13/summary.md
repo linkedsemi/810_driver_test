@@ -1,7 +1,0 @@
-# 810_driver_test 汇总（2026-10-26-13）
-
-| 测试 | 结果 | 通过/总数 |
-|---|---|---|
-| [perf_test_case_default](perf_test_case_default/perf_test_report.md) | PASS | 32/32 |
-
-**共 1 个测试，通过 1 个，失败 0 个**

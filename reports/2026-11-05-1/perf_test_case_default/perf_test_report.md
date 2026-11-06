@@ -1,0 +1,51 @@
+# perf_test 测试报告
+
+- 工程: perf_test
+- case: case_default
+- 日期: 2026-11-06 00:17:27
+- 板级: lsqsh_evb@2os（cpu1 / cpu2）
+- 环境: 无外部接线（TRNG/crypto/DMA 片内；mbox 走共享 SRAM）
+- 内存兜底: 不适用（本工程无内存兜底）
+- 结果: PASS (32/32)
+- 核执行标记: CTRL_EXECUTION=SUCCESSFUL, TGT_EXECUTION=SUCCESSFUL
+
+## 测试项结果
+
+| 测试项 | 结果 | 来源 | 期望 | 实测(INFO) | 失败原因 |
+|---|---|---|---|---|---|
+| cpu2::peer_alive | ✅ PASS | token | - | - |  |
+| cpu2::proxy_erase | ✅ PASS | token | - | mb_s_4k=0.0256 |  |
+| cpu2::proxy_read | ✅ PASS | token | - | mb_s_4k=0.0183 |  |
+| cpu2::proxy_write | ✅ PASS | token | - | mb_s_4k=0.0783 |  |
+| cpu2::rsa2048_modexp | ✅ PASS | token | - | ops_s=15.86 |  |
+| cpu2::sha256_otbn | ✅ PASS | token | - | mb_s_1k=4.0000, mb_s_4k=4.6074, mb_s_16k=4.8878, mb_s_32k=5.0089 |  |
+| cpu2::sha256_otbn_unaligned | ✅ PASS | token | - | mb_s_1k=4.0000, mb_s_4k=4.6022, mb_s_16k=4.8603, mb_s_32k=4.9913 |  |
+| cpu2::sha512_otbn | ✅ PASS | token | - | mb_s_1k=4.7850, mb_s_4k=6.7815, mb_s_16k=6.9838, mb_s_32k=7.3918 |  |
+| cpu2::sha512_otbn_unaligned | ✅ PASS | token | - | mb_s_1k=5.1457, mb_s_4k=6.4606, mb_s_16k=6.9779, mb_s_32k=7.4405 |  |
+| cpu2::sm3_otbn | ✅ PASS | token | - | mb_s_1k=1.7747, mb_s_4k=1.9932, mb_s_16k=2.0560, mb_s_32k=2.0646 |  |
+| cpu2::sm3_otbn_unaligned | ✅ PASS | token | - | mb_s_1k=1.7747, mb_s_4k=1.9807, mb_s_16k=2.0526, mb_s_32k=2.0614 |  |
+| cpu1::aes128_cbc | ✅ PASS | token | - | mb_s_1k=13.6533, mb_s_4k=13.9320, mb_s_16k=13.9083, mb_s_32k=13.8378 |  |
+| cpu1::aes128_ctr | ✅ PASS | token | - | mb_s_1k=15.0588, mb_s_4k=15.5741, mb_s_16k=15.5594, mb_s_32k=15.5005 |  |
+| cpu1::aes128_ecb | ✅ PASS | token | - | mb_s_1k=8.9043, mb_s_4k=8.5870, mb_s_16k=8.5422, mb_s_32k=8.4891 |  |
+| cpu1::flash1_erase | ✅ PASS | token | - | mb_s_32k=1.8633 |  |
+| cpu1::flash1_read | ✅ PASS | token | - | mb_s_32k=46.7447 |  |
+| cpu1::flash1_write | ✅ PASS | token | - | mb_s_32k=0.1225 |  |
+| cpu1::flash2_erase | ✅ PASS | token | - | mb_s_32k=0.2454 |  |
+| cpu1::flash2_read | ✅ PASS | token | - | mb_s_32k=21.9037 |  |
+| cpu1::flash2_write | ✅ PASS | token | - | mb_s_32k=0.4079 |  |
+| cpu1::mem2mem | ✅ PASS | token | - | mb_s_1k=21.7872, mb_s_4k=22.8827, mb_s_16k=23.0112 |  |
+| cpu1::roundtrip | ✅ PASS | token | - | mb_s_31k=1.2585, ops_s=19664.14 |  |
+| cpu1::sha256 | ✅ PASS | token | - | mb_s_1k=23.8140, mb_s_4k=1.6126, mb_s_16k=63.7510, mb_s_32k=69.4237 |  |
+| cpu1::sha256_unaligned | ✅ PASS | token | - | mb_s_1k=11.5056, mb_s_4k=12.4498, mb_s_16k=12.8603, mb_s_32k=12.9008 |  |
+| cpu1::sha512 | ✅ PASS | token | - | mb_s_1k=23.2727, mb_s_4k=74.4727, mb_s_16k=188.3218, mb_s_32k=244.5373 |  |
+| cpu1::sha512_unaligned | ✅ PASS | token | - | mb_s_1k=16.5161, mb_s_4k=24.2367, mb_s_16k=27.7225, mb_s_32k=28.2726 |  |
+| cpu1::sm3 | ✅ PASS | token | - | mb_s_1k=23.8140, mb_s_4k=53.1948, mb_s_16k=64.0000, mb_s_32k=69.4237 |  |
+| cpu1::sm3_unaligned | ✅ PASS | token | - | mb_s_1k=11.5056, mb_s_4k=12.4498, mb_s_16k=12.8704, mb_s_32k=12.9008 |  |
+| cpu1::sm4_ctr | ✅ PASS | token | - | mb_s_1k=13.1282, mb_s_4k=13.3856, mb_s_16k=13.3203, mb_s_32k=13.2503 |  |
+| cpu1::sm4_ecb | ✅ PASS | token | - | mb_s_1k=44.5217, mb_s_4k=46.5455, mb_s_16k=197.3976, mb_s_32k=394.7952 |  |
+| cpu1::trng0_throughput | ✅ PASS | token | - | mb_s_4k=0.0005 |  |
+| cpu1::trng1_throughput | ✅ PASS | token | - | mb_s_32k=3.4982 |  |
+
+## 汇总
+
+OVERALL: PASS

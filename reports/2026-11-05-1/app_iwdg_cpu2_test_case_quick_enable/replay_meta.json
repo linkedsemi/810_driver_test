@@ -1,0 +1,21 @@
+{
+  "archive_version": 2,
+  "case": "case_quick_enable",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 20
+    },
+    "CTRL": {
+      "port": "COM18",
+      "lines": 15
+    }
+  },
+  "timeout": 30,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\app_iwdg_cpu2_test\\tests\\run_test.py",
+  "script_md5": "a67412fa45ef5c4556015ce37d57f7ec",
+  "timestamp": "2026-11-05T22:56:27",
+  "split_from_primary": true,
+  "relay_envelope_stripped": true
+}

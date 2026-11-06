@@ -105,10 +105,10 @@ _FALLBACK_TEST_NAMES = [
 # 地址升序 = 链接序；或对照 zephyr.map 的 ._ztest_unit_test.static.* 段序。
 # 实测（2026-08-30 构建产物，case_mixed_400k_12m5；与 TGT 链接序同名序一致）：
 #   api_neg_paths, back_to_back_8x8, big_256, ccc_basic, ccc_rapid_8,
-#   daa_discovery, hot_join, ibi, ibi_neg_paths, multi_msg_4, nack_bad_addr,
+#   daa_discovery, hot_join, ibi, ibi_neg_paths, nack_bad_addr,
 #   read_32_direct, read_master_abort, read_underrun_16_32, read_underrun_8_16,
-#   setaasa, setdasa, write_100, write_8, write_delay_read_16,
-#   write_delay_read_len, write_indexed_read_16, write_read_15, write_read_16,
+#   setaasa, setdasa, write_100, write_8, write_dummy_read_16,
+#   write_dummy_read_len, write_indexed_read_16, write_read_15, write_read_16,
 #   write_read_17, write_read_1, write_read_32, write_stop_read_15,
 #   write_stop_read_16, write_stop_read_17, write_stop_read_1, write_stop_read_32
 # （数字后缀排序在裸下划线之前：write_read_1 链接序在 write_read_15/16/17 之后；
@@ -117,10 +117,10 @@ _FALLBACK_TEST_NAMES = [
 CTRL_TEST_NAMES = [
     "api_neg_paths", "back_to_back_8x8", "big_256", "ccc_basic",
     "ccc_rapid_8", "daa_discovery", "hot_join", "ibi",
-    "ibi_neg_paths", "multi_msg_4", "nack_bad_addr", "read_32_direct",
+    "ibi_neg_paths", "nack_bad_addr", "read_32_direct",
     "read_master_abort", "read_underrun_16_32", "read_underrun_8_16",
     "setaasa", "setdasa", "write_100", "write_8",
-    "write_delay_read_16", "write_delay_read_len", "write_indexed_read_16",
+    "write_dummy_read_16", "write_dummy_read_len", "write_indexed_read_16",
     "write_read_15", "write_read_16", "write_read_17", "write_read_1",
     "write_read_32", "write_stop_read_15", "write_stop_read_16",
     "write_stop_read_17", "write_stop_read_1", "write_stop_read_32",

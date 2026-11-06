@@ -1,0 +1,19 @@
+{
+  "archive_version": 1,
+  "case": "case_mbox_stress",
+  "board": "lsqsh_evb@2os",
+  "cores": {
+    "CTRL": {
+      "port": "COM18",
+      "lines": 10
+    },
+    "TGT": {
+      "port": "COM16",
+      "lines": 14
+    }
+  },
+  "timeout": 120,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\mbox_test\\tests\\run_test.py",
+  "script_md5": "e8a9516069c3d121a7628c68a3bb9064",
+  "timestamp": "2026-11-04T23:34:14"
+}

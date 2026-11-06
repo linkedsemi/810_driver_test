@@ -1,0 +1,15 @@
+{
+  "archive_version": 1,
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "cores": {
+    "TGT": {
+      "port": "COM16",
+      "lines": 88
+    }
+  },
+  "timeout": 30,
+  "script": "D:\\zephyr4_0\\810_driver_test\\projects\\i2cf_test\\tests\\run_test.py",
+  "script_md5": "003487d538b1abafb2d14bf79dc76f43",
+  "timestamp": "2026-11-05T23:08:57"
+}

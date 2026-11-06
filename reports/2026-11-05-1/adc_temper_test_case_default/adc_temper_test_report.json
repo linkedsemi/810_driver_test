@@ -1,0 +1,59 @@
+{
+  "case": "case_default",
+  "result": "PASS",
+  "execution": "SUCCESSFUL",
+  "items": [
+    {
+      "name": "test_adc_channel_setup_invalid",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_adc_full_scale_bound",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_adc_rank_guard",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_adc_raw_not_boundary",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_adc_read_returns_ok",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_adc_setup_variants",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_dual_sensor_agree",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_multiple_adc_reads",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_sampling_stability",
+      "result": "PASS",
+      "reason": ""
+    },
+    {
+      "name": "test_temperature_in_range",
+      "result": "PASS",
+      "reason": ""
+    }
+  ],
+  "zero_evidence": false,
+  "items_note": ""
+}

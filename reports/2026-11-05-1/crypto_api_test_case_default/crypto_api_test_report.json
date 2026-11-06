@@ -1,0 +1,402 @@
+{
+  "driver": "crypto_api_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM16, timeout=180s",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "timestamp": "2026-11-05T21:06:30",
+  "results": {
+    "sha224_kat": "PASS",
+    "sha224_split": "PASS",
+    "sha256_kat": "PASS",
+    "sha256_pad_boundary": "PASS",
+    "sha256_split": "PASS",
+    "sha384_kat": "PASS",
+    "sha384_split": "PASS",
+    "sha512_kat": "PASS",
+    "sha512_pad_boundary": "PASS",
+    "sha512_split": "PASS",
+    "sm3_kat": "PASS",
+    "sm3_split": "PASS",
+    "hash_bad_algo_sha256": "PASS",
+    "hash_bad_algo_sha512": "PASS",
+    "hash_bad_flags": "PASS",
+    "hash_caps_sha256": "PASS",
+    "hash_caps_sha512": "PASS",
+    "cbc": "PASS",
+    "ccm": "PASS",
+    "ctr": "PASS",
+    "ecb": "PASS",
+    "gcm": "PASS",
+    "sm4_bad_algo": "PASS",
+    "sm4_bad_flags": "PASS",
+    "sm4_bad_keylen": "PASS",
+    "sm4_bad_mode": "PASS",
+    "sm4_caps": "PASS",
+    "sm4_ccm_params": "PASS",
+    "sm4_ccm_aad_large": "PASS",
+    "sm4_ccm_aad_none": "PASS",
+    "sm4_ccm_aad_tamper": "PASS",
+    "sm4_ccm_aad_unaligned": "PASS",
+    "sm4_ccm_noncelen_sweep": "PASS",
+    "sm4_ccm_tag_tamper": "PASS",
+    "sm4_ccm_taglen_sweep": "PASS",
+    "sm4_ctr_ctrlen_sweep": "PASS",
+    "sm4_ctr_len_sweep": "PASS",
+    "sm4_ecb_len_sweep": "PASS",
+    "sm4_ecb_zero_len": "PASS",
+    "sm4_gcm_aad_large": "PASS",
+    "sm4_gcm_aad_none": "PASS",
+    "sm4_gcm_aad_tamper": "PASS",
+    "sm4_gcm_tag_tamper": "PASS",
+    "sm4_stdkey_ecb": "PASS"
+  },
+  "infos": {
+    "sha224_kat": {
+      "algo": "sha224",
+      "bytes": "3",
+      "kat": "1",
+      "ret": "0",
+      "us": "9"
+    },
+    "sha224_split": {
+      "algo": "sha224",
+      "bytes": "56",
+      "segments": "3",
+      "split_eq_kat": "1",
+      "ret": "0",
+      "us": "14"
+    },
+    "sha256_kat": {
+      "algo": "sha256",
+      "bytes": "3",
+      "kat": "1",
+      "ret": "0",
+      "us": "9"
+    },
+    "sha256_pad_boundary": {
+      "algo": "sha256",
+      "lens": "0_55_56_64",
+      "len0": "1",
+      "len55": "1",
+      "len56": "1",
+      "len64": "1"
+    },
+    "sha256_split": {
+      "algo": "sha256",
+      "bytes": "56",
+      "segments": "3",
+      "split_eq_kat": "1",
+      "ret": "0",
+      "us": "14"
+    },
+    "sha384_kat": {
+      "algo": "sha384",
+      "bytes": "3",
+      "kat": "1",
+      "ret": "0",
+      "us": "24"
+    },
+    "sha384_split": {
+      "algo": "sha384",
+      "bytes": "112",
+      "segments": "3",
+      "split_eq_kat": "1",
+      "ret": "0",
+      "us": "40"
+    },
+    "sha512_kat": {
+      "algo": "sha512",
+      "bytes": "3",
+      "kat": "1",
+      "ret": "0",
+      "us": "23"
+    },
+    "sha512_pad_boundary": {
+      "algo": "sha512",
+      "lens": "0_111_112_128",
+      "len0": "1",
+      "len111": "1",
+      "len112": "1",
+      "len128": "1"
+    },
+    "sha512_split": {
+      "algo": "sha512",
+      "bytes": "112",
+      "segments": "3",
+      "split_eq_kat": "1",
+      "ret": "0",
+      "us": "40"
+    },
+    "sm3_kat": {
+      "algo": "sm3",
+      "bytes": "3",
+      "kat": "1",
+      "ret": "0",
+      "us": "9"
+    },
+    "sm3_split": {
+      "algo": "sm3",
+      "bytes": "56",
+      "segments": "3",
+      "split_eq_kat": "1",
+      "ret": "0",
+      "us": "14"
+    },
+    "hash_bad_algo_sha256": {
+      "sha384": "-134",
+      "sha512": "-134"
+    },
+    "hash_bad_algo_sha512": {
+      "sha224": "-134",
+      "sha256": "-134",
+      "sm3": "-134"
+    },
+    "hash_bad_flags": {
+      "flags": "async|sep_io",
+      "ret": "-134",
+      "ok": "1"
+    },
+    "hash_caps_sha256": {
+      "ready": "1",
+      "caps": "0x32",
+      "raw_key": "1",
+      "sync": "1",
+      "sep_io": "1"
+    },
+    "hash_caps_sha512": {
+      "ready": "1",
+      "caps": "0x32",
+      "raw_key": "1",
+      "sync": "1",
+      "sep_io": "1"
+    },
+    "cbc": {
+      "algo": "sm4-cbc",
+      "bytes": "64",
+      "kat": "1",
+      "roundtrip": "1",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "us": "78"
+    },
+    "ccm": {
+      "algo": "sm4-ccm",
+      "bytes": "64",
+      "aad": "8",
+      "kat": "1",
+      "tag": "1",
+      "roundtrip": "1",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "us": "139"
+    },
+    "ctr": {
+      "algo": "sm4-ctr",
+      "bytes": "64",
+      "ctr_len": "32",
+      "kat": "1",
+      "roundtrip": "1",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "us": "75"
+    },
+    "ecb": {
+      "algo": "sm4-ecb",
+      "bytes": "64",
+      "kat": "1",
+      "roundtrip": "1",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "us": "72"
+    },
+    "gcm": {
+      "algo": "sm4-gcm",
+      "bytes": "64",
+      "aad": "8",
+      "kat": "1",
+      "tag": "1",
+      "roundtrip": "1",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "us": "174"
+    },
+    "sm4_bad_algo": {
+      "algo": "aes",
+      "ret": "-134",
+      "ok": "1"
+    },
+    "sm4_bad_flags": {
+      "flags": "0x52",
+      "ret": "-134",
+      "ok": "1"
+    },
+    "sm4_bad_keylen": {
+      "keylen": "24",
+      "ret": "-134",
+      "ok": "1"
+    },
+    "sm4_bad_mode": {
+      "mode": "0",
+      "ret": "-134",
+      "ok": "1"
+    },
+    "sm4_caps": {
+      "ready": "1",
+      "caps": "0x132",
+      "raw_key": "1",
+      "sync": "1",
+      "sep_io": "1"
+    },
+    "sm4_ccm_params": {
+      "base": "0",
+      "null_out": "-22",
+      "null_in": "-22",
+      "null_ad": "-22",
+      "small_out": "-22",
+      "tag3": "-22",
+      "tag5": "-22",
+      "tag18": "-22"
+    },
+    "sm4_ccm_aad_large": {
+      "mode": "ccm",
+      "aad_len": "64",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_aad_none": {
+      "mode": "ccm",
+      "aad_len": "0",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_aad_tamper": {
+      "mode": "ccm",
+      "tamper": "aad",
+      "control_ret": "0",
+      "bad_ret": "-77"
+    },
+    "sm4_ccm_aad_unaligned": {
+      "mode": "ccm",
+      "aad_len": "13",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_noncelen_sweep": {
+      "nonce_len": "13",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ccm_tag_tamper": {
+      "mode": "ccm",
+      "tamper": "tag",
+      "control_ret": "0",
+      "bad_ret": "-77"
+    },
+    "sm4_ccm_taglen_sweep": {
+      "tag_len": "16",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ctr_ctrlen_sweep": {
+      "ctr_len": "128",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_ctr_len_sweep": {
+      "len": "4081",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "out_len": "4081"
+    },
+    "sm4_ecb_len_sweep": {
+      "len": "4080",
+      "enc_ret": "0",
+      "dec_ret": "0",
+      "out_len": "4080"
+    },
+    "sm4_ecb_zero_len": {
+      "ret": "0",
+      "out_len": "0"
+    },
+    "sm4_gcm_aad_large": {
+      "mode": "gcm",
+      "aad_len": "64",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_gcm_aad_none": {
+      "mode": "gcm",
+      "aad_len": "0",
+      "ret": "0",
+      "roundtrip": "1"
+    },
+    "sm4_gcm_aad_tamper": {
+      "mode": "gcm",
+      "tamper": "aad",
+      "control_ret": "0",
+      "bad_ret": "-77"
+    },
+    "sm4_gcm_tag_tamper": {
+      "mode": "gcm",
+      "tamper": "tag",
+      "control_ret": "0",
+      "bad_ret": "-77"
+    },
+    "sm4_stdkey_ecb": {
+      "ret": "0",
+      "ct": "681edf34d206965e86b3e94f536e4246"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "sha224_kat": "src=token",
+    "sha224_split": "src=token",
+    "sha256_kat": "src=token",
+    "sha256_pad_boundary": "src=token",
+    "sha256_split": "src=token",
+    "sha384_kat": "src=token",
+    "sha384_split": "src=token",
+    "sha512_kat": "src=token",
+    "sha512_pad_boundary": "src=token",
+    "sha512_split": "src=token",
+    "sm3_kat": "src=token",
+    "sm3_split": "src=token",
+    "hash_bad_algo_sha256": "src=token",
+    "hash_bad_algo_sha512": "src=token",
+    "hash_bad_flags": "src=token",
+    "hash_caps_sha256": "src=token",
+    "hash_caps_sha512": "src=token",
+    "cbc": "src=token",
+    "ccm": "src=token",
+    "ctr": "src=token",
+    "ecb": "src=token",
+    "gcm": "src=token",
+    "sm4_bad_algo": "src=token",
+    "sm4_bad_flags": "src=token",
+    "sm4_bad_keylen": "src=token",
+    "sm4_bad_mode": "src=token",
+    "sm4_caps": "src=token",
+    "sm4_ccm_params": "src=token",
+    "sm4_ccm_aad_large": "src=token",
+    "sm4_ccm_aad_none": "src=token",
+    "sm4_ccm_aad_tamper": "src=token",
+    "sm4_ccm_aad_unaligned": "src=token",
+    "sm4_ccm_noncelen_sweep": "src=token",
+    "sm4_ccm_tag_tamper": "src=token",
+    "sm4_ccm_taglen_sweep": "src=token",
+    "sm4_ctr_ctrlen_sweep": "src=token",
+    "sm4_ctr_len_sweep": "src=token",
+    "sm4_ecb_len_sweep": "src=token",
+    "sm4_ecb_zero_len": "src=token",
+    "sm4_gcm_aad_large": "src=token",
+    "sm4_gcm_aad_none": "src=token",
+    "sm4_gcm_aad_tamper": "src=token",
+    "sm4_gcm_tag_tamper": "src=token",
+    "sm4_stdkey_ecb": "src=token"
+  }
+}

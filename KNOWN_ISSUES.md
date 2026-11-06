@@ -775,6 +775,25 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   **修前后全文重放对比**：修前 `重放 38（半路崩）` → 修后 `完成：重放 51 / 与归档逐字节相同 12 / 跳过 0`。
 - 关联：全量重放的判定中性证据见 `SPEC_REFERENCE.md` §6.4.10；重放入口/用法见 `qsh-test-compare` §4。
 
+**161. 脚本里 `subprocess.run(["bash", …])` 在 Windows 上解析到 WSL bash ⇒ `west: command not found`、`rc=127`，脚本"什么都没跑"**（G-SUBPROC-BASH-RESOLVES-WSL，2026-11-05 实测）
+- **现象**：Python 编排脚本用裸名 `"bash"` 调 `test.sh`，立即 `rc=127`，stderr 只有
+  `west: command not found`；看起来像"工程构建失败"，实则**命令被送进了另一个解释器**。
+- **根因**：Windows 上 `CreateProcess` **先搜 System32 再搜 PATH** ⇒ 裸 `"bash"` 命中
+  `C:\Windows\System32\bash.exe`（WSL），cwd 被映射成 `/mnt/d/...`，WSL 里没有 west 工具链。
+  `common/acquire.py::find_git_bash()` 的 docstring 已写明该机制，三种实现（`fixed` / `filtered` /
+  `env_first`）只有后两者过滤 `system32` / `windowsapps`。
+- **判据（双向）**：① `rc=127` **且** stderr 含 `west: command not found` ⇒ 命中；
+  ② 让该解释器自报 cwd（`bash -c 'pwd'`）：**WSL 给 `/mnt/d/...`，Git Bash 给 `/d/...`**
+  （本机实测：裸 `bash` → `/mnt/d/zephyr4_0`，`find_git_bash("filtered")` → `/d/zephyr4_0`）
+  ⇒ 看 `/mnt/` 前缀即定性。**反例（防误报）**：rc 正常且 cwd 是 `/d/...`；
+  `west: command not found` **单独**不足 —— 工具链真缺 west 也是同一句，必须配 `/mnt/` 形路径一起判。
+  注意别拿"`pwd` 是不是 `D:/...`"当判据：Git Bash 的 `pwd` 本身也是 `/d/...` 形（要 `pwd -W` 才给 `D:/`）。
+- **修法**：脚本内调 `test.sh` 一律用 `common/acquire.py::find_git_bash("filtered")` 返回的**绝对路径**
+  （与烧录/GDB 同一解析点）；不要写裸 `"bash"`，也不要脚本各自 `shutil.which("bash")`
+  （同样会把 System32 的 WSL 排前面）。存量 `run_test.py` 已是 `filtered`（i2c_pure / i3c_dualcore /
+  i3c_i2c_switch / otbn_delegation / perf_test），新脚本照抄。
+- **落点**：`qsh-test-run` §4.1 · `debug-knowledge` common 域 `subprocess-bash-resolves-wsl.md`。
+
 ---
 
 ## 环境与并发
@@ -791,6 +810,13 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   逐字节相同、bin 大小相同 339968 / 262400 B）md5 不同，因 `zephyr/` 在 `crypto_clocks` 分支上被并发改
   （HEAD `9218aad5988` + 9 个未提交修改、62 文件 mtime 晚于上轮构建）。判据/纪律见 `qsh-test-run` §1、
   `qsh-test-compare` §5 第 21 条；证据 `integrated/runs/2026-11-03-prot-baseline/`。
+- **用例改名/删除未同步解析表 ⇒ 假 MISSING**（2026-11-05，G-ITEST-CASE-RENAME-MIDRUN）：跑批途中另一
+  会话把 `write_delay_read_16/len` 整体改名 `write_dummy_read_16/len`（源 mtime 11:20:57，晚于 round1
+  产物 11:17:44、早于 round2 产物 11:22:49）⇒ round2 编入新名，而 `run_test.py::TEST_NAMES` 仍旧名，
+  旧名判 **MISSING**、固件实际 **34/35 PASS**。三条判据 = 源 mtime 晚于首轮产物 + `SUMMARY` 名单与
+  `TEST_NAMES` 按名取差集非空 + "34/35 却出现 2 项 MISSING"；处置 = 改名/删除必须在**同一批**更新
+  `TEST_NAMES` 与 `COVERAGE.md`，复测前按名核对。详见 **#167**、`qsh-test-run` §1 第 25 条、
+  `qsh-test-compare` §2。
 
 **32. i3c WDR 时序项间歇性 critical 异常**
 约 1 case/轮，复跑即恢复。基线容忍 ≤1 case；驱动侧 `scl-overhead-ns` 工作流跟进。
@@ -823,6 +849,10 @@ dbg_run.py / run_test.py / test_common.sh 用 `-ex`，故该无效行被静默�
   （判据见 `qsh-test-run` §1 G-FIX-NO-REPRO-NOT-PROOF）。要证明错误分支被覆盖，需驱动侧提供
   可在不改代码前提下观测的信号（该日志之外的状态计数）。同一镜像上 16 B 边界 flaky 仍在
   （`write_stop_read_32` / `big_256`），与本修复无关。
+  ③ **2026-11-05 更新：整核焊死的根因已定位并修复（见 #166）** —— 错误后留下"RX FIFO 空 + `RXFNE`
+  电平中断仍置位"，ISR 无法清源 ⇒ IRQ 反复重派饿死调度/tick/看门狗。修复 = 有界排空
+  `LS_I3C_RX_DRAIN_MAX=64` + `ls_i3c_recover_rx_stuck()`；修复后 fresh boot 单次 `itest run all`
+  73.2 s 无挂死。**上文②的"只能写本轮未复现"仍是判据纪律**，本次验证边界见 #166。
 
 **37. 共享树 dtsi 节点 label 改名 + 构建缓存掩盖**（2026-09-04）
 共享树 SoC dtsi 节点 label 改名（如 lsqsh GPIO `gpio0`→`gpioa`）后，810 全部引用旧 label 的
@@ -3072,6 +3102,15 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   **影响面**：`CAP_RAW_KEY` 是**加法位**，`hash_begin_session` 不检查 key 位，树内无其它消费者对这两颗
   hash 的 caps 做断言。⚠️ **`mbedtls_test` 本轮未重跑** —— 该消费者的回归未覆盖，下次跑 mbedtls 时按本条
   判据（扫 `ZEPHYR FATAL ERROR 4` + `mcause 11`、不看 PASS 行）复核，不要据本轮结果宣称其无影响。
+- **⚠️ 2026-11-05 复发：该修复在 11-04 的 git 分支操作中再次丢失**（与 `uncommitted-fixes-lost-on-branch-ops`
+  同一机制）。`zephyr` reflog：11-04 20:02 切到 `i3c_clock_source`、21:25 `reset HEAD~` ⇒ 工作区未提交的
+  `CAP_RAW_KEY` 改动被丢弃 ⇒ 11-04 21:59 / 11-05 04:49 两次全量回归重编后 `hash_caps_sha256/sha512`
+  均 `ASSERTION FAIL @ crypto.h:120` → `ZEPHYR FATAL ERROR 4`（报告判 FAIL，非断言失败）。
+  **2026-11-05 16:40 在分支 `crypto_hash` 重新贴上该改动**（仍未提交），16:43 复测
+  `crypto_api_test_case_default` **44/44 PASS**、`caps=0x32`、日志 `ASSERTION FAIL` 0 / `ZEPHYR FATAL` 0；
+  结果已覆盖 `reports/2026-11-05-1/crypto_api_test_case_default/`，summary 由 68/69 转 **69/69 PASS**。
+  **未根治**：改动仍只存在于工作区，任何 `checkout`/`reset`/分支切换都可能第三次丢失 —— 要么提交，
+  要么在 `810_driver_test` 侧加一条"驱动 caps 缺失"的回归护栏（当前 `raw_key` 显式断言已能在重跑时抓到）。
 
 ---
 
@@ -3121,3 +3160,167 @@ gdb `load` 仅 **4s**（写包提速已生效）。
   不跑自己那一侧的设计项，不是缺证据）。双核须同批重建同烧（与 #122 同一跨核耦合）。
 - **落点**：`qsh-driver-review` §1.6 · `qsh-test-compare` §2 · `debug-knowledge` common 域
   `negative-return-code-domain.md`。
+
+## 双核 XIP 启动 / 运行（2026-11-05 登记）
+
+**162. 两核都 XIP 时不能拿 cpu2 的 `*_bram_xip_*.bin` 当从核镜像 —— 装载 stub 的 `exe_addr` 落在 cpu1 的 XIP SRAM 窗口内，会把 cpu1 自己的 RAM 覆盖掉**（G-I3C-DUALXIP-BRAM-STUB-SRAM-CLASH，2026-11-05 实测）
+- **形貌**：cpu2 用带 image header 的产物（`zephyr_flash_bram_xip_*.bin`，stub `exe_addr = 0x10124000`）
+  时，**TGT 只打出 55 行 bootrom 输出、`RAW CTRL (0 lines)`**（控制器一行都没有），cpu1 的 PC 停在
+  `_Fault(0x080183ce)`。
+- **根因**：cpu1 的 `boot_cpu2()` 把 stub **拷到 `exe_addr`**；`0x10124000` 落在 cpu1 XIP 的 SRAM 区
+  （`0x10100000–0x10140000`）**之内** ⇒ 拷进去的瞬间覆盖 cpu1 自己的代码/数据 ⇒ 控制器崩、
+  从核根本没有被引导起来。所以"TGT 只有 bootrom"和"CTRL 全静默"是**同一个原因的两面**，不是两个故障。
+- **判据（双向）**：① `RAW CTRL (0 lines)` + TGT 只有 bootrom 前缀 + cpu1 `$pc` 落在 `_Fault`
+  ⇒ 命中；② 读 cpu2 产物的 image header（stub `exe_addr`）与 cpu1 XIP 的 SRAM 地址区间做**区间相交**检查：
+  相交即命中（正例 `0x10124000 ∈ [0x10100000, 0x10140000]`）。**反例（防误报）**：SRAM 变体
+  （`lsqsh_evb@2os/lsqsh/cpu2`，入口 `0x10000000`）同一套引导流程正常 —— 该地址在 cpu1 XIP 窗口之外。
+- **修法（不改源码）**：cpu2 改用**裸 `zephyr.bin`** 烧到 `0x08100000` **就地 XIP**（不走 image header
+  装载），cpu1 侧关 `CONFIG_CPU2_IMAGE_HEADER` 并把 `CPU2_BOOT_ADDR` 设成 `0x8100000`。
+  改后 cpu1 打 `boot_cpu2: address: 0x8100000`、cpu2 正常出 token。
+- **通法**：任何"从核镜像 + 装载头（`exe_addr`）"的组合，先核**该地址是否与本核的运行区间相交**；
+  相交就不是配置错，而是**自伤**（loader 写自己）。烧录侧入口见 `qsh-test-run`
+  `ref-xip-flash.md` §双 XIP。
+
+**163. `lsqsh_evb@2os_xip/lsqsh/cpu2` 变体不定义 `sram_ro` label ⇒ 工程 `cpu2_mem_layout.overlay` 的 `&sram_ro` 在 DTC 阶段报错**（G-CPU2-XIP-BOARD-NO-SRAM_RO，2026-11-05 实测）
+- **现象**：构建在 **DT 生成阶段**失败，报 `undefined node label 'sram_ro'`，**指向
+  `common/cpu2_mem_layout.overlay:16`** —— 不是 overlay 文件缺失，也不是语法错。
+- **根因**：该 overlay 由工程 `CMakeLists.txt` 注入 `EXTRA_DTC_OVERLAY_FILE`，里面引用 `&sram_ro`；
+  `2os_xip` 的 **cpu2** 变体没有定义这个 label（与 `qsh-test-run` §2 里 cpu1 RAM 变体缺 label 是**同族、方向相反**的
+  两个组合：那边是 RAM cpu1，这边是 XIP cpu2）。
+- **判据（双向）**：① 报错文案是 `undefined node label '<label>'` 且**指向 overlay 行号**
+  ⇒ 板级/变体缺 label；对照另一形态：`No such file or directory`（模块未注册，见 #156）与
+  `failed to preprocess devicetree files` 是**不同**故障，别混判。② 同一条 overlay 换成
+  `lsqsh_evb@2os/lsqsh/cpu2`（RAM 变体）能构建通过 ⇒ 排除 overlay 自身语法问题，锁定变体。
+- **【实测】双向核验（板级源码直读）**：`lsqsh_evb_cpu2_2os.overlay:19` **有**
+  `sram_ro: memory@10000000 { … }`；`lsqsh_evb_cpu2_2os_xip.overlay` 全文**无** `sram_ro` 也**无**
+  `memory@` ⇒ 同一 overlay 在 RAM 变体过、在 XIP 变体挂，判据两侧都成立。
+- **临时处置（不改工程/板级源码）**：在该 case 的 `controller.overlay`（`DTC_OVERLAY_FILE`，
+  **先于** `EXTRA_DTC_OVERLAY_FILE` 处理）里加占位节点 `/ { sram_ro: sram-ro@10000000 { }; };`
+  （地址与 RAM 变体的 `memory@10000000` 一致），让后续 overlay 的 `&sram_ro` 有处可指。
+- **落点**：`qsh-test-run` §2（构建期 DTC 归因）。
+
+**164. 双 XIP（cpu1+cpu2 都 flash 就地执行）在 2–4 MHz 高概率在 `big_256` 中途挂死 —— 形貌是 CTRL 日志固定停在 34 行**（G-B3-DOUBLEXIP-BIG256-HANG，2026-11-05 实测；**根因未定位**）
+- **现象**：CTRL 串口**固定停在 34 行**（最后一条是 `big_256` 的 `IBI ok`，其后无 `PASS -` /
+  无 `TESTSUITE … succeeded` / 无 `SUMMARY:` / 无 `PROJECT EXECUTION`）。频率相关性：3M **3/3**、
+  4M 2/3、2M 2/3 挂；同镜像 500k–100k 不挂（通过 31–32/35）。
+- **判据（双向）**：① 原始行数**明显少于同 case 的其它轮次**且末行停在**项内**
+  （`RAW CTRL (34 lines)`，不是结尾套件行）；② 三种收尾标记（`TESTSUITE … succeeded` /
+  `SUMMARY:` / `PROJECT EXECUTION`）**全无**；③ 同镜像换频点/换轮次能出齐 ⇒ 非"结构上无标记"。
+  三条同时成立 ⇒ 判**中途挂死**。**反例一（防误报）**：窗口到点但全项都已拿到确定结果
+  （`TRUNCATED_AFTER_ALL_ITEMS`）是 PASS，不是挂死；**反例二**：`test_main` 不返回的核
+  （如 perf 的 cpu2）**设计上永无** `PROJECT EXECUTION`，缺标记不得当挂死。
+- **判读纪律**：少行 **≠** 少失败 —— 挂死轮的"失败项少"是**证据没采完**，不能写成"该频点较稳定"；
+  同理不得把 34 行的截断日志当"失败集合变小"去做频率对比。见 `qsh-test-compare` §2。
+- **状态**：**根因未定位**（不是频率"不稳"：同形貌在 3 个频点可重复）。已排除的解释不要重复花时间：
+  两地镜像都能正常启动（raw 方式）、低频同镜像不挂。定位方向：挂死时读 cpu1/cpu2 的 `$pc`
+  与 `big_256` 等待点（**与 #153 形貌 B 的 IBI 长度失步不是同一现象，勿并案**）。
+- **落点**：`qsh-test-compare` §2（挂死形貌判据）· 烧录/启动侧 `qsh-test-run` `ref-xip-flash.md`。
+
+**165. `i3c_dualcore_test` 的 `multi_msg_4`（4 段 repeated-START）偶发 ANACK —— 多次 restart 暂不在覆盖范围，测试已屏蔽**（2026-11-05 定位；`I3C_TEST_EN_MULTI_MSG_4=0`）
+- **形貌**：控制器 `ret=-EIO`、`n=[1,8,1,0]`（前 3 段 W1→R8→W1 完成，第 4 段第二次读的**地址相位**被 NACK）；清标志前的 ISR 快照 `SER=0x100 (ANACK)`，DNACK/PERR/COVR/DOVR 全 0。
+- **target 侧**：两段写都收到（写匹配计数 3 = 启动帧 + 2 段写），TX FIFO 在写匹配前后均为满（16/16），target 自身套件判 PASS
+  ⇒ **不是数据 NACK、不是 FIFO 空**，是目标来不及应答读地址相位。
+- **机制**：多段帧里第 3 段只有 1 字节写，到第 4 段 repeated START 仅隔约 0.6µs；target 的写匹配 ISR（回调 + 预填调用 + 状态切换 + 排空）未完成时新读地址已到达，
+  目标硬件不应答该地址 → 控制器 ANACK。对写匹配路径的延迟极度敏感（仅增两次 MMIO 读，失败率 43%→91%）。
+- **单点改动无法消除**（同插桩压力基线 91%）：提前清 MATCHED 65%、FIFO 满跳过预填 70%、
+  新请求到达时不清 MATCHED 60%（p=0.028 显著但仍偶发，且引入 DOVR）、去掉 100µs 首字节等待 85%；
+  只有“整段跳过写分支”到 8%（代价：RX 字节滞留 → DOVR）。⇒ 当前框架下没有零成本小修。
+- **处置（用户裁定，2026-11-05）**：多次 restart 不在测试覆盖范围 → 屏蔽 `multi_msg_4`：
+  `I3C_TEST_EN_MULTI_MSG_4=0`，target 侧 `ZTEST_SUITE`/`validate`/`TGT_ZTEST` 同步守卫，
+  `TEST_NAMES` 34 项，`COVERAGE.md` 标“已屏蔽”。**单次 restart（write → restart → read）由
+  `write_read_*` / `write_stop_read_*` 覆盖**，已验证稳定通过（34/34）。
+- **恢复条件**：需要覆盖 4 段帧时改回宏=1，并优先按“方向由 STREQRD/STREQWR 判定、
+  TXSEND 只做续发、MATCHED 不清状态只关中断”的模型重构 target ISR（评估为中改动，需 34 项 × 20 轮回归）。
+
+---
+
+**166. i3c 传输错误后留下"空 RX FIFO + 置位 RXFNE 电平中断"⇒ ISR 清不掉、IRQ 反复重派把整核焊死；已用 error-path 有界排空 + 控制器恢复修复并上板验证**（G-ITEST-DUMMY-READ-LEN-WELDS-CPU1，2026-11-05 定位/修复/验证）
+
+- **形貌**：整合镜像（上游 i3c 改名合并进 `itest_all` 后，cpu1 `05b800b0…` / cpu2 `b1446f7a…`）上
+  `itest run all` **3/3 独立整片重烧**都焊死 cpu1 在 `write_dummy_read_len`：末行
+  `CTRL_STEP: IBI ok @…`，无断言、无 `E sent`、静默 >10 min；前 22/34 项全 PASS，
+  `write_dummy_read_16` PASS 且 `dummy_max_ok=128`。同代码在 standalone `projects/i3c_dualcore_test`
+  34/34 PASS ⇒ 触发与整合镜像的 cpu1 XIP 布局/时序相关。
+- **现场（GDB，原取证）**：PC = `__soc_handle_all_irqs` 的 `csr_write(mcause, …)`；`mcause` 低字节
+  **0x74=116=i3c5**（DTS `interrupts=<0x74 6>`），CLIC IP[116] 置位。I3C5 寄存器：
+  `EVR=0x1023`（**RXFNEF**+BUSY+TXFEF+CFEF）、`IER=0x00088e3c`（`RXFNEIE`）、
+  `SDATACTRL=0x80000030`（**RXEMPTY=1 / RXCOUNT=0**）、`SR=0x01000013`（XDCNT=19）；
+  驱动 `ls_i3c_data_0.msg_state=LS_I3C_MSG_ERR`、`curr_msg.xfer_msg_idx=1 cur_num_xfer=0`
+  ⇒ 传输错误后留下**空的 RX FIFO + 置位的 RXFNE 电平中断**，ISR 没有数据可读、清不掉源，
+  `__soc_handle_all_irqs` 每次返回就再次派发 IRQ116（每次调用间关中断）⇒ 调度/tick/看门狗全部饿死。
+- **判据**：串口静默且末行停在 `IBI ok`（或任意"项内进度行"）⇒ **第一动作读 PC/mcause + 该外设
+  EVR/IER/SDATACTRL**；`mcause` 是中断号、标志置位、FIFO 计数 0 三件齐 ⇒ 本类，别按串口/固件挂死排查。
+  反例：PC 在 `arch_cpu_idle` 且能前进 ⇒ 不是中断风暴（#153 形貌 A）；`mcause` bit31=0 ⇒ 按异常查。
+- **根因/修复（驱动 `zephyr/drivers/i3c/i3c_linkedsemi.c`）**：所有 RXFNE 排空循环加上界
+  `LS_I3C_RX_DRAIN_MAX=64`；排空后标志仍置位 ⇒ `ls_i3c_recover_rx_stuck()` 清 `MASTER_EN` 再置 1
+  （与 `xfer_reset()` 在 BUSY 不清时的恢复方式一致）。错误/无主态（`LS_I3C_MSG_ERR`/IDLE/INVAL）也走
+  同一有界排空 + 恢复；**恢复路径不打日志**（日志/串口正是被饿死的路径）。
+- **上板验证（2026-11-05 18:06–18:14，两核 `-p always`）**：cpu1
+  `b53a0622f15b5815edef307291dfd531` / cpu2 `1c22ac16ee532b427c3ac5accf76ab7e`
+  （335872 / 258304 B，烧前=烧后逐字节相同）；fresh boot 单次 `itest run all` **73.2 s 无挂死**：
+  `write_dummy_read_16` PASS（`dummy_max_ok=128`）、`write_dummy_read_len` PASS（cpu1 + cpu2，
+  `max_len_ok=64`）、i3c 34/34、cpu1 **129/0**、cpu2 **119/4**（i2cf 4 条与基线同名）、
+  BOTH CORES **282 pass / 4 fail**。证据 `integrated/runs/2026-11-05-i3c-fix/`
+  （`all_events.log` 记 73.2 s、`all_summary_cpu1.log`、`all_{run_all,raw}_cpu{1,2}.log`、
+  `all_bin_md5_{pre,post}flash.txt`）。
+- **边界**：修复前该形貌 **3/3 必现**，修复后单次整套通过 ⇒ 判为修复生效；若要坐实
+  `ls_i3c_recover_rx_stuck()` 分支**确实执行过**，需读状态计数/新增日志（本次证据未给出该计数）
+  —— 只有"不复现"时一律按 `qsh-test-run` §1 G-FIX-NO-REPRO-NOT-PROOF 写"本轮未复现"。
+- **落点**：`qsh-test-run` §5 `ref-run-traps.md` · `qsh-debug` §6（现场读法）·
+  `qsh-driver-review` §1.3（电平中断源可清除性检查）· `debug-knowledge` mcu `level-irq-empty-fifo-storm.md`。
+
+**167. 用例整体改名/删除后解析表未同步 ⇒ 固件实际 34/35 却报 2 项 MISSING（假"证据缺失"）**（G-ITEST-CASE-RENAME-MIDRUN，2026-11-05 实测）
+
+- **形貌**：跑批途中另一会话把 `write_delay_read_16/len` → `write_dummy_read_16/len` 整体重写
+  （源 mtime 11:20:57，晚于 round1 产物 11:17:44、早于 round2 产物 11:22:49）⇒ round2 编入新名，
+  而工程 `run_test.py::TEST_NAMES` 仍是旧名：串口 `SUMMARY` 有新名，解析侧把旧名判 **MISSING**
+  （固件实际 **34/35 PASS**）。
+- **判据**（三条）：① 被测源 mtime 晚于首轮产物 mtime；② `serial_CTRL.log` 的 `SUMMARY` 名单与
+  `TEST_NAMES` **按名取差集**非空；③ 固件结果 34/35 却出现 2 项 MISSING ⇒ **先怀疑改名，不是采集丢失**。
+- **处置**：改名/删除用例必须**同一批**更新 `TEST_NAMES` 与 `COVERAGE.md`；复测前按名核对源与解析表。
+  补采集/重跑对名字不对的情况无效（仍 MISSING）。
+- **落点**：`qsh-test-run` §1 第 25 条（G-CONCURRENT-SOURCE-EDIT-MIDRUN 姊妹条）·
+  `qsh-test-compare` §2 · `KNOWN_ISSUES` #30（并发改源同族）。
+
+**168. i3c 错误/中断注入的两条负结果：外壳关中断被驱动每笔 transfer 重开；ISR 内长 busy-wait 不触发 target 读超时**（G-I3C-RXOFF-INJECTION / G-I3C-ISR-WAIT-NO-TARGET-TIMEOUT，2026-11-04 实测；**探针现已从源码移除，勿重复跑**）
+
+- **RXOFF 注入**：驱动每笔 transfer 都会重开 RXFNE ⇒ 纯 shell "关中断"无效；须在 `ls_i3c_transfer`
+  两处按 `probe_rxoff_en` 门控。实测 `probe_rxoff 1` ⇒ `read_32_direct` **确定性 FAIL（3/3，`ret=-5`、
+  `actual=0`，suite 35→25 PASS）**，`0` ⇒ PASS。**但控制器约 6 ms/次就中止**（疑似 RX 溢出/ERR），
+  target 侧无 timeout/SPAR 日志，PA05 是否真实脉冲需示波器 ⇒ 注入本身改变了被测机制，不能用它证
+  "正常路径对 RXOFF 无风险"。
+- **ISR 长等待**：50 MHz、`probe_at=16`（FIFO 满边界）RX ISR 内 busy-wait 5..120 µs：
+  `read_32_direct` **25/25 PASS**、`hits=1`（注入确已命中），未触发 target 读超时；`probe_at=20`
+  同结论。加测 **2 ms / 5 ms 仍 PASS**，且 ztest 时长 **0.032→0.037 s** 证明 5 ms 等待确实发生
+  ⇒ 至少到 5 ms，"ISR 内等待"不是 target 读超时的触发因子。
+- **旁证/边界**：`multi_msg_short_read` / `multi_msg_4` 在 N=0 也 flaky，与本扫描无关（勿并案）；
+  N=80 连续 5–7 轮后**整组崩**（`ready IBI timeout`，pass=1/fail=35），`kernel reboot cold` 恢复
+  ⇒ 注入压力本身会破坏共享控制器状态，重复轮数要有上界并另取基线。
+- **落点**：`debug-knowledge` mcu `isr-probe-injection-ownership-and-negative-proof.md`（判据模板）·
+  方法 `embedded-debug` §3.1/§3.4/§4。
+
+## 回归构建口径（2026-11-06 登记）
+
+**169. 回归构建的 `-p` 分两条路：`test.sh` 入口硬编码 `-p always`（pristine），`acquire.west_build` 才用 `build_progress`（默认 `auto`）—— 不要把「优先 `-p auto`」当成回归行为**（G-RUNALL-BUILD-PRISTINE-ALWAYS，2026-11-06 源码 + 真实日志核对；**只做口径维护，未改代码**）
+
+- **机制**：`regression/run_all.py` 只按 `cases.yaml` 路由工程，构建由各 `projects/<p>/tests/run_test.py` 决定，两条路：
+  ① `acquire.single_cap()` / `build_via_test_sh_raise()` / `acquire.iwdg()` / `acquire.mbox()` → `test.sh`
+  → `scripts/test_common.sh::build_test`（双核，`:181`；`west build -p always` 在 `:222`）/
+  `build_single_test`（单核，`:493`；`:532`）。**`-p always` 写死**，无 env / 参数可覆盖
+  （`EXTRA_CMAKE_ARGS` 与第 6 参只拼 `-D<var>=<val>`）。
+  ② `acquire.ports_dict_case()` → `acquire.west_build()`（`common/acquire.py:690`）→ `-p <spec.build_progress>`，
+  默认 `auto`（`acquire.py:191`），工程可显式设 `always`（crypto / mbedtls / otbn* / rtc* / trng 一类即为 `always`），
+  i2cf / spi / spid / spif 为 `auto`。
+- **后果**：一轮全量回归（当前登记 69 case）里**走①的每次都 pristine 重建**，是长耗时（约 3h30m）的主因之一；
+  ②中显式 `always` 的同样 pristine，只有显式/默认 `auto` 的少数 case 是增量。
+  ⇒ 报「本轮耗时 / 告警数 / 是否全量重建」必须写明该 case 走哪条路，不能一概写成「用 `-p auto`」。
+- **判据**：构建日志（`<case>/build*.log`、`build_cpu*.log`）出现
+  `-- west build: making build dir … pristine` ⇒ 该轮该 case 确实 pristine 重建。
+  该行**只证明 pristine、不证明用了哪个 `-p`**（`-p auto` 在需要重生成时也会 pristine）——
+  要判断走哪条路，看工程 `run_test.py` 调的是 `build_via_test_sh*`/`single_cap`/`iwdg`/`mbox` 还是 `ports_dict_case`。
+  **反例（防误报）**：**没有**该行不等于「一定是增量」—— `--skip-build` 复用现成 ELF 时根本没有构建输出；
+  要先看该 case 是否在 `run_all.py::can_skip_build()` 放行集内。
+- **处置**：本轮**不改 `test_common.sh`**。要真增量需给 `build_test` / `build_single_test` 增加 `-p` 开关
+  （env 或新参数）并让既有调用默认 `always` —— 属框架改动，待裁定。
+- **落点**：`qsh-test-run` §2（构建口径拆分 + 判据）· `SPEC_REFERENCE` §6.1.8（例外一句）·
+  `qsh-test-gen` §3（「`test.sh` 固定 `-p always`、迭代用 `-p auto`」为同一事实，机制以本条为准）。
