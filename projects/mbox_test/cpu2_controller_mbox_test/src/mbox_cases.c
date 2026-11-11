@@ -465,8 +465,8 @@ static void case_invalid(void)
 	memset(&m, 0, sizeof(m));
 
 	ret = mbox_send(dev, ch4.channel_id, NULL);
-	check_ret(MBOX_I_INV_SEND_NULL_MSG, "inv_send_null_msg", ret, -ENOTSUP);
-	if (ret != -ENOTSUP) {
+	check_ret(MBOX_I_INV_SEND_NULL_MSG, "inv_send_null_msg", ret, -EINVAL);
+	if (ret != -EINVAL) {
 		fails++;
 	}
 

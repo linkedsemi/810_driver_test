@@ -101,7 +101,7 @@ width**，与实际发送长度无关；`width` 同时是 `general_fifo_put_size
 
 | 测试项（INFO name） | 核 | 驱动路径(函数+分支) | 维度 | 预期数据 | 预期来源 | 状态 |
 |---|---|---|---|---|---|---|
-| `inv_send_null_msg` | CTRL | `send` 的 `!CONFIG_SIGNALLING_MODE_SUPPORT` 分支 | 异常参数 | `-ENOTSUP` | 驱动源码 `:191-196` | ✅ |
+| `inv_send_null_msg` | CTRL | `mbox_linkedsemi_send()` 的 `msg == NULL` 分支（commit `92c3a25e920` 起；signalling mode 路径已移除） | 异常参数 | `-EINVAL` | 驱动源码 `mbox_linkedsemi.c:208-210` | ✅ |
 | `inv_send_bad_channel` | CTRL | `send` 的 `channel >= MBOX_NCHANNELS` 分支 | 异常参数 | `-EINVAL` | 驱动源码 `:172-175` | ✅ |
 | `inv_send_oversize_ch4` | CTRL | `send` 的 `msg->size > width` 分支 | 边界长度 | `-EMSGSIZE`（65 > 64） | 驱动 MTU 契约 | ✅ |
 | `inv_send_oversize_ch2` | CTRL | 同上（最短通道，9 > 8） | 边界长度 | `-EMSGSIZE` | 驱动 MTU 契约 | ✅ |
@@ -242,7 +242,7 @@ consumer_ch3_roundtrip | !none | !none:同上
 consumer_ch4_roundtrip | !none | !none:同上
 consumer_same_channel_bidir | !none | !none:4 条探针 ACK 原通道收回，非标量
 consumer_ch5_short_frame | !none | !none:对端发 8B 本端仍报 64，非标量
-inv_send_null_msg | !none | !none:-ENOTSUP，单值但无 INFO 键固定 ⇒ 不硬凑
+inv_send_null_msg | !none | !none:-EINVAL，单值但无 INFO 键固定 ⇒ 不硬凑
 inv_send_bad_channel | !none | !none:-EINVAL，同上
 inv_send_oversize_ch4 | !none | !none:-EMSGSIZE，同上
 inv_send_oversize_ch2 | !none | !none:-EMSGSIZE，同上
