@@ -1,0 +1,147 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * spi_spif_test overlay（单核 cpu1 安全域）：同时使能三套被测路径。
+ *
+ *   A. 套件 `spi`       —— spi1 / spi2（linkedsemi,ls-spi -> zephyr/drivers/spi/spi_ls.c）
+ *                          片内 pinctrl + CS GPIO，无外部接线。
+ *   B. 套件 `spi_flash` —— spif3 master -> spi4（snps,designware-spi）
+ *                          -> flash4_0（jedec,spi-nor），板载 NOR，无外部接线。
+ *   C. 套件 `spif`      —— spif1..spif4（linkedsemi,spi-filter）
+ *                          寄存器级用例零外部条件；master/回环用例走板载 flash。
+ *
+ * 外部条件（SPEC_REFERENCE §6.6）：
+ *   - SPIF 的 in/out 管脚在板级连到 spi3 / spi4 上挂的 NOR flash；master 模式
+ *     与回环用例经这条板载路径访问 flash4_0 / flash3_0，不需要外部跳线。
+ *   - 其余寄存器级用例零外部条件。
+ *
+ * ⚠️ 配对控制器必须让渡引脚（P4.7 裁定，依据参考资产 spi_master_communication /
+ *    spi_monitor_filter 的 overlay，二者在实机跑通）：
+ *    SPIF 切 master 模式走的是 SPIF 自己的 `pinctrl-2`(master 态) 管脚
+ *    （如 spif3 -> PF09/PF05/PF03/PF11/PF07 + CSN PI00），而配对的 DW SPI 控制器
+ *    默认仍持板级 pinctrl（spi3 -> PG14/PG15/PG03/PE01/PE00；spi4 -> PQ00/PQ03…）。
+ *    两组管脚不同 ⇒ 不清空配对控制器的 `pinctrl-0` 就是"两个 owner 抢一组 net"。
+ *    故此处显式清空（同型问题见 gotchas G-P4-4「配对 I2C 控制器 pinctrl-noinit」）。
+ */
+
+#include "lsqsh_pinctrl_pfr_tpm.dtsi"
+
+/ {
+	aliases {
+		/* spif3 同时用于 spif 套件（filter 实例）与 spi_flash 套件（master） */
+		spif = &spif3;
+		spifilter = &spif3;
+		spifiltermaster = &spif1;
+		spifmaster = &spif1;
+		spiflash = &flash4_0;
+	};
+
+	chosen {
+		zephyr,console = &uart1;
+	};
+};
+
+/* -------------------------------------------------------------------------- */
+/* A. spi_ls 用例：spi1 / spi2                                                 */
+/* -------------------------------------------------------------------------- */
+
+/* spi1：PA00=SCK / PA01=MOSI / PA02=MISO，CS = gpioa 3（板级 pinctrl 已声明） */
+&spi1 {
+	status = "okay";
+};
+
+/* spi2：PJ12=SCK / PJ13=MOSI / PJ14=MISO，CS = gpioj 15（板级 pinctrl 已声明） */
+&spi2 {
+	status = "okay";
+};
+
+/*
+ * spi2 的 CS 在 GPIOJ —— 板级已使能该端口；这里显式保留，避免板级配置变动时
+ * spi_ls_init() 的 spi_context_cs_configure_all() 静默 -ENODEV。
+ */
+&gpioj {
+	status = "okay";
+};
+
+/* -------------------------------------------------------------------------- */
+/* C. SPIF 实例：spif1..spif4                                                  */
+/* -------------------------------------------------------------------------- */
+
+&spif1 {
+	status = "okay";
+};
+
+&spif2 {
+	status = "okay";
+};
+
+/*
+ * spif3 的相邻实例是 spif4（spi_filter.c 的 spif_spi_check_dev_name_arr）。
+ * spif_switch_to_mode(spif_master) 会 device_get_binding 相邻节点；若 spif4
+ * 未使能会命中 __ASSERT_NO_MSG(0)，故必须一起打开。
+ */
+&spif3 {
+	cmd-page-program-quad-addr-quad-data = <0xc2>;
+	cmd-quad-spi-mode-enter = <0x38>;
+	cmd-quad-spi-mode-exit = <0xff>;
+	status = "okay";
+};
+
+&spif4 {
+	cmd-page-program-quad-addr-quad-data = <0xc2>;
+	cmd-quad-spi-mode-enter = <0x38>;
+	cmd-quad-spi-mode-exit = <0xff>;
+	status = "okay";
+};
+
+/* -------------------------------------------------------------------------- */
+/* B. flash 通路：spif3 -> spi4 -> flash4_0                                    */
+/* -------------------------------------------------------------------------- */
+
+/* CS 数组下标与 SPIF 的 cs-gpios 对应（SPIF3 -> CS0 = GPIOI 0） */
+&spi3 {
+	cs-gpios = <&gpioi 8 GPIO_ACTIVE_LOW>,
+		    <&gpiog 2 GPIO_ACTIVE_LOW>;
+	/* 引脚让渡给 SPIF master 态（spif1/spif2 的 spi = <&spi3>） */
+	pinctrl-0 = <>;
+	pinctrl-names = "default";
+	/* 无 flash 子节点 ⇒ 幅度校准数组为空；显式关闭校准避免越界读 */
+	timing-calibration-disabled;
+	status = "okay";
+};
+
+&spi4 {
+	cs-gpios = <&gpioi 0 GPIO_ACTIVE_LOW>,
+		    <&gpioq 0 GPIO_ACTIVE_LOW>;
+	/* 引脚让渡给 SPIF master 态（spif3/spif4 的 spi = <&spi4>） */
+	pinctrl-0 = <>;
+	pinctrl-names = "default";
+	dmas = <&dmac2 6 DMA_SPI4_RX>, <&dmac2 6 DMA_SPI4_TX>;
+	dma-names = "rx", "tx";
+	status = "okay";
+
+	flash4_0: flash4@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(50)>;
+		spi-max-buswidth = <4>;
+		re-init-support;
+		status = "okay";
+	};
+};
+
+/*
+ * spif1/spif2 的 dmas 引用 dmac1，spif3/spif4 与 spi_dw 引用 dmac2：
+ * spi_dw.c 要求 DMA 控制器已使能，且 CONFIG_DMA_DW_LLI_POOL_SIZE
+ * 只在 DW DMA 编入时才有定义。
+ */
+&dmac1 {
+	status = "okay";
+};
+
+&dmac2 {
+	status = "okay";
+};
+
+/* GPIO toggle 使能块统一走公共层（SPEC_REFERENCE §6.1.9 复用收敛） */
+#include "../../../common/gpio_toggle.dtsi"
