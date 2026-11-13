@@ -1,0 +1,12 @@
+{
+  "updated": 1793086796.1564772,
+  "baud": 115200,
+  "ports": {
+    "COM24": {
+      "opened": false,
+      "error": "could not open port 'COM24': PermissionError(13, '拒绝访问。', None, 5)",
+      "device": "COM24",
+      "log": "C:\\Temp\\wsl_810_new\\uart_COM24.log"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+===== i3c_dualcore_test / case_pure_i3c_12m5 =====
+[run] mode=dual ports=['COM31', 'COM14'] timeout=180s
+[run] relay=I3C_TEST strip=True
+[run] BUILD i3c_dualcore_test/case_pure_i3c_12m5 via /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/projects/i3c_dualcore_test/tests/case_pure_i3c_12m5/test.sh
+[run] board(target) = lsqsh_evb@2os/lsqsh/cpu1  dual=True
+[run] prime pass (output discarded) ...
+[run] capture backend=cmd ports=COM31,COM14
+[run] capture backend=cmd ports=COM31,COM14
+[run] load target ELF (pc=0x100c0000, no continue) ...
+[run] restore controller BIN + continue ...
+  [t+0s] tgt=1B ctrl=1B judge=FAIL verdict=False
+
+================================================================================
+I3C Dual-Core Regression Report
+================================================================================
+
+## case_pure_i3c_12m5: FAIL
+  (mem-unavailable: 内存兜底未生效，MISSING 项按 FAIL 判定)
+  内存兜底: 不可用（内存兜底未执行） — 内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。
+  证据缺失（非驱动失败）：TGT 核全部 34 项无确定结果（串口未捕到 + 内存兜底无结果） ⇒ 不得因另一核完好判 PASS
+| Test | Controller | Target | Result | Source | INFO(actual) | Reason |
+|------|------------|--------|--------|--------|--------------|--------|
+| api_neg_paths | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| back_to_back_8x8 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| big_256 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| ccc_basic | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| ccc_rapid_8 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| daa_discovery | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| hot_join | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| ibi | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| ibi_neg_paths | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| multi_msg_short_read | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| nack_bad_addr | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| read_32_direct | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| read_master_abort | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| read_underrun_16_32 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| read_underrun_8_16 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| read_underrun_stress | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| setaasa | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| setdasa | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| short_read_then_nack | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_100 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_8 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_dummy_read_16 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_dummy_read_len | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_indexed_read_16 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_read_15 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_read_16 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_read_17 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_read_1 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_read_32 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_stop_read_15 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_stop_read_16 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_stop_read_17 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_stop_read_1 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+| write_stop_read_32 | FAIL | MISSING | FAIL | missing |  | CTRL:WEST_TOPDIR/810_driver_test/projects/i3c_dualcore_test/cpu0_i3c_controller/src/i3c_controller_test.c: 201: ctrl_test_end: (ctrl_failed is true) |
+EXECUTION: CTRL=FAILED, TGT=None
+
+================================================================================
+OVERALL: FAIL
+================================================================================
+
+Markdown report written to: wsl_environment/reports/2026-11-12-5/i3c_dualcore_test_case_pure_i3c_12m5/i3c_dualcore_test_report.md
+JSON report written to: wsl_environment/reports/2026-11-12-5/i3c_dualcore_test_case_pure_i3c_12m5/i3c_dualcore_test_report.json
+[run] archived -> wsl_environment/reports/2026-11-12-5/i3c_dualcore_test_case_pure_i3c_12m5/i3c_dualcore_test_report.md
+[run] i3c_dualcore_test/case_pure_i3c_12m5: rc=1, timed_out=False, elapsed=8.2s, TGT_lines=18, CTRL_lines=694

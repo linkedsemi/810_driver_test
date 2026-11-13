@@ -1,0 +1,2 @@
+COM23 log size: 0 bytes
+captured while cpu1 hello_world ran (gdb_load_20261027_153849.log)

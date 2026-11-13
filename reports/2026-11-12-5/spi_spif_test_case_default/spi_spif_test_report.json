@@ -1,0 +1,443 @@
+{
+  "driver": "spi_spif_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM31, timeout=120s",
+  "timestamp": "2026-11-13T12:37:35",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "results": {
+    "concurrent_two_threads": "PASS",
+    "configure_datasize16": "PASS",
+    "configure_freq_boundary": "PASS",
+    "configure_lsb_first": "PASS",
+    "configure_mode_bits": "PASS",
+    "configure_prescaler_table": "PASS",
+    "device_ready": "PASS",
+    "error_half_duplex": "PASS",
+    "error_ti_mode": "PASS",
+    "hold_on_cs_spe": "PASS",
+    "lock_on_hold_release": "PASS",
+    "post_reset_state": "PASS",
+    "reconfigure_same_cfg_prescaler": "PASS",
+    "release_semantics": "PASS",
+    "transceive_duplex_pair": "PASS",
+    "transceive_length_sweep": "PASS",
+    "transceive_null_bufs": "PASS",
+    "transceive_tx_only_rx_only": "PASS",
+    "alloc_read_smoke": "PASS",
+    "erase_all_ff": "PASS",
+    "flash_ready": "PASS",
+    "read_aligned_len_sweep": "PASS",
+    "read_malloc_aligned_len_sweep": "PASS",
+    "read_malloc_unaligned_len_sweep": "PASS",
+    "read_unaligned_len_sweep": "PASS",
+    "write_aligned_len_sweep": "PASS",
+    "write_malloc_aligned_len_sweep": "PASS",
+    "write_malloc_unaligned_len_sweep": "PASS",
+    "write_unaligned_len_sweep": "PASS",
+    "addr_mode_config": "PASS",
+    "addr_privilege_guard": "PASS",
+    "addr_privilege_valid_region": "PASS",
+    "addr_whitelist_fill": "PASS",
+    "bus_pairing": "PASS",
+    "cmd_idx_accessors": "PASS",
+    "cmd_table_add_remove": "PASS",
+    "cmd_table_full_boundary": "PASS",
+    "cold_reset_state": "PASS",
+    "filter_enable_bit": "PASS",
+    "flash_size_boundary": "PASS",
+    "loopback_filter_bad_cmd_bad_addr": "PASS",
+    "loopback_filter_bad_cmd_legal_addr": "PASS",
+    "loopback_filter_legal_both": "PASS",
+    "loopback_filter_legal_cmd_bad_addr": "PASS",
+    "loopback_jedec": "PASS",
+    "loopback_read_addr": "PASS",
+    "master_read_jedec_id": "PASS",
+    "master_read_with_addr": "PASS",
+    "mode_switch_guard": "PASS",
+    "mode_switch_states": "PASS",
+    "passthrough_mode_switch": "PASS",
+    "reg_lock_unlock": "PASS",
+    "sck_threshold_config": "PASS",
+    "spif_device_ready": "PASS"
+  },
+  "infos": {
+    "concurrent_two_threads": {
+      "arm": "0",
+      "ret_a": "0",
+      "ret_b": "0",
+      "iter": "4"
+    },
+    "configure_datasize16": {
+      "ret": "0",
+      "ds": "0xf00"
+    },
+    "configure_freq_boundary": {
+      "arm": "0",
+      "ret_ok": "0",
+      "br_ok": "0x10",
+      "ret_bad": "-22",
+      "spe_after_bad": "0"
+    },
+    "configure_lsb_first": {
+      "ret_lsb": "0",
+      "lsb_bit": "128",
+      "ret_msb": "0",
+      "msb_bit": "0"
+    },
+    "configure_mode_bits": {
+      "ret": "0",
+      "cr1": "0x11f",
+      "cr2": "0x40704"
+    },
+    "configure_prescaler_table": {
+      "f0": "9375000/br=0x10",
+      "f1": "5000000/br=0x18",
+      "f2": "3000000/br=0x20",
+      "f3": "1500000/br=0x28",
+      "f4": "800000/br=0x30",
+      "f5": "400000/br=0x38",
+      "f6": "292968/br=0x38"
+    },
+    "device_ready": {
+      "spi1_base": "0x4008a000",
+      "spi2_base": "0x4008a400",
+      "cs1_pin": "3",
+      "cs2_pin": "15"
+    },
+    "error_half_duplex": {
+      "arm": "0",
+      "ret": "-134"
+    },
+    "error_ti_mode": {
+      "arm": "0",
+      "ret": "-134"
+    },
+    "hold_on_cs_spe": {
+      "ret_hold": "0",
+      "spe_hold": "64",
+      "cs_hold": "1",
+      "ret_norm": "0",
+      "spe_norm": "0"
+    },
+    "lock_on_hold_release": {
+      "ret1": "0",
+      "ret2": "0",
+      "ret_rel": "0"
+    },
+    "post_reset_state": {
+      "ret_rst": "0",
+      "cr1_after": "0x10",
+      "ret_recover": "0",
+      "br_after": "0x20"
+    },
+    "reconfigure_same_cfg_prescaler": {
+      "ret1": "0",
+      "br_first": "0x38",
+      "ret2": "0",
+      "br_second": "0x10",
+      "spe": "0"
+    },
+    "release_semantics": {
+      "ret_unused": "-22",
+      "ret_tx": "0",
+      "ret_release": "0",
+      "spe": "0"
+    },
+    "transceive_duplex_pair": {
+      "ret": "0",
+      "rx0": "ff",
+      "rx1": "ff",
+      "rx31": "ff"
+    },
+    "transceive_length_sweep": {
+      "n": "15",
+      "min_len": "1",
+      "max_len": "256",
+      "last_ret": "0"
+    },
+    "transceive_null_bufs": {
+      "ret_null": "0",
+      "ret_release": "-22"
+    },
+    "transceive_tx_only_rx_only": {
+      "ret_tx": "0",
+      "ret_rx": "0"
+    },
+    "alloc_read_smoke": {
+      "len": "4096",
+      "ret": "0"
+    },
+    "erase_all_ff": {
+      "ff_bytes": "4096",
+      "total": "4096"
+    },
+    "flash_ready": {
+      "jedec": "204021",
+      "size": "134217728",
+      "erase": "ff"
+    },
+    "read_aligned_len_sweep": {
+      "min": "1",
+      "max": "4096",
+      "fail": "0",
+      "first": "0"
+    },
+    "read_malloc_aligned_len_sweep": {
+      "min": "1",
+      "max": "4096",
+      "fail": "0",
+      "first": "0"
+    },
+    "read_malloc_unaligned_len_sweep": {
+      "min": "1",
+      "max": "4096",
+      "fail": "0",
+      "first": "0"
+    },
+    "read_unaligned_len_sweep": {
+      "min": "1",
+      "max": "4096",
+      "fail": "0",
+      "first": "0"
+    },
+    "write_aligned_len_sweep": {
+      "min": "1",
+      "max": "256",
+      "fail": "0",
+      "first": "0",
+      "stage": "0",
+      "ret": "0",
+      "dlen": "0",
+      "idx": "-1",
+      "exp": "00",
+      "act": "00"
+    },
+    "write_malloc_aligned_len_sweep": {
+      "min": "1",
+      "max": "256",
+      "fail": "0",
+      "first": "0",
+      "stage": "0",
+      "ret": "0",
+      "dlen": "0",
+      "idx": "-1",
+      "exp": "00",
+      "act": "00"
+    },
+    "write_malloc_unaligned_len_sweep": {
+      "min": "1",
+      "max": "256",
+      "fail": "0",
+      "first": "0",
+      "stage": "0",
+      "ret": "0",
+      "dlen": "0",
+      "idx": "-1",
+      "exp": "00",
+      "act": "00"
+    },
+    "write_unaligned_len_sweep": {
+      "min": "1",
+      "max": "256",
+      "fail": "0",
+      "first": "0",
+      "stage": "0",
+      "ret": "0",
+      "dlen": "0",
+      "idx": "-1",
+      "exp": "00",
+      "act": "00"
+    },
+    "addr_mode_config": {
+      "sel_4b": "1",
+      "sel_3b": "0"
+    },
+    "addr_privilege_guard": {
+      "guard_boundary": "0x10000000",
+      "len_min": "16384"
+    },
+    "addr_privilege_valid_region": {
+      "reg_off": "2",
+      "len": "16384"
+    },
+    "addr_whitelist_fill": {
+      "reg_nun": "512",
+      "reg_last": "511"
+    },
+    "bus_pairing": {},
+    "cmd_idx_accessors.slot5_read": {
+      "raw": "0x77",
+      "cmd": "0x77",
+      "raw_dummy": "0",
+      "get_dummy": "0 (READ has no dummy phase)"
+    },
+    "cmd_idx_accessors.slot6_fast_read": {
+      "raw": "0x90b",
+      "cmd": "0xb",
+      "raw_dummy": "0x9",
+      "get_dummy": "0x9"
+    },
+    "cmd_idx_accessors": {
+      "slot5_cmd": "0x77",
+      "slot5_dummy": "0",
+      "slot6_raw": "0x90b",
+      "slot6_dummy": "0x9"
+    },
+    "cmd_table_add_remove.fixed_path": {
+      "slot": "5",
+      "cmd": "0x3",
+      "en": "1"
+    },
+    "cmd_table_full_boundary": {
+      "added": "40",
+      "capacity": "40"
+    },
+    "cold_reset_state": {
+      "cfg": "0x40",
+      "target_addr": "0xffffffff",
+      "bcmd": "0x7"
+    },
+    "flash_size_boundary": {
+      "max": "0x10000000",
+      "min_ok": "0x10000"
+    },
+    "loopback_filter_bad_cmd_bad_addr": {
+      "before": "0",
+      "ret": "0",
+      "raw": "0x3000002",
+      "cmd_err": "1",
+      "addr_err": "0",
+      "por_addr": "0",
+      "error_cmd": "0x3",
+      "error_addr": "0"
+    },
+    "loopback_filter_bad_cmd_legal_addr": {
+      "before": "0",
+      "ret": "0",
+      "raw": "0x3000002",
+      "cmd_err": "1",
+      "addr_err": "0",
+      "por_addr": "0",
+      "error_cmd": "0x3",
+      "error_addr": "0"
+    },
+    "loopback_filter_legal_both": {
+      "before": "0",
+      "ret": "0",
+      "raw": "0",
+      "cmd_err": "0",
+      "addr_err": "0",
+      "por_addr": "0",
+      "error_cmd": "0",
+      "error_addr": "0"
+    },
+    "loopback_filter_legal_cmd_bad_addr": {
+      "before": "0",
+      "ret": "0",
+      "raw": "0x3000045",
+      "cmd_err": "0",
+      "addr_err": "1",
+      "por_addr": "1",
+      "error_cmd": "0x3",
+      "error_addr": "0x4000"
+    },
+    "loopback_jedec": {
+      "ret": "0",
+      "jedec": "204021"
+    },
+    "loopback_read_addr": {
+      "ret": "0",
+      "data": "ffffffff"
+    },
+    "master_read_jedec_id": {
+      "jedec": "000000"
+    },
+    "master_read_with_addr": {
+      "read": "ffffffff"
+    },
+    "mode_switch_guard": {
+      "filter_no": "-EINVAL",
+      "master_busy": "-EBUSY",
+      "after_release": "ok"
+    },
+    "mode_switch_states": {
+      "filter_single": "0",
+      "filter_multi": "1",
+      "monitor_no": "2",
+      "master": "3"
+    },
+    "passthrough_mode_switch": {
+      "after_cold_reset state": "0"
+    },
+    "reg_lock_unlock": {
+      "unlock_ip_lock": "1",
+      "lock_ip_lock": "0"
+    },
+    "sck_threshold_config": {
+      "sck_div": "5",
+      "hi": "2",
+      "lo": "100"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "concurrent_two_threads": "src=token",
+    "configure_datasize16": "src=token",
+    "configure_freq_boundary": "src=token",
+    "configure_lsb_first": "src=token",
+    "configure_mode_bits": "src=token",
+    "configure_prescaler_table": "src=token",
+    "device_ready": "src=token",
+    "error_half_duplex": "src=token",
+    "error_ti_mode": "src=token",
+    "hold_on_cs_spe": "src=token",
+    "lock_on_hold_release": "src=token",
+    "post_reset_state": "src=token",
+    "reconfigure_same_cfg_prescaler": "src=token",
+    "release_semantics": "src=token",
+    "transceive_duplex_pair": "src=token",
+    "transceive_length_sweep": "src=token",
+    "transceive_null_bufs": "src=token",
+    "transceive_tx_only_rx_only": "src=token",
+    "alloc_read_smoke": "src=token",
+    "erase_all_ff": "src=token",
+    "flash_ready": "src=token",
+    "read_aligned_len_sweep": "src=token",
+    "read_malloc_aligned_len_sweep": "src=token",
+    "read_malloc_unaligned_len_sweep": "src=token",
+    "read_unaligned_len_sweep": "src=token",
+    "write_aligned_len_sweep": "src=token",
+    "write_malloc_aligned_len_sweep": "src=token",
+    "write_malloc_unaligned_len_sweep": "src=token",
+    "write_unaligned_len_sweep": "src=token",
+    "addr_mode_config": "src=token",
+    "addr_privilege_guard": "src=token",
+    "addr_privilege_valid_region": "src=token",
+    "addr_whitelist_fill": "src=token",
+    "bus_pairing": "src=token",
+    "cmd_idx_accessors": "src=token",
+    "cmd_table_add_remove": "src=token",
+    "cmd_table_full_boundary": "src=token",
+    "cold_reset_state": "src=token",
+    "filter_enable_bit": "src=token",
+    "flash_size_boundary": "src=token",
+    "loopback_filter_bad_cmd_bad_addr": "src=token",
+    "loopback_filter_bad_cmd_legal_addr": "src=token",
+    "loopback_filter_legal_both": "src=token",
+    "loopback_filter_legal_cmd_bad_addr": "src=token",
+    "loopback_jedec": "src=token",
+    "loopback_read_addr": "src=token",
+    "master_read_jedec_id": "src=token",
+    "master_read_with_addr": "src=token",
+    "mode_switch_guard": "src=token",
+    "mode_switch_states": "src=token",
+    "passthrough_mode_switch": "src=token",
+    "reg_lock_unlock": "src=token",
+    "sck_threshold_config": "src=token",
+    "spif_device_ready": "src=token"
+  }
+}

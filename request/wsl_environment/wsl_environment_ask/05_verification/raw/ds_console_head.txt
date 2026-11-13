@@ -1,0 +1,45 @@
++---                                                    ---+
+|  XuanTie Debugger Server (Build: Jun  3 2026, Windows)    |
+   User   Layer Version : 5.18.10 
+   Target Layer version : 2.0
+|  Copyright (C) 2026 Hangzhou C-SKY MicroSystems Co., Ltd.|
++---                                                    ---+
+XuanTie: CKLink_Lite_V2, App_ver 3.7, Bit_ver null, Clock 2526.316KHz,
+       cJtag 2-wire, With DDC, Cache Flush On, SN CKLink_Lite_V2-T0000001363643307530794.
++--  Debug Arch is RVDM.  --+
++--  CPU 0  --+
+RISCV CPU Info:
+	WORD[0]: 0x0810050d
+	WORD[1]: 0x120c2000
+	WORD[2]: 0x252bf4bc
+	MISA   : 0x4090912d
+	MHARTID: 0x0
+Target Chip Info:
+	CPU Type is XT-E906FDP, Endian=Little, Version is R2S3P2.
+	DCache size is 4K.
+	ICache size is 4K.
+	MGU zone num is 16.
+	MGU zone size is 4B.
+	HWBKPT number is 3, HWWP number is 3.
+	MISA: (RV32IMAFDCXP, Imp M-mode, U-mode)
++--  CPU 1  --+
+RISCV CPU Info:
+	WORD[0]: 0x0810050d
+	WORD[1]: 0x120c2000
+	WORD[2]: 0x252bf4bc
+	MISA   : 0x4090912d
+	MHARTID: 0x0
+Target Chip Info:
+	CPU Type is XT-E906FDP, Endian=Little, Version is R2S3P2.
+	DCache size is 4K.
+	ICache size is 4K.
+	MGU zone num is 16.
+	MGU zone size is 4B.
+	HWBKPT number is 3, HWWP number is 3.
+	MISA: (RV32IMAFDCXP, Imp M-mode, U-mode)
+
+GDB connection command for CPUs(CPU0):
+	target remote 172.24.48.1:1025
+	target remote 198.18.0.1:1025
+	target remote 30.222.241.46:1025
+	target remote 10.8.0.25:1025

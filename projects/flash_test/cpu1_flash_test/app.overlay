@@ -12,8 +12,18 @@
 	};
 };
 
+/*
+ * 板级 DTS 把 flash1 声明为 32 MiB（AB 分区表的陈旧信息）；实测 qspi1 板载
+ * NOR 为 4 MiB（JEDEC 85 60 16，容量字节 0x16 = 4 MiB）。DT reg 直接决定：
+ *   1) soc_flash_ls.c 的 addr4b = (reg_size > 16 MiB) —— 32 MiB 会按 4 字节
+ *      地址访问 3 字节地址的 4 MiB 器件，写/擦数据全部错位；
+ *   2) flash_ls_layout 页表 = reg_size / 4 KiB —— 32 MiB 会让
+ *      test_flash_device_bounds 的“4 MiB 处越界”断言失败。
+ * 与 tests/COVERAGE.md 的器件契约一致：这里覆盖为 4 MiB。
+ */
 &flash1 {
 	status = "okay";
+	reg = <0x8000000 DT_SIZE_M(4)>;
 };
 
 /*

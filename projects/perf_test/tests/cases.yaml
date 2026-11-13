@@ -15,3 +15,7 @@ meta:
 cases:
   # Single case: cpu1 hardware engines + cpu2 OTBN; all output on cpu1.
   - case_default
+  # MBOX layout-check 矩阵：同一套 21+11 项测量，两核分别显式设置
+  # CONFIG_MBOX_LINKEDSEMI_LAYOUT_CHECK=y / n（Kconfig 要求两核同值）。
+  - case_layout_check_on
+  - case_layout_check_off

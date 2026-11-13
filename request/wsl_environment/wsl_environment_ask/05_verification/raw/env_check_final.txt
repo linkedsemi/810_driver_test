@@ -1,0 +1,23 @@
+config: /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new/config/config.json
+[PASS] host: Linux 6.6.87.2-microsoft-standard-WSL2 (WSL=True)
+[PASS] network.route: default via=172.24.48.1
+[PASS] network.wsl_ip: 172.24.61.50
+[PASS] network.ds_target: 172.24.48.1:1025
+[PASS] debugserver.exe: D:\download\zephyr\debugserver\v5_18_10\bin\DebugServerConsole.exe -> /mnt/d/download/zephyr/debugserver/v5_18_10/bin/DebugServerConsole.exe 存在
+[PASS] debugserver.process: PID=[16216]
+[PASS] debugserver.tcp: 172.24.48.1:1025 connected
+[PASS] toolchain.gcc: riscv64-unknown-elf-gcc (Xuantie-900 elf newlib gcc Toolchain V3.0.1 B-20241120) 14.1.1 20240710
+[PASS] toolchain.gdb: GNU gdb (Xuantie-900 elf newlib gcc Toolchain V3.0.1 B-20241120) 15.0.50.20240618-git
+[PASS] toolchain.west: West version: v1.4.0
+[PASS] zephyr.base: /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/zephyr
+[PASS] zephyr.version: VERSION_MAJOR = 4 VERSION_MINOR = 0 PATCHLEVEL = 0 VERSION_TWEAK = 0 EXTRAVERSION = 
+[PASS] zephyr.env: ZEPHYR_TOOLCHAIN_VARIANT=cross-compile
+[PASS] zephyr.board: lsqsh_evb@2os/lsqsh/cpu1
+[PASS] build.elf: /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new/build/hello_world/zephyr/zephyr.elf 存在
+[PASS] build.board: lsqsh_evb@2os/lsqsh/cpu1（期望 lsqsh_evb@2os/lsqsh/cpu1）
+[PASS] serial.share: /mnt/c/Temp/wsl_810_new 可写
+[PASS] serial.helpers: 已同步
+[PASS] windows.python: D:\download\zephyr\python\python.exe
+[PASS] windows.pyserial: ports=['COM3', 'COM4', 'COM5', 'COM16', 'COM23', 'COM24']
+
+summary: 20 PASS, 0 WARN, 0 FAIL

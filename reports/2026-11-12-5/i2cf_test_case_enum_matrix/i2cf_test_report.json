@@ -1,0 +1,107 @@
+{
+  "driver": "i2cf_test",
+  "case": "case_enum_matrix",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM31, timeout=120s",
+  "timestamp": "2026-11-13T13:49:57",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "results": {
+    "addr_7bit_field": "PASS",
+    "callback_register": "PASS",
+    "cold_reset_state": "PASS",
+    "concurrent_fill": "PASS",
+    "device_ready": "PASS",
+    "duplicate_addr_rejected": "PASS",
+    "en_clears_table": "PASS",
+    "enable_channel_boundary": "PASS",
+    "enum_matrix": "PASS",
+    "fill_dump_roundtrip": "PASS",
+    "filter_blocks_nonwhitelist": "PASS",
+    "filter_passthrough_whitelist": "PASS",
+    "filter_set_bits": "PASS",
+    "invalid_args": "PASS",
+    "isr_addr_beyond_whitelist": "PASS",
+    "master_eeprom_rw": "PASS",
+    "scl_hold_time_roundtrip": "PASS",
+    "slave_addr_scan": "PASS",
+    "switch_master_filter": "PASS"
+  },
+  "infos": {
+    "addr_7bit_field": {
+      "max_ok": "0x7f",
+      "ovf_readback": "0"
+    },
+    "cold_reset_state": {
+      "reg_enable": "0x1",
+      "intr_msk": "0x3",
+      "scl_hold": "0x155"
+    },
+    "concurrent_fill": {
+      "threads": "2",
+      "rounds": "4",
+      "channels": "16"
+    },
+    "enum_matrix": {
+      "cells": "9",
+      "dirs": "2",
+      "repeat": "3"
+    },
+    "filter_blocks_nonwhitelist": {
+      "whitelist": "0x2a",
+      "target": "0x33",
+      "blocked_ret": "-5",
+      "authorized_ret": "0"
+    },
+    "filter_passthrough_whitelist": {
+      "addr": "0x33",
+      "len": "8",
+      "rd": "5a5b5c5d"
+    },
+    "isr_addr_beyond_whitelist": {
+      "target": "0x33",
+      "blocked_ret": "-5",
+      "isr_count": "1",
+      "nw": "0x3300",
+      "nw_addr": "0x33",
+      "nw_cmd": "0"
+    },
+    "master_eeprom_rw": {
+      "addr": "0x33",
+      "len": "16"
+    },
+    "slave_addr_scan": {
+      "range": "08..77",
+      "count": "2",
+      "addrs": "33 50"
+    },
+    "switch_master_filter": {
+      "PE02_func_i2c4": "0",
+      "PE02_func_i2cf4": "1"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "addr_7bit_field": "src=token",
+    "callback_register": "src=token",
+    "cold_reset_state": "src=token",
+    "concurrent_fill": "src=token",
+    "device_ready": "src=token",
+    "duplicate_addr_rejected": "src=token",
+    "en_clears_table": "src=token",
+    "enable_channel_boundary": "src=token",
+    "enum_matrix": "src=token",
+    "fill_dump_roundtrip": "src=token",
+    "filter_blocks_nonwhitelist": "src=token",
+    "filter_passthrough_whitelist": "src=token",
+    "filter_set_bits": "src=token",
+    "invalid_args": "src=token",
+    "isr_addr_beyond_whitelist": "src=token",
+    "master_eeprom_rw": "src=token",
+    "scl_hold_time_roundtrip": "src=token",
+    "slave_addr_scan": "src=token",
+    "switch_master_filter": "src=token"
+  }
+}

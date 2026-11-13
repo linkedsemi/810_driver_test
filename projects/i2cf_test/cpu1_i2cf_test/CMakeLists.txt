@@ -17,7 +17,14 @@ cmake_minimum_required(VERSION 3.20.0)
 # ⚠️ 只写在本工程。写进 common/common_sources.cmake 会给全部既有工程引入新的
 # Kconfig 符号与 DT binding，可能影响之前已通过的测试（用户明令禁止）。
 # ---------------------------------------------------------------------------
-set(EXTRA_ZEPHYR_MODULES "d:/zephyr4_0/modules/lib/pfr_tpm")
+get_filename_component(PFR_TPM_WS "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE)
+if(EXISTS "${PFR_TPM_WS}/modules/lib/zephyr_pfr_tpm/zephyr/module.yml")
+  set(EXTRA_ZEPHYR_MODULES "${PFR_TPM_WS}/modules/lib/zephyr_pfr_tpm")
+elseif(EXISTS "${PFR_TPM_WS}/modules/lib/pfr_tpm/zephyr/module.yml")
+  set(EXTRA_ZEPHYR_MODULES "${PFR_TPM_WS}/modules/lib/pfr_tpm")
+else()
+  message(FATAL_ERROR "pfr_tpm module not found under ${PFR_TPM_WS}/modules/lib")
+endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(cpu1_i2cf_test)

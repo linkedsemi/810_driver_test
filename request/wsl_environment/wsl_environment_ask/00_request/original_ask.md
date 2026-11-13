@@ -1,0 +1,16 @@
+前提：
+整合的关于调试环境相关的计划都需要放在/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/request/wsl_environment/wsl_environment_ask文件夹下面
+具体需要的脚本或者工具等需求需要放在/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new这个文件夹下面
+每生成一个类型的东西都需在相应文件夹下面做好新文件夹的建立与命名
+
+你没有git提交代码权限，其余权限你都有。
+另外开启一个agent监督本任务确保任务顺利完成
+/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/.claude/agents/keeper.md
+让keeper帮我适配wsl环境，zephyr开发。
+期间经验积累放到/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/request/wsl_environment/wsl_environment_ask
+debugserverwindows路径：D:\download\zephyr\debugserver\v5_18_10\bin>DebugServerConsole.exe
+
+在/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/request/skill这个里面并做好分类命名。是否把 WSL2 宿主差异沉淀为 qsh-debug/ref-host-wsl2.md（本轮未改 skill 库）这个skill库放在我自己的skill上面，路径：/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/skill。刚刚执行过程中必要的流程月需要归档在自己的skill
+
+
+具体工具或者实施放到/home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new

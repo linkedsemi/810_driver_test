@@ -24,3 +24,7 @@ cases:
   - case_mbox_rtc_sync
   - case_mbox_stress
   - case_mbox_fifo_full
+  # MBOX layout-check 矩阵：basic 内容 + 两核显式设置
+  # CONFIG_MBOX_LINKEDSEMI_LAYOUT_CHECK=y / n（Kconfig 要求两核同值）。
+  - case_layout_check_on
+  - case_layout_check_off

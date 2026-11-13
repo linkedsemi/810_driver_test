@@ -68,6 +68,7 @@ CPU2_XIP_ADDR="${CPU2_XIP_ADDR:-0x08100000}"
 # ★ 公共构建注入点（默认全空 ⇒ 既有调用方走**逐字节相同**的代码路径；KNOWN_ISSUES #70/#76）：
 #   EXTRA_CMAKE_ARGS  追加到 `west build` 的任意 -D<var>=<val>（空格分隔，可多个）；
 #                     也可由 build_* 的第 6 个位置参数按次传入（两者叠加）。
+#   BUILD_PROGRESS    build_* 的 `west build -p` 参数（默认 always）；WSL 批量回归设 auto。
 #   BOARD_OVERRIDE    强制 build 的 board，跳过 _detect_board 的目录名关键词判板
 #                     （如 src 目录名不含 controller/target 关键词的 cpu1_<driver>_test，#70）。
 #   CONF_MODE         append（默认）= <src>/prj.conf 前拼第 4 参 conf（原行为）；
@@ -219,7 +220,9 @@ build_test() {
     done
 
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
-    west build -p always \
+    # BUILD_PROGRESS：默认 always（全量重建，保持既有行为）；
+    # WSL 批量回归可设 auto 复用对象文件（overlay/conf 变化 west 会自动重配）。
+    west build -p "${BUILD_PROGRESS:-always}" \
         -d "${build_dir}" \
         -b "${board}" \
         "${src_dir}" \
@@ -529,7 +532,9 @@ build_single_test() {
     done
 
     echo "[${test_name}] Build $(basename "${src_dir}") -> ${build_dir}"
-    west build -p always \
+    # BUILD_PROGRESS：默认 always（全量重建，保持既有行为）；
+    # WSL 批量回归可设 auto 复用对象文件（overlay/conf 变化 west 会自动重配）。
+    west build -p "${BUILD_PROGRESS:-always}" \
         -d "${build_dir}" \
         -b "${board}" \
         "${src_dir}" \

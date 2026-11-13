@@ -1,0 +1,8 @@
+process: RUNNING pids=[16216]
+listen : 172.24.48.1:1025 pids=[16216]
+tcp    : OK (connected)
+gdb    : OK
+0x100cce76 in ?? ()
+[Inferior 1 (Remote target) detached]
+warning: No executable has been specified and target does not support
+determining executable automatically.  Try using the "file" command.

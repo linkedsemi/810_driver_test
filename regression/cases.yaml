@@ -43,6 +43,8 @@ cases:
   - projects\app_iwdg_cpu2_test
   - projects\iopmp_test
   - projects\spif_test
+  # 合并：spi_test（spi_ls + flash4_0）与 spif_test（spi_filter），统一 spif_switch_to_mode
+  - projects\spi_spif_test
   - projects\spid_test
   - projects\i2cf_test
 

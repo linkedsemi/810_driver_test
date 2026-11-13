@@ -71,6 +71,12 @@ ZTEST(i2c_pure_ctrl, i2c_wave)
 {
 	int ret;
 
+	/* 双核启动竞态：从核（cpu1）的 i2c_target_register 在其 ztest 进入后才
+	 * 生效，而控制核（cpu2）在 cpu1 的 boot_cpu2 之后立刻开跑。PJ08~PJ11
+	 * 跳线接通后实测首笔写仍在 0.036s 得到 -EIO（从核尚未 ACK）。先等 300ms
+	 * 让从核完成注册 —— 只同步启动时序，不改变任何断言/数据判据。 */
+	k_sleep(K_MSEC(300));
+
 	/* 传输前显式配置速率/模式（官方样例做法：ls-i2c 按 dev_data->config
 	 * 的速率档计算总线分频，应用层必须调用 i2c_configure）。
 	 * 注意 i2c_runtime_configure 只记账（i2c_ls.c），真正的 TIMINGR 在

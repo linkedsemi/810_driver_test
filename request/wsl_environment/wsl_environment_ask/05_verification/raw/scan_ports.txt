@@ -1,0 +1,7 @@
+wrote C:\Temp\wsl_810_new\ports.json (6 ports)
+  COM23    VID:PID=1A86:55D2  USB-Enhanced-SERIAL-A CH342 (COM23)
+  COM4     VID:PID=----:----  蓝牙链接上的标准串行 (COM4)
+  COM5     VID:PID=1A86:55D4  USB-Enhanced-SERIAL CH9102 (COM5)
+  COM3     VID:PID=----:----  蓝牙链接上的标准串行 (COM3)
+  COM24    VID:PID=1A86:55D2  USB-Enhanced-SERIAL-B CH342 (COM24)
+  COM16    VID:PID=04D8:00DD  USB Serial Port (COM16)

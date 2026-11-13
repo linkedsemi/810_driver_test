@@ -1,0 +1,327 @@
+{
+  "driver": "otbn_test",
+  "case": "case_default",
+  "board": "lsqsh_evb@1os/lsqsh/cpu1",
+  "env": "tgt_uart=COM31, timeout=120s",
+  "execution": "SUCCESSFUL",
+  "mem_state": "unavailable",
+  "mem_note": "内存兜底未执行（gdb/dump 失败、超时或符号解析失败）。",
+  "missing_evidence": [],
+  "timestamp": "2026-11-13T12:44:49",
+  "results": {
+    "api_aes_kat": "PASS",
+    "api_rsa2048_kat": "PASS",
+    "api_rsa_keygen_2048": "PASS",
+    "api_rsa_keygen_3072": "PASS",
+    "api_sha224_kat": "PASS",
+    "api_sha256_kat": "PASS",
+    "api_sha256_varlen": "PASS",
+    "api_sha384_kat": "PASS",
+    "api_sha512_kat": "PASS",
+    "api_sm3_kat": "PASS",
+    "api_sm4_kat": "PASS",
+    "candidate_residue_and_topbits": "PASS",
+    "direct_apis_ok": "PASS",
+    "mbedtls_gen_key_ok": "PASS",
+    "ref_vector_kat": "PASS",
+    "rng_error_propagates": "PASS",
+    "rsa_2048_correctness": "PASS",
+    "rsa_2048_deterministic": "PASS",
+    "rsa_3072_ok": "PASS",
+    "rsa_4096_ok": "PASS",
+    "session_no_leak": "PASS",
+    "unaligned_rejected": "PASS",
+    "zzz_bench_modexp_128b": "PASS",
+    "zzz_bench_modexp_192b": "PASS",
+    "zzz_bench_no_internal_drbg": "PASS",
+    "zzz_bench_random_counts": "PASS",
+    "zzz_bench_trial_division": "PASS",
+    "zzz_modexp_kat_n128b_random": "PASS",
+    "zzz_modexp_kat_n192b_random": "PASS",
+    "zzz_modexp_kat_n256b_random": "PASS",
+    "zzz_modexp_kat_n384b_hostkat": "PASS",
+    "zzz_modexp_kat_n4b_base0": "PASS",
+    "zzz_modexp_kat_n4b_base1": "PASS",
+    "zzz_modexp_kat_n4b_basenm1": "PASS",
+    "zzz_modexp_kat_n4b_exp0": "PASS",
+    "zzz_modexp_kat_n4b_exp1": "PASS",
+    "zzz_modexp_kat_n512b_f4_hostkat": "PASS",
+    "zzz_modexp_kat_n512b_hostkat": "PASS",
+    "mix_ecdsa_sha256_stream": "PASS",
+    "mix_keygen_sha256_keygen": "PASS",
+    "mix_sha256_keygen_seq": "PASS",
+    "mix_sha256_stream_keygen": "PASS",
+    "mix_sha512_stream_keygen": "PASS",
+    "mix_sign_sha256_stream": "PASS",
+    "mix_sm3_stream_keygen": "PASS",
+    "api_ecdsa_p256_kat": "PASS",
+    "api_ecdsa_p384": "PASS",
+    "api_ecdsa_sm2": "PASS",
+    "perf_ecdsa_p256": "PASS",
+    "perf_rsa2048_sign": "PASS",
+    "perf_sha256_64k": "PASS",
+    "api_rsa_keygen_4096": "PASS"
+  },
+  "infos": {
+    "api_rsa_keygen_2048": {
+      "nbits": "2048",
+      "time_ms": "1939"
+    },
+    "api_rsa_keygen_3072": {
+      "nbits": "3072",
+      "time_ms": "4401"
+    },
+    "mbedtls_gen_key_ok": {
+      "api": "mbedtls_rsa_gen_key",
+      "keylen": "2048",
+      "ret": "0"
+    },
+    "ref_vector_kat": {
+      "key_from_pq_ret": "0",
+      "n_byte_equal": "1",
+      "d_byte_equal": "1"
+    },
+    "session_no_leak": {
+      "iterations": "10",
+      "ok": "10"
+    },
+    "zzz_bench_modexp_128b": {
+      "num_bytes": "128",
+      "samples": "20",
+      "median_us": "8879",
+      "p90_us": "8879",
+      "min_us": "8879",
+      "max_us": "8879",
+      "mean_us": "8879",
+      "byte_equal": "1",
+      "err": "0",
+      "us_list": "8879"
+    },
+    "zzz_bench_modexp_192b": {
+      "num_bytes": "192",
+      "samples": "20",
+      "median_us": "27665",
+      "p90_us": "27666",
+      "min_us": "27665",
+      "max_us": "27668",
+      "mean_us": "27665",
+      "byte_equal": "1",
+      "err": "0",
+      "us_list": "27668"
+    },
+    "zzz_bench_no_internal_drbg": {
+      "ret": "0/0/ctrl=0",
+      "edn": "0",
+      "same_p": "1",
+      "same_q": "1",
+      "same_n": "1",
+      "same_d": "1",
+      "rnd_calls": "1984/1952",
+      "urnd_calls": "736/736",
+      "ctrl_diff": "1",
+      "edn_diff": "0"
+    },
+    "zzz_bench_random_counts": {
+      "keygen_ret": "0",
+      "keygen_ms": "3664",
+      "rnd_cb_calls": "8832",
+      "urnd_cb_calls": "3856",
+      "rnd_words": "8832",
+      "urnd_words": "3856",
+      "rnd_isr_requests": "1104",
+      "urnd_isr_requests": "482",
+      "candidates": "1779",
+      "sieve_pass": "240",
+      "post_restore_check_prime_ret": "0",
+      "post_restore_prime": "1",
+      "post_rnd_delta": "0",
+      "post_urnd_delta": "0"
+    },
+    "zzz_bench_trial_division": {
+      "candidates": "100",
+      "prime_bytes": "128",
+      "primes": "1228",
+      "avg_ns": "415972",
+      "median_ns": "6523",
+      "p90_ns": "2633950",
+      "min_ns": "2196",
+      "max_ns": "2638913",
+      "avg_us_x1000": "415",
+      "median_us_x1000": "6",
+      "ns_per_mod": "2146",
+      "us_per_mod_x1000": "2",
+      "total_mods": "19377",
+      "avg_mods": "193",
+      "max_mods": "1228",
+      "survivors": "14",
+      "survivor_avg_ns": "2635143"
+    },
+    "zzz_modexp_kat_n128b_random": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n192b_random": {
+      "ret": "0",
+      "ms": "27",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n256b_random": {
+      "ret": "0",
+      "ms": "63",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n384b_hostkat": {
+      "ret": "0",
+      "ms": "205",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_base0": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_base1": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_basenm1": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_exp0": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n4b_exp1": {
+      "ret": "0",
+      "ms": "9",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n512b_f4_hostkat": {
+      "ret": "0",
+      "ms": "2",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "zzz_modexp_kat_n512b_hostkat": {
+      "ret": "0",
+      "ms": "475",
+      "byte_equal": "1",
+      "first_diff": "-1",
+      "fw": "8"
+    },
+    "mix_keygen_sha256_keygen": {
+      "keygen1_ms": "380",
+      "keygen2_ms": "748"
+    },
+    "mix_sha256_keygen_seq": {
+      "keygen_ms": "1233"
+    },
+    "mix_sha256_stream_keygen": {
+      "keygen_ms": "1223"
+    },
+    "mix_sha512_stream_keygen": {
+      "keygen_ms": "1717"
+    },
+    "mix_sm3_stream_keygen": {
+      "keygen_ms": "1371"
+    },
+    "perf_ecdsa_p256": {
+      "loops": "10",
+      "sign_ops": "416",
+      "verify_ops": "714"
+    },
+    "perf_rsa2048_sign": {
+      "loops": "5",
+      "avg_us": "66992"
+    },
+    "perf_sha256_64k": {
+      "bytes": "65536",
+      "us": "13952",
+      "kbps": "4697"
+    },
+    "api_rsa_keygen_4096": {
+      "nbits": "4096",
+      "time_ms": "3425",
+      "rng_calls": "6196"
+    }
+  },
+  "reasons": {},
+  "notes": {
+    "api_aes_kat": "src=token",
+    "api_rsa2048_kat": "src=token",
+    "api_rsa_keygen_2048": "src=token",
+    "api_rsa_keygen_3072": "src=token",
+    "api_sha224_kat": "src=token",
+    "api_sha256_kat": "src=token",
+    "api_sha256_varlen": "src=token",
+    "api_sha384_kat": "src=token",
+    "api_sha512_kat": "src=token",
+    "api_sm3_kat": "src=token",
+    "api_sm4_kat": "src=token",
+    "candidate_residue_and_topbits": "src=token",
+    "direct_apis_ok": "src=token",
+    "mbedtls_gen_key_ok": "src=token",
+    "ref_vector_kat": "src=token",
+    "rng_error_propagates": "src=token",
+    "rsa_2048_correctness": "src=token",
+    "rsa_2048_deterministic": "src=token",
+    "rsa_3072_ok": "src=token",
+    "rsa_4096_ok": "src=token",
+    "session_no_leak": "src=token",
+    "unaligned_rejected": "src=token",
+    "zzz_bench_modexp_128b": "src=token",
+    "zzz_bench_modexp_192b": "src=token",
+    "zzz_bench_no_internal_drbg": "src=token",
+    "zzz_bench_random_counts": "src=token",
+    "zzz_bench_trial_division": "src=token",
+    "zzz_modexp_kat_n128b_random": "src=token",
+    "zzz_modexp_kat_n192b_random": "src=token",
+    "zzz_modexp_kat_n256b_random": "src=token",
+    "zzz_modexp_kat_n384b_hostkat": "src=token",
+    "zzz_modexp_kat_n4b_base0": "src=token",
+    "zzz_modexp_kat_n4b_base1": "src=token",
+    "zzz_modexp_kat_n4b_basenm1": "src=token",
+    "zzz_modexp_kat_n4b_exp0": "src=token",
+    "zzz_modexp_kat_n4b_exp1": "src=token",
+    "zzz_modexp_kat_n512b_f4_hostkat": "src=token",
+    "zzz_modexp_kat_n512b_hostkat": "src=token",
+    "mix_ecdsa_sha256_stream": "src=token",
+    "mix_keygen_sha256_keygen": "src=token",
+    "mix_sha256_keygen_seq": "src=token",
+    "mix_sha256_stream_keygen": "src=token",
+    "mix_sha512_stream_keygen": "src=token",
+    "mix_sign_sha256_stream": "src=token",
+    "mix_sm3_stream_keygen": "src=token",
+    "api_ecdsa_p256_kat": "src=token",
+    "api_ecdsa_p384": "src=token",
+    "api_ecdsa_sm2": "src=token",
+    "perf_ecdsa_p256": "src=token",
+    "perf_rsa2048_sign": "src=token",
+    "perf_sha256_64k": "src=token",
+    "api_rsa_keygen_4096": "src=token"
+  }
+}

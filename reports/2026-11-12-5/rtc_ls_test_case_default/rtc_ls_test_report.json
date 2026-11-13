@@ -1,0 +1,32 @@
+{
+  "driver": "rtc_ls_test",
+  "board": "lsqsh_evb@2os/lsqsh/cpu1",
+  "env": "tgt_uart=COM31, timeout=180.0s, host=wsl",
+  "timestamp": "2026-11-13T12:52:43",
+  "results": {
+    "set_get_roundtrip": "PASS",
+    "time_advances": "PASS",
+    "invalid_set_args": "PASS",
+    "alarm_set_get": "PASS",
+    "alarm_fires": "PASS",
+    "alarm_invalid_args": "PASS",
+    "calibration_roundtrip": "PASS",
+    "calibration_negative": "PASS",
+    "calibration_null_arg": "PASS",
+    "calendar_rollover": "PASS"
+  },
+  "infos": {},
+  "reasons": {},
+  "notes": {
+    "set_get_roundtrip": "src=mem",
+    "time_advances": "src=mem",
+    "invalid_set_args": "src=mem",
+    "alarm_set_get": "src=mem",
+    "alarm_fires": "src=mem",
+    "alarm_invalid_args": "src=mem",
+    "calibration_roundtrip": "src=mem",
+    "calibration_negative": "src=mem",
+    "calibration_null_arg": "src=mem",
+    "calendar_rollover": "src=mem"
+  }
+}

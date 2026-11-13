@@ -1,0 +1,3 @@
+capturing: ['COM24'] -> C:\Temp\wsl_810_new
+ERROR open COM24: could not open port 'COM24': PermissionError(13, '¾Ü¾ø·ÃÎÊ¡£', None, 5)
+done. failed ports: ['COM24']

@@ -1,0 +1,40 @@
+[202/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/stack.c.obj
+[203/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/system_work_q.c.obj
+[204/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/queue.c.obj
+[205/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/priority_queues.c.obj
+[206/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/condvar.c.obj
+[207/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/thread.c.obj
+[208/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/xip.c.obj
+[209/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/timeslicing.c.obj
+[210/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/spinlock_validate.c.obj
+[211/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/work.c.obj
+[212/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/timeout.c.obj
+[213/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/dynamic_disabled.c.obj
+[214/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/mempool.c.obj
+[215/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/pipes.c.obj
+[216/227] Building C object zephyr/kernel/CMakeFiles/kernel.dir/sched.c.obj
+[217/227] Linking C static library zephyr/kernel/libkernel.a
+[218/227] Linking C executable zephyr/zephyr_pre0.elf
+[219/227] Generating linker.cmd
+[220/227] Generating isr_tables.c, isr_tables_vt.ld, isr_tables_swi.ld
+[221/227] Building C object zephyr/CMakeFiles/zephyr_final.dir/misc/empty_file.c.obj
+[222/227] Building C object zephyr/CMakeFiles/zephyr_final.dir/isr_tables.c.obj
+[223/227] Linking C executable zephyr/zephyr.elf
+Memory region         Used Size  Region Size  %age Used
+             ROM:        104 KB       256 KB     40.62%
+             RAM:         36 KB       256 KB     14.06%
+OTP_CONFIG_ADC_TRIM:           0 B         16 B      0.00%
+           SHMEM:           8 B       4092 B      0.20%
+    RESET_REASON:           4 B          4 B    100.00%
+            MBOX:         344 B         4 KB      8.40%
+        IDT_LIST:           0 B         2 KB      0.00%
+Generating files from /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new/build/hello_world/zephyr/zephyr.elf for board: lsqsh_evb
+[224/227] Generating ../../zephyr/zephyr_flash_lsqsh_evb_2os_lsqsh_cpu1.bin
+[225/227] Generating ../../zephyr/zephyr_flash_lsqsh_evb_2os_lsqsh_cpu1.bin.gz
+[226/227] Generating ../../zephyr/zephyr_flash_bram_xip_lsqsh_evb_2os_lsqsh_cpu1.bin
+Writing /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new/build/hello_world/zephyr/bram_header.bin at 0x0 (6672 bytes)...
+Writing /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new/build/hello_world/zephyr/zephyr_flash_lsqsh_evb_2os_lsqsh_cpu1.bin at 0x10000 (106752 bytes)...
+Merge successful! Output: /home/eunice/zephyr_workspace/ls1010_port_spi_i2s/810_driver_test/wsl_environment/wsl_new/build/hello_world/zephyr/zephyr_flash_bram_xip_lsqsh_evb_2os_lsqsh_cpu1.bin (Total size: 172288 bytes)
+[227/227] Generating ../../zephyr/zephyr_flash_bram_xip_lsqsh_evb_2os_lsqsh_cpu1.bin.gz
+
+[exited with code 0]
